@@ -1,0 +1,14 @@
+{
+  "name": "zeplao-bot-boco",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bot tra giá chứng khoán cho Cúc Cu — gõ /vic, /hpg trong nhóm",
+  "scripts": {
+    "start": "node bocobot.mjs",
+    "test": "node --test --test-concurrency=1 bocobot.test.mjs market.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
