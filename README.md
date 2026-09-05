@@ -1,7 +1,7 @@
 # bocobot
 
-Một con bot trả lời giá chứng khoán trong nhóm chat Cúc Cu. Gõ `/vic` giữa lúc đang nói chuyện,
-nó trả về một dòng:
+Một con bot trả lời giá chứng khoán trong nhóm chat Cúc Cu. Gõ `!vic` giữa lúc đang nói
+chuyện, nó trả về một dòng:
 
 ```
 VIC 256,1 ▲ +4,74% · KL 7.518.600
@@ -11,63 +11,47 @@ Một dòng, vì một nhóm chat không phải một cái bảng điện. Ai mu
 thứ người ta hỏi giữa cuộc trò chuyện là mã ấy hôm nay lên hay xuống, và câu trả lời cho việc đó
 dài đúng một dòng.
 
-Viết theo khuôn của nền tảng bot Cúc Cu: một file chạy được, không phụ thuộc ngoài, không bước
-build. Nhận cập nhật bằng một cuộc gọi dài ba mươi giây, trả lời bằng một tin nhắn.
-
 ## Dùng thế nào
 
 | Gõ | Được gì |
 | --- | --- |
-| `/vic` | Một mã |
-| `/vic hpg fpt` | Nhiều mã, một tin nhắn |
-| `/gia vic hpg` | Như trên, cho ai quen gõ lệnh có tên |
-| `@bocobot vic hpg` | Hỏi bằng cách gọi tên, trong câu nói bình thường |
-| `/vnindex`, `/vn30f1m` | Chỉ số và phái sinh, cùng một cách gõ |
-| `/gia` hoặc `/help@bocobot` | Nó tự nói nó làm được gì |
-| Nhắn riêng | Không cần gạch chéo, không cần gọi tên — gõ `vic` là đủ |
+| `!vic` | Một mã |
+| `!vic hpg fpt` | Nhiều mã, một tin nhắn |
+| `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
+| `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
+| Nhắn riêng | Không cần dấu gì cả, gõ `vic` là đủ |
 
 Nhiều nhất **10 mã** một lần hỏi, và câu trả lời luôn là **một tin nhắn** dù hỏi mấy mã. Nền
 tảng cho mỗi phòng một tin mỗi giây; ba mã thành ba tin là hai lần chờ và một cuộc trò chuyện bị
 đẩy trôi vì một câu hỏi.
 
-```
-VIC 256,1 ▲ +4,74% · KL 7.518.600
-HPG 21,7 ▲ +0,46% · KL 13.920.900
-VNINDEX 1.853,08 ▲ +1,39% · KL 618.685.696
-Sàn đã đóng cửa · số liệu phiên gần nhất
-```
+## Vì sao là dấu chấm than, không phải gạch chéo
 
-## Thứ khó nhất ở đây không phải giá
+Đây là quyết định chịu lực của con bot này, và nó không phải chuyện gu.
 
-**Trong một phòng có ba con bot, mọi tin nhắn bắt đầu bằng `/` đều tới cả ba.** Nền tảng là như
-vậy, có chủ ý. Nghĩa là `/tienlen` của người khác cũng rơi vào con bot này. Một con bot giá cổ
-phiếu đáp "không tìm thấy mã TIENLEN" mỗi lần ai đó gọi con bot bên cạnh là một con bot bị đá
-khỏi phòng trong tuần đầu tiên.
+Nền tảng chỉ giao `/xyz` cho bot **đã đăng ký đúng chữ ấy** — không phải cứ có gạch chéo là mọi
+bot đều nghe. Luật ấy đúng: bỏ nó đi thì mọi bot trong phòng thức dậy mỗi lần ai đó gõ một gạch
+chéo. Nhưng chỗ đăng ký chỉ nhận **100 lệnh**, mà ba sàn có **1.522 mã**.
 
-Nên luật là **không chắc thì im**, và nó có ba mức:
+Không phải suy ra từ tài liệu — tài liệu nói khác. Gửi thử 400 lệnh lên, máy chủ giữ lại đúng
+100, không báo lỗi, không nói gì. Nên đường gạch chéo phủ được nhiều nhất 98 mã và bỏ lại 1.424
+mã còn lại.
 
-| Chữ được gõ | Bot làm gì |
-| --- | --- |
-| Có trong danh sách niêm yết ba sàn | Hỏi giá ngay |
-| Không có, nhưng đúng hình một mã (`FUEVFVND`, `VNINDEX`) | Dò nguồn **đúng một lần**, rồi nhớ câu trả lời nửa ngày |
-| Không giống mã (`di`, `ăn`, `123`) | Bỏ qua, không tốn một lượt mạng nào |
+`!vic` thì chỉ là một câu chữ thường. Bot nghe được nó, và nó chạy với mọi mã, không trừ mã nào.
 
-Cái mức giữa là chỗ chứng chỉ quỹ và chỉ số đi vào — chúng không có trong danh sách ba sàn —
-và cũng là chỗ `/tienlen` đi ra: dò một lần, không có, im mãi mãi.
+**Đổi lại, bot phải được tắt chế độ riêng tư** — chủ bot bật ở trang bot, và cả nhóm được app
+báo cho biết. Bot đọc mọi câu trong phòng.
 
-Còn một luật thứ hai đi kèm, và nó tinh hơn: **mã tra không ra chỉ được nêu tên khi có người
-gọi thẳng bot này bằng một lệnh.**
+Điều đó dẫn thẳng tới luật thứ hai: **nghe được không phải là được hỏi.** Không có dấu gọi thì
+bot im, dù trong câu có tên mã. Cách khác — thấy mã nào thì báo giá mã ấy — đã đo thử và không
+dùng được: đem 172 từ tiếng Việt thông dụng viết không dấu đọ với danh sách ba sàn thì **16 từ
+trùng mã**, trong đó có `HOM`, `TIN`, `THU`, `TOT`, `TRA`. "hom nay", "tin nay", "thu xem" —
+mỗi câu như vậy là một lần bot chen vào chuyện không ai hỏi nó. Một dấu người ta phải cố ý gõ
+thì không gõ nhầm bao giờ.
 
-| Câu hỏi | Mã lạ trong đó |
-| --- | --- |
-| `/gia vic zzz` — lệnh của bot này | `ZZZ — không có dữ liệu` |
-| `/zzz@bocobot` — gọi đích danh | `ZZZ — không có dữ liệu` |
-| `/zzz` — chưa ai gọi tên ai | Im |
-| `@bocobot cho xem vic voi` — một câu nói | Chỉ trả về VIC, không kê `CHO` `XEM` `VOI` thành lỗi |
-
-Thiếu vế đầu thì một câu hỏi lịch sự biến thành một danh sách lỗi kê ra mọi chữ ba ký tự trong
-câu. Thiếu vế sau thì bot chen vào mọi lệnh của hàng xóm. Cả hai đều có bài test giữ, và vế sau
-đã hỏng thật một lần trước khi có bài test ấy.
+Bot **không đăng ký lệnh nào**, và lúc khởi động nó gửi lên một danh sách rỗng để dọn những gì
+đã đăng ký ở lần chạy trước. Riêng `/gia@bocobot vic` vẫn chạy: một lệnh nêu đích danh thì nền
+tảng giao thẳng, biết chữ ấy hay không.
 
 ## Giá lấy ở đâu
 
@@ -146,7 +130,7 @@ Tạo bot ở [kuku.vn/bot](https://kuku.vn/bot), lấy token, rồi:
 ZEPLAO_BOT_TOKEN=<token> npm start
 ```
 
-Lên đúng thì nó in `@<tên bot> đang trực bảng giá` rồi số mã niêm yết nó biết. Bất cứ gì khác là
+Lên đúng thì nó in `@<tên bot> đang trực bảng giá` rồi số mã niêm yết nó biết. Nhớ tắt chế độ riêng tư ở trang bot, không thì `!vic` không tới được nó. Bất cứ gì khác là
 token sai.
 
 | Biến môi trường | Để làm gì |
@@ -193,9 +177,9 @@ vào bất cứ sáng thứ Hai nào, và khi ấy thứ phải sửa nên là m
 
 ## Chưa làm
 
-- **Danh mục theo dõi.** `/theodoi vic hpg` rồi `/bang` ra cả bảng. Cần nhớ danh sách theo từng
+- **Danh mục theo dõi.** `!theodoi vic hpg` rồi `!bang` ra cả bảng. Cần nhớ danh sách theo từng
   phòng, tức là một sổ trên đĩa và một câu hỏi về việc ai được sửa danh sách của phòng.
-- **Cảnh báo giá.** `/baogia vic 260`. Kéo theo một vòng lặp nền, chống lặp tin, và một câu hỏi
+- **Cảnh báo giá.** `!baogia vic 260`. Kéo theo một vòng lặp nền, chống lặp tin, và một câu hỏi
   khó hơn cả ba: nhắn cho ai khi mã chạm giá lúc hai giờ sáng.
 - **Bước giá mua bán.** Nguồn 1 có sẵn ba bước mỗi bên. Không đưa vào vì một dòng là một dòng.
 - **Lịch nghỉ lễ**, để dòng cuối thôi nói sai vào mùng một Tết.

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { askedFor, greeting, help, run, SORRY } from './bocobot.mjs';
+import { askedFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
@@ -35,19 +35,6 @@ test('/gia là lệnh của bot này, nên nó nhận là đang được hỏi',
   const asked = askedFor(message({ text: '/gia vic hpg', command: 'gia', commandArgs: 'vic hpg' }), ME);
   assert.deepEqual(asked.symbols, ['VIC', 'HPG']);
   assert.equal(asked.addressed, true);
-});
-
-test('/gia trống là một người chưa biết gõ gì', () => {
-  assert.equal(askedFor(message({ text: '/gia', command: 'gia' }), ME).help, true);
-});
-
-test('/help trơ trọi trong phòng đông bot thì không phải của ai', () => {
-  assert.equal(askedFor(message({ text: '/help', command: 'help' }), ME), null);
-});
-
-test('/help@bocobot thì rõ là của ai', () => {
-  const asked = askedFor(message({ text: '/help@bocobot', command: 'help' }), ME);
-  assert.equal(asked.help, true);
 });
 
 test('gọi tên thì cả câu được đọc, và cái tên không bị đem đi tra', () => {
@@ -79,11 +66,6 @@ test('lệnh của con bot bên cạnh vẫn đi qua đây, và đi qua như m�
   assert.equal(asked.addressed, false);   // và chính chỗ này quyết định nó sẽ im
 });
 
-test('lời chào và trang hướng dẫn đều nói ra cách hỏi', () => {
-  assert.match(greeting('bocobot'), /\/vic/);
-  assert.match(help('bocobot'), /\/gia/);
-});
-
 // ---- cho nó chạy thật -----------------------------------------------------------------------
 
 const VIC = {
@@ -95,6 +77,7 @@ const VIC = {
 /// một lần, và ghi lại mọi thứ được gửi vào phòng.
 async function stubApi(updates) {
   const sent = [];
+  const registered = [];
   let queue = [...updates];
 
   const server = createServer((request, response) => {
@@ -108,7 +91,10 @@ async function stubApi(updates) {
       };
 
       if (path === '/getMe') return answer(ME);
-      if (path === '/setCommands') return answer({ ok: true });
+      if (path === '/setCommands') {
+        registered.push(...JSON.parse(body).commands);
+        return answer({ ok: true });
+      }
       if (path === '/sendMessage') {
         sent.push(JSON.parse(body));
         return answer({ messageId: `m${sent.length}` });
@@ -130,7 +116,7 @@ async function stubApi(updates) {
   });
 
   await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
-  return { sent, api: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
+  return { sent, registered, api: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
 }
 
 /// Nguồn giá giả: biết đúng những mã được kể tên, và đếm số lần bị hỏi.
@@ -150,7 +136,7 @@ function stubMarket({ listed = ['VIC', 'HPG'], broken = false } = {}) {
  * `settle` là một khoảng lặng có chủ ý: để chứng minh bot **không** gửi gì thì phải cho nó đủ
  * thời gian để gửi. Một bài test khẳng định sự im lặng mà không đợi thì chỉ đang đo tốc độ máy.
  */
-async function withBot(updates, { market = stubMarket(), settle = 250 } = {}) {
+async function withBot(updates, { market = stubMarket(), expect = 1, settle = 200 } = {}) {
   const platform = await stubApi(updates);
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
@@ -163,17 +149,26 @@ async function withBot(updates, { market = stubMarket(), settle = 250 } = {}) {
     at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
   });
 
+  // Đợi tới khi nó nói đủ số câu đang chờ, rồi lặng thêm một nhịp nữa.
+  //
+  // Không phải một khoảng chờ cố định. Khởi động giờ có một việc nặng — lấy giá cả sàn để xếp
+  // hạng lệnh — và một con số đủ trên máy này là con số thiếu trên một máy đang bận, thành một
+  // bài test đỏ mà không có gì hỏng. Nhịp lặng phía sau vẫn cần: nó là chỗ chứng minh **không**
+  // có câu thứ hai, và chỗ chứng minh sự im lặng thì phải cho đủ thời gian để nói.
+  const deadline = Date.now() + 5000;
+  while (platform.sent.length < expect && Date.now() < deadline) await wait(20);
   await wait(settle);
+
   stopping.abort();
   await loop.catch(() => {});
   platform.close();
-  return platform.sent;
+  return platform;
 }
 
 const update = (fields, id = 1) => ({ id, kind: 'message', message: message(fields) });
 
 test('hỏi một mã thì được một dòng', async () => {
-  const sent = await withBot([update({ text: '/vic', command: 'vic' })]);
+  const { sent } = await withBot([update({ text: '/vic', command: 'vic' })]);
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /^VIC 256,1 ▲ \+4,74% · KL 7\.518\.600$/);
   assert.equal(sent[0].replyToMessageId, 'm1');   // trả lời vào đúng câu đã hỏi
@@ -181,36 +176,36 @@ test('hỏi một mã thì được một dòng', async () => {
 
 test('hỏi ba mã thì vẫn là một tin nhắn', async () => {
   // Một phòng nhận một tin mỗi giây. Ba mã thành ba tin là hai lần chờ và một phòng bị đẩy trôi.
-  const sent = await withBot([update({ text: '/gia vic hpg', command: 'gia', commandArgs: 'vic hpg' })]);
+  const { sent } = await withBot([update({ text: '/gia vic hpg', command: 'gia', commandArgs: 'vic hpg' })]);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].text.split('\n').length, 2);
 });
 
 test('lệnh của bot khác thì không nói gì cả', async () => {
-  const sent = await withBot([update({ text: '/tienlen', command: 'tienlen' })]);
+  const { sent } = await withBot([update({ text: '/tienlen', command: 'tienlen' })], { expect: 0 });
   assert.deepEqual(sent, []);
 });
 
 test('gõ hẳn một mã không có thì được nói cho biết', async () => {
-  const sent = await withBot([update({ text: '/gia vic zzz', command: 'gia', commandArgs: 'vic zzz' })]);
+  const { sent } = await withBot([update({ text: '/gia vic zzz', command: 'gia', commandArgs: 'vic zzz' })]);
   assert.match(sent[0].text, /VIC 256,1/);
   assert.match(sent[0].text, /ZZZ — không có dữ liệu/);
 });
 
 test('những chữ ba ký tự lẫn trong một câu thì bỏ qua, không kê thành lỗi', async () => {
-  const sent = await withBot([update({ text: '@bocobot cho xem vic voi' })]);
+  const { sent } = await withBot([update({ text: '@bocobot cho xem vic voi' })]);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].text, 'VIC 256,1 ▲ +4,74% · KL 7.518.600');
   assert.doesNotMatch(sent[0].text, /CHO|XEM|VOI/);
 });
 
 test('gọi tên mà không có mã nào thì được chỉ cách hỏi', async () => {
-  const sent = await withBot([update({ text: '@bocobot ơi' })]);
+  const { sent } = await withBot([update({ text: '@bocobot ơi' })]);
   assert.equal(sent[0].text, SORRY.nothing);
 });
 
 test('nguồn giá chết mà có người gọi thẳng thì nói ra, không im', async () => {
-  const sent = await withBot(
+  const { sent } = await withBot(
     [update({ text: '/gia vic', command: 'gia', commandArgs: 'vic' })],
     { market: stubMarket({ broken: true }) },
   );
@@ -218,18 +213,47 @@ test('nguồn giá chết mà có người gọi thẳng thì nói ra, không im
 });
 
 test('nguồn giá chết mà không ai gọi thẳng thì vẫn im', async () => {
-  const sent = await withBot(
+  const { sent } = await withBot(
     [update({ text: '/vic', command: 'vic' })],
-    { market: stubMarket({ broken: true }) },
+    { market: stubMarket({ broken: true }), expect: 0 },
   );
   assert.deepEqual(sent, []);
 });
 
-test('vào phòng thì chào, và chỉ chào một lần', async () => {
-  const added = (id) => ({
-    id, kind: 'bot_added', membership: { conversationId: 'p1', conversationType: 'group' },
-  });
-  const sent = await withBot([added(1), added(2)]);
+// ---- dấu gọi ---------------------------------------------------------------------------------
+
+test('dấu chấm than là cách gọi bot', () => {
+  const asked = askedFor(message({ text: '!vic' }), ME);
+  assert.deepEqual(asked.symbols, ['VIC']);
+  assert.equal(asked.addressed, true);
+  assert.equal(asked.strict, true);      // gõ hẳn một dấu là có chủ ý, nên mã sai được nói ra
+});
+
+test('một dấu, nhiều mã', () => {
+  assert.deepEqual(askedFor(message({ text: '!vic hpg fpt' }), ME).symbols, ['VIC', 'HPG', 'FPT']);
+});
+
+test('dấu gọi không kén khoảng trắng đằng trước', () => {
+  assert.deepEqual(askedFor(message({ text: '  !vnindex' }), ME).symbols, ['VNINDEX']);
+});
+
+test('không có dấu gọi thì nghe được cũng không phải việc của bot', () => {
+  // Chế độ riêng tư tắt nghĩa là bot đọc mọi câu trong phòng. Nghe được không phải là được hỏi:
+  // 16 từ tiếng Việt thông dụng viết không dấu trùng mã niêm yết, và "hom nay" là một câu nói.
+  assert.equal(askedFor(message({ text: 'hom nay vic dep the' }), ME), null);
+  assert.equal(askedFor(message({ text: 'vic' }), ME), null);
+});
+
+test('dấu gọi chạy thật, từ đầu tới cuối', async () => {
+  const { sent } = await withBot([update({ text: '!vic hpg' })]);
   assert.equal(sent.length, 1);
-  assert.match(sent[0].text, /tra giá chứng khoán/);
+  assert.equal(sent[0].text.split('\n').length, 2);
+  assert.match(sent[0].text, /^VIC 256,1/);
+});
+
+test('khởi động là xoá sạch danh sách lệnh cũ', async () => {
+  // Không đăng ký gì cả, và nói ra điều đó: `setCommands` thay nguyên si, nên một danh sách
+  // rỗng là cách duy nhất dọn những gì đã đăng ký ở lần chạy trước.
+  const { registered } = await withBot([], { expect: 0 });
+  assert.deepEqual(registered, []);
 });

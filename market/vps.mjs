@@ -24,6 +24,10 @@ const BOARDS = ['hose', 'hnx', 'upcom'];
  */
 const TIMEOUT_MS = 8000;
 
+/// Bao nhiêu mã một lượt. Đo chứ không đoán: 400 mã là một URL 1.649 ký tự và 465ms, còn cả sàn
+/// trong một URL là thứ không nên thử ở nơi mình không sở hữu.
+const CHUNK = 400;
+
 export function publicFeed({ feed = FEED, fetchImpl = fetch, timeout = TIMEOUT_MS } = {}) {
   async function get(path) {
     const response = await fetchImpl(`${feed}${path}`, { signal: AbortSignal.timeout(timeout) });
@@ -35,17 +39,30 @@ export function publicFeed({ feed = FEED, fetchImpl = fetch, timeout = TIMEOUT_M
     name: 'vps',
 
     /**
-     * Giá của nhiều mã, một lần gọi.
+     * Giá của nhiều mã, ít lượt gọi nhất có thể.
      *
      * Feed nhận cả danh sách ngăn cách bằng dấu phẩy, nên ba mã cũng chỉ là một lượt đi về. Mã
      * không tồn tại thì đơn giản là không có trong mảng trả về — không lỗi, không chỗ trống —
      * và đó chính là thứ để phân biệt "mã lạ" với "feed hỏng": feed hỏng thì ném.
+     *
+     * Chia lô vì có một chỗ hỏi cả sàn cùng lúc: việc xếp hạng thanh khoản để chọn lệnh đăng ký
+     * lúc khởi động. Một câu hỏi trong nhóm nhiều nhất mười mã nên không bao giờ chạm tới đây;
+     * 1.522 mã thì thành bốn lượt đi về song song thay vì một cái URL không ai nhận.
      */
     async quotes(symbols) {
       const wanted = [...new Set(symbols.map((symbol) => symbol.toUpperCase()))];
       if (!wanted.length) return [];
-      const raw = await get(`/getliststockdata/${wanted.join(',')}`);
-      return (Array.isArray(raw) ? raw : []).map(normalize).filter(Boolean);
+
+      const lots = [];
+      for (let from = 0; from < wanted.length; from += CHUNK) {
+        lots.push(wanted.slice(from, from + CHUNK));
+      }
+
+      const answers = await Promise.all(lots.map((lot) => get(`/getliststockdata/${lot.join(',')}`)));
+      return answers.flat()
+        .filter((raw) => raw && typeof raw === 'object')
+        .map(normalize)
+        .filter(Boolean);
     },
 
     /**

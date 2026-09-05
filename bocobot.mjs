@@ -9,16 +9,23 @@
 // bước build — giống `mathbot` trong repo Cúc Cu, và cố ý giữ như vậy: thứ khó ở đây không nằm
 // ở mã, nó nằm ở hai câu hỏi bên dưới.
 //
-// **Một: cái gì là mã chứng khoán?** Trong một phòng có ba con bot, mọi tin nhắn bắt đầu bằng
-// `/` đều tới cả ba. `/tienlen` của người khác cũng rơi vào đây. Nên luật là không chắc thì im,
-// và cái sàng làm việc đó ở `market/symbols.mjs`.
+// **Một: làm sao `/vic` tới được đây?** Nền tảng giao một lệnh trơ trọi cho bot **chỉ khi bot đã
+// đăng ký đúng chữ ấy** — `/vic` không đăng ký thì không con bot nào nghe thấy. Mà `setCommands`
+// chỉ nhận 100 lệnh, còn ba sàn có 1.522 mã. Nên `commandsFor` dưới đây đăng ký 98 mã **thanh
+// khoản cao nhất**, xếp hạng từ chính dữ liệu phiên gần nhất chứ không viết tay, và mọi mã còn
+// lại vào bằng ba đường khác: `/gia xyz`, `@bot xyz`, hoặc `/xyz@bot` — gọi đích danh thì nền
+// tảng giao, biết chữ ấy hay không.
 //
-// **Hai: giá lấy ở đâu?** Một dây nguồn, không phải một nguồn. Feed công khai đứng trước vì nó
+// **Hai: cái gì là mã chứng khoán?** Những lệnh đã đăng ký không phải thứ duy nhất tới đây:
+// `/tienlen@bocobot` cũng tới, và trong nhắn riêng thì mọi câu đều tới. Nên luật là không chắc
+// thì im, và cái sàng làm việc đó ở `market/symbols.mjs`.
+//
+// **Ba: giá lấy ở đâu?** Một dây nguồn, không phải một nguồn. Feed công khai đứng trước vì nó
 // nhanh và có trần sàn; DNSE đứng sau cho chỉ số, phái sinh, và cho những ngày feed kia không
 // dậy. Bot không biết nguồn nào đang trả lời — nó nhận một cái hình có `quotes` và `universe`,
 // và đó là lý do đổi nguồn không phải sửa một dòng nào trong file này.
 //
-// **Ba: con số này của lúc nào?** Feed không gửi kèm dấu thời gian. Một cái giá của phiên hôm
+// **Bốn: con số này của lúc nào?** Feed không gửi kèm dấu thời gian. Một cái giá của phiên hôm
 // kia trông y hệt một cái giá của mười giây trước, và không có gì trong dữ liệu nói cho biết.
 // Nên câu trả lời mang theo một dòng nói sàn đang mở hay đã đóng, suy từ đồng hồ — xem
 // `sessionNote` ở `market/quote.mjs`, kể cả chỗ nó không biết.
@@ -42,33 +49,24 @@ export const API = process.env.ZEPLAO_BOT_API ?? 'https://api-bot.kuku.vn';
 export const STATE = process.env.BOCO_STATE
   ?? fileURLToPath(new URL('./data/state.json', import.meta.url));
 
-/// Lệnh của riêng bot này: luôn trả lời, kể cả không ai gọi tên.
+/// Dấu gọi bot.
+///
+/// Không phải gạch chéo, và đó là cả cách con bot này thoát khỏi hai cái trần cùng lúc. Nền
+/// tảng chỉ giao `/xyz` cho bot đã đăng ký đúng chữ ấy, mà chỗ đăng ký có 100 ô cho 1.522 mã —
+/// nên đường gạch chéo không bao giờ phủ hết được. Còn `!vic` chỉ là một câu chữ thường: bot
+/// nghe được nó vì chủ bot đã tắt chế độ riêng tư, và nó chạy với **mọi mã**, không trừ mã nào.
+///
+/// Một dấu người ta phải cố ý gõ cũng là thứ giữ cho bot im. Nghe cả phòng rồi trả lời mỗi khi
+/// ai đó nhắc tên một mã thì hỏng: đo thử, 16 từ tiếng Việt thông dụng viết không dấu trùng mã
+/// niêm yết — "hom nay", "tin nay", "thu xem". Không ai gõ nhầm một dấu chấm than.
+export const CALL = '!';
+
+/// Lệnh gạch chéo của riêng bot này. Không đăng ký nữa, nên chỉ tới nơi khi gọi đích danh —
+/// `/gia@bocobot vic` — vì lệnh nêu tên thì nền tảng giao thẳng, biết chữ ấy hay không.
 const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
 
-/// Lệnh dùng chung cả xóm: chỉ trả lời khi được gọi đích danh, vì `/help` trong một phòng ba
-/// con bot mà cả ba cùng nói là ba lần rác.
-const GENERIC = new Set(['help', 'start', 'huongdan']);
-
-export function greeting(handle) {
-  return `Chào cả nhà. Tôi tra giá chứng khoán — gõ /vic hoặc /hpg để xem một mã, `
-    + `/gia vic hpg fpt để xem nhiều mã một lúc, hoặc @${handle} vic.`;
-}
-
-export function help(handle) {
-  return [
-    'Tôi tra giá cổ phiếu ba sàn HOSE, HNX và UPCOM.',
-    '',
-    '/vic — một mã',
-    '/gia vic hpg fpt — nhiều mã, tối đa ' + MAX_SYMBOLS,
-    `@${handle} vic hpg — hỏi bằng cách gọi tên`,
-    '',
-    'Giá tính theo nghìn đồng, khối lượng theo cổ phiếu. Mã nào tôi không nhận ra thì tôi im,',
-    'để khỏi chen vào lệnh của bot khác trong phòng.',
-  ].join('\n');
-}
-
 export const SORRY = {
-  nothing: 'Không nhận ra mã nào. Thử /vic, hoặc /gia vic hpg.',
+  nothing: 'Không nhận ra mã nào.',
   source: 'Nguồn giá đang không trả lời. Thử lại sau một lát.',
 };
 
@@ -95,15 +93,20 @@ export function askedFor(message, me) {
   const text = message.text ?? '';
   const named = handles.some((handle) => text.toLowerCase().includes(`@${handle}`.toLowerCase()));
   const alone = message.conversationType === 'direct';
+  // Dấu gọi, trước tiên. Đây là đường vào chính và là đường duy nhất phủ hết 1.522 mã.
+  if (text.trimStart().startsWith(CALL)) {
+    return {
+      symbols: tokensIn(text.trimStart().slice(CALL.length)),
+      addressed: true,
+      strict: true,
+    };
+  }
+
   const command = (message.command ?? '').toLowerCase();
 
   if (command) {
-    if (GENERIC.has(command)) {
-      return named || alone ? { symbols: [], addressed: true, strict: true, help: true } : null;
-    }
     if (OWN.has(command)) {
-      const symbols = tokensIn(message.commandArgs);
-      return { symbols, addressed: true, strict: true, help: symbols.length === 0 };
+      return { symbols: tokensIn(message.commandArgs), addressed: true, strict: true };
     }
     // Một lệnh không phải của ai cả: rất có thể là một mã, cũng rất có thể là bot bên cạnh.
     // Cái sàng ở `symbols.mjs` phân xử; ở đây chỉ ghi nhận là chưa ai gọi tên bot này.
@@ -111,11 +114,12 @@ export function askedFor(message, me) {
       symbols: tokensIn(`${command} ${message.commandArgs ?? ''}`),
       addressed: named,
       strict: true,
-      help: false,
     };
   }
 
-  // Không phải lệnh. Chỉ ba đường còn lại đưa được tin nhắn tới đây, và cả ba đều là gọi thẳng.
+  // Không có dấu gọi, không phải lệnh, không ai gọi tên, không trả lời bot, không nhắn riêng —
+  // nghĩa là một câu người ta nói với nhau. Bot nghe được (chế độ riêng tư đã tắt) và đó chính
+  // là lý do phải im: nghe được không phải là được hỏi.
   if (!named && !alone && !message.replyToMessageId) return null;
 
   // Bỏ mọi cách gọi tên ra khỏi câu trước khi đọc mã: `@bocobot` mà để nguyên thì `BOCOBOT` là
@@ -126,8 +130,7 @@ export function askedFor(message, me) {
   }
   asked = asked.replace(/@\S+/g, ' ');
 
-  const symbols = tokensIn(asked);
-  return { symbols, addressed: true, strict: false, help: false };
+  return { symbols: tokensIn(asked), addressed: true, strict: false };
 }
 
 // ---- vòng lặp -------------------------------------------------------------------------------
@@ -167,16 +170,20 @@ export async function run(token, {
   const me = await call('getMe');
   console.log(`@${me.username} đang trực bảng giá`);
 
-  await call('setCommands', {
-    commands: [
-      { command: 'gia', description: 'Tra giá, ví dụ /gia vic hpg' },
-      { command: 'bocobot', description: 'Tôi làm được gì' },
-    ],
-  });
-
   const guard = makeGuard({ market });
-  // Tải danh sách niêm yết ngay, nhưng không đợi nó: câu hỏi đầu tiên có thể tới trước khi ba
-  // sàn trả lời xong, và lúc ấy cái sàng vẫn làm việc được — chỉ là bằng cách dò thay vì tra.
+
+  // **Không đăng ký lệnh nào**, và nói ra điều đó để máy chủ xoá danh sách cũ.
+  //
+  // Nền tảng chỉ giao `/xyz` cho bot đã khai là có `/xyz`, mà chỗ khai có đúng 100 ô cho 1.522
+  // mã — nên đường gạch chéo không bao giờ phủ hết được. Đường đi là chữ thường: tắt chế độ
+  // riêng tư thì bot nghe cả phòng, và `vic` gõ trần trụi chạy với mọi mã, không trừ mã nào.
+  //
+  // Danh sách rỗng gửi lên có việc của nó: `setCommands` thay nguyên si, nên đây là cách duy
+  // nhất dọn những gì đã đăng ký trước đó.
+  await call('setCommands', { commands: [] }).catch((problem) => console.error(String(problem)));
+
+  // Danh sách niêm yết tải ngay nhưng không đợi: câu hỏi đầu tiên có thể tới trước khi ba sàn
+  // trả lời xong, và lúc ấy cái sàng vẫn làm việc được — bằng cách dò thay vì tra.
   guard.universe().then(() => console.log(`biết ${guard.size} mã niêm yết`)).catch(() => {});
 
   const state = loadState(statePath);
@@ -204,45 +211,16 @@ export async function run(token, {
       saveState(statePath, state);
 
       try {
-        if (update.kind === 'bot_added') await onAdded(update.membership);
-        else if (update.kind === 'bot_removed') onRemoved(update.membership);
-        else if (update.kind === 'message') await onMessage(update.message);
+        if (update.kind === 'message') await onMessage(update.message);
       } catch (problem) {
         console.error(String(problem));
       }
     }
   }
 
-  /**
-   * Chào, đúng một lần cho mỗi phòng.
-   *
-   * Ghi xuống đĩa, và đó là cả lý do của cái file trạng thái. `bot_added` nằm trong vòng cập
-   * nhật nền tảng giữ lại; bất cứ thứ gì phát lại vòng ấy sẽ chào lại — nghĩa là chào lại mỗi
-   * lần khởi động, trong mọi phòng. Được một chương trình chào lần thứ tư vì có người vừa sửa
-   * một dòng mã thì tệ hơn là không được chào.
-   */
-  async function onAdded(membership) {
-    const room = membership.conversationId;
-    if (state.greeted[room]) return;
-    state.greeted[room] = true;
-    saveState(statePath, state);
-    await say(room, greeting(me.username));
-  }
-
-  function onRemoved(membership) {
-    // Bị đưa ra khỏi phòng. Được thêm lại là một lần đến mới, và đến mới thì được chào.
-    delete state.greeted[membership.conversationId];
-    saveState(statePath, state);
-  }
-
   async function onMessage(message) {
     const asked = askedFor(message, me);
     if (!asked) return;
-
-    if (asked.help) {
-      await say(message.conversationId, help(me.username), message.messageId);
-      return;
-    }
 
     const wanted = asked.symbols.slice(0, MAX_SYMBOLS);
     const candidates = await guard.candidates(wanted);
@@ -321,9 +299,9 @@ export async function run(token, {
 function loadState(path) {
   try {
     const read = JSON.parse(readFileSync(path, 'utf8'));
-    return { offset: Number(read.offset) || 0, greeted: read.greeted ?? {} };
+    return { offset: Number(read.offset) || 0 };
   } catch {
-    return { offset: 0, greeted: {} };
+    return { offset: 0 };
   }
 }
 

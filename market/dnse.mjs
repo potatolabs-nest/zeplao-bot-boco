@@ -30,6 +30,9 @@ const TIMEOUT_MS = 8000;
 /// hỏi đúng hai ngày thì mùng sáu Tết sẽ không có cây nào.
 const LOOKBACK_DAYS = 21;
 
+/// Nhiều hơn chừng này mã trong một lần hỏi thì đây không phải câu hỏi dành cho nguồn này.
+const BULK_LIMIT = 25;
+
 const INDEXES = new Set(['VNINDEX', 'VN30', 'VN100', 'VNALLSHARE', 'VNXALL', 'UPCOM', 'HNX', 'HNX30']);
 
 /**
@@ -110,6 +113,15 @@ export function dnseChart({ base = CHART, fetchImpl = fetch, timeout = TIMEOUT_M
 
     async quotes(symbols) {
       const asked = [...new Set(symbols.map((symbol) => symbol.toUpperCase()))];
+
+      // Nguồn này đi **một lượt gọi mỗi mã**. Với một câu hỏi trong nhóm thì không sao — nhiều
+      // nhất mười mã. Nhưng lúc khởi động có một chỗ hỏi giá cả 1.522 mã để xếp hạng lệnh, và
+      // nếu feed đứng trước chết thì cả 1.522 mã rơi xuống đây cùng lúc: một nghìn rưỡi request
+      // song song vào máy chủ của người khác, vì một việc dọn dẹp nội bộ không ai đang chờ.
+      // Nên nó từ chối, và từ chối bằng cách nói "không có mã nào" chứ không phải bằng lỗi:
+      // xếp hạng thiếu vài mã là chuyện nhỏ, còn nện vào nhà người ta thì không.
+      if (asked.length > BULK_LIMIT) return [];
+
       const got = await Promise.all(asked.map(async (symbol) => {
         try {
           const data = await candles(symbol);
