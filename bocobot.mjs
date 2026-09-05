@@ -86,7 +86,7 @@ export const SORRY = {
  *   trong đó có vài chữ ba ký tự trông như mã mà không phải, và kê chúng ra là biến một câu trả
  *   lời thành một danh sách lỗi.
  */
-export function askedFor(message, me) {
+export function askedFor(message, me, mine = new Set()) {
   if (!message) return null;
 
   const handles = [me?.username, me?.displayName].filter(Boolean);
@@ -117,10 +117,20 @@ export function askedFor(message, me) {
     };
   }
 
-  // Không có dấu gọi, không phải lệnh, không ai gọi tên, không trả lời bot, không nhắn riêng —
-  // nghĩa là một câu người ta nói với nhau. Bot nghe được (chế độ riêng tư đã tắt) và đó chính
-  // là lý do phải im: nghe được không phải là được hỏi.
-  if (!named && !alone && !message.replyToMessageId) return null;
+  // Trả lời **tin của chính bot**, chứ không phải trả lời bất kỳ ai.
+  //
+  // Chỗ này từng là `message.replyToMessageId` trơ trọi, và nó là một con bot chen vào mọi cuộc
+  // trò chuyện: trong một phòng đã tắt chế độ riêng tư, mọi tin đều tới bot, nên **mọi lần ai
+  // đó trả lời ai đó** đều được đọc như một câu hỏi. "vip zzzz" ra bảng giá VIP, "giá pom đẹp
+  // thế" ra POM, và câu báo lỗi "bug bot cứ tin reply" ra cả BOT lẫn TIN. Ba từ trong đó là mã
+  // có thật, và đó là toàn bộ vấn đề.
+  //
+  // Nền tảng có biết ai là người viết tin được trả lời — `Sees()` dùng nó — nhưng không gửi
+  // kèm cho bot. Nên bot tự nhớ lấy id những tin mình đã gửi. Nhớ trong bộ nhớ, nên khởi động
+  // lại là quên: trả lời một tin bot gửi trước lúc restart sẽ không được nghe. Đổi lại là một
+  // dòng, không phải một cái sổ.
+  const replyingToBot = Boolean(message.replyToMessageId && mine.has(message.replyToMessageId));
+  if (!named && !alone && !replyingToBot) return null;
 
   // Bỏ mọi cách gọi tên ra khỏi câu trước khi đọc mã: `@bocobot` mà để nguyên thì `BOCOBOT` là
   // một chữ ba ký tự trở lên, đúng hình một mã, và sẽ được đem đi dò.
@@ -130,7 +140,11 @@ export function askedFor(message, me) {
   }
   asked = asked.replace(/@\S+/g, ' ');
 
-  return { symbols: tokensIn(asked), addressed: true, strict: false };
+  // `addressed: false` cho ba đường này, và đó không phải chuyện chữ nghĩa: nó quyết định bot
+  // có nói gì không khi **không tra được mã nào**. Gõ hẳn `!xyz` thì im lặng là hỏng — người ta
+  // vừa cố ý gõ một dấu. Còn trả lời một tin của bot bằng "mua dc k" thì một dòng "Không nhận
+  // ra mã nào" là bot cãi lại một câu không hỏi nó. Chỉ dấu gọi mới đáng được đáp khi hỏng.
+  return { symbols: tokensIn(asked), addressed: named, strict: false };
 }
 
 // ---- vòng lặp -------------------------------------------------------------------------------
@@ -186,6 +200,16 @@ export async function run(token, {
   // trả lời xong, và lúc ấy cái sàng vẫn làm việc được — bằng cách dò thay vì tra.
   guard.universe().then(() => console.log(`biết ${guard.size} mã niêm yết`)).catch(() => {});
 
+  /**
+   * Id những tin nhắn bot đã gửi.
+   *
+   * Để biết một lần trả lời là trả lời bot hay trả lời người khác — thứ nền tảng biết nhưng
+   * không nói cho bot. Cắt bớt khi đầy: một phòng nói cả ngày thì cái tập này lớn mãi, mà chẳng
+   * ai trả lời một tin của tuần trước.
+   */
+  const mine = new Set();
+  const REMEMBERED = 500;
+
   const state = loadState(statePath);
   let offset = Number(state.offset) || 0;
   if (offset) console.log(`đọc tiếp từ cập nhật ${offset}`);
@@ -219,7 +243,7 @@ export async function run(token, {
   }
 
   async function onMessage(message) {
-    const asked = askedFor(message, me);
+    const asked = askedFor(message, me, mine);
     if (!asked) return;
 
     const wanted = asked.symbols.slice(0, MAX_SYMBOLS);
@@ -277,7 +301,13 @@ export async function run(token, {
   async function say(conversationId, text, replyToMessageId) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        return await call('sendMessage', { conversationId, text, replyToMessageId });
+        const posted = await call('sendMessage', { conversationId, text, replyToMessageId });
+        const id = posted?.id ?? posted?.messageId;
+        if (id) {
+          mine.add(id);
+          if (mine.size > REMEMBERED) mine.delete(mine.values().next().value);
+        }
+        return posted;
       } catch (problem) {
         if (!String(problem).includes('429') || attempt === 2) {
           console.error(String(problem));

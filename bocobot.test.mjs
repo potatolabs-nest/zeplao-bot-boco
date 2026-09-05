@@ -53,7 +53,7 @@ test('tên hiển thị cũng là một cách gọi', () => {
 test('nhắn riêng thì không phải gọi tên', () => {
   const asked = askedFor(message({ conversationType: 'direct', text: 'vic' }), ME);
   assert.deepEqual(asked.symbols, ['VIC']);
-  assert.equal(asked.addressed, true);
+  assert.equal(asked.addressed, false);   // trả lời cái tra được, và im khi không có gì
 });
 
 test('một câu trong nhóm không nói với bot thì không phải việc của bot', () => {
@@ -199,9 +199,35 @@ test('những chữ ba ký tự lẫn trong một câu thì bỏ qua, không kê
   assert.doesNotMatch(sent[0].text, /CHO|XEM|VOI/);
 });
 
-test('gọi tên mà không có mã nào thì được chỉ cách hỏi', async () => {
+test('gọi tên mà không có mã nào thì được nói cho biết', async () => {
   const { sent } = await withBot([update({ text: '@bocobot ơi' })]);
   assert.equal(sent[0].text, SORRY.nothing);
+});
+
+test('trả lời người khác thì không phải việc của bot', async () => {
+  // Đây là lỗi đã xảy ra thật, trong một phòng đã tắt chế độ riêng tư: mọi tin đều tới bot, nên
+  // mọi lần ai đó trả lời ai đó đều được đọc như một câu hỏi. "vip zzzz" ra bảng giá VIP, và
+  // câu báo lỗi "bug bot cứ tin reply" ra cả BOT lẫn TIN — ba từ ấy đều là mã có thật.
+  assert.equal(askedFor(message({ text: 'vip zzzz', replyToMessageId: 'cua-nguoi-khac' }), ME), null);
+
+  const { sent } = await withBot(
+    [update({ text: 'giá pom đẹp thế', replyToMessageId: 'cua-nguoi-khac' })],
+    { expect: 0 },
+  );
+  assert.deepEqual(sent, []);
+});
+
+test('trả lời tin của chính bot thì có', () => {
+  const mine = new Set(['tin-cua-bot']);
+  const asked = askedFor(message({ text: 'vic', replyToMessageId: 'tin-cua-bot' }), ME, mine);
+  assert.deepEqual(asked.symbols, ['VIC']);
+  assert.equal(asked.strict, false);      // vẫn chỉ trả lời cái tra được
+  assert.equal(asked.addressed, false);   // và im nếu trong câu không có mã nào
+});
+
+test('trả lời tin của bot bằng một câu không có mã thì bot im', async () => {
+  const { sent } = await withBot([update({ text: 'mua dc k', replyToMessageId: 'tin-cua-bot' })], { expect: 0 });
+  assert.deepEqual(sent, []);
 });
 
 test('nguồn giá chết mà có người gọi thẳng thì nói ra, không im', async () => {
