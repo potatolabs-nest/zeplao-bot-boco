@@ -13,12 +13,14 @@ on:
 env:
   REGISTRY: git.potatolabs.uk
   IMAGE_NAME: zeplao/zeplao-bot-boco
+  CONTAINER_HOST: unix:///var/run/docker.sock
+  REGISTRY_AUTH_FILE: /tmp/containers-auth.json
 
 jobs:
   image:
     runs-on: linux-amd64
     steps:
-      - uses: https://github.com/actions/checkout@v7
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -33,6 +35,10 @@ jobs:
           apt-get install --yes --no-install-recommends podman ca-certificates
           podman --remote version
 
+          test -S /var/run/docker.sock
+          podman --remote version
+          podman --remote info
+
       - uses: redhat-actions/podman-login@v1
         with:
           registry: ${{ env.REGISTRY }}
@@ -41,7 +47,7 @@ jobs:
 
       - name: Build image
         id: build
-        uses: https://github.com/redhat-actions/buildah-build@v3
+        uses: redhat-actions/buildah-build@v3
         with:
           image: ${{ env.IMAGE_NAME }}
           tags: |
@@ -56,7 +62,7 @@ jobs:
             org.opencontainers.image.revision=${{ forgejo.sha }}
 
       - name: Push image
-        uses: https://github.com/redhat-actions/push-to-registry@v3
+        uses: redhat-actions/push-to-registry@v3
         with:
           registry: ${{ env.REGISTRY }}
           image: ${{ steps.build.outputs.image }}
