@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+data
+.env
+*.test.mjs
+README.md
+Dockerfile
+.dockerignore

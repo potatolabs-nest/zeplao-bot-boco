@@ -133,6 +133,24 @@ ZEPLAO_BOT_TOKEN=<token> npm start
 Lên đúng thì nó in `@<tên bot> đang trực bảng giá` rồi số mã niêm yết nó biết. Nhớ tắt chế độ riêng tư ở trang bot, không thì `!vic` không tới được nó. Bất cứ gì khác là
 token sai.
 
+### Bằng image
+
+```bash
+docker run -d --name bocobot --restart unless-stopped \
+  -e ZEPLAO_BOT_TOKEN=<token> \
+  -v bocobot-data:/app/data \
+  ghcr.io/hule-prime/zeplao-bot-boco
+```
+
+Image dựng lại mỗi lần `main` đổi, sau khi bộ test xanh — xem `.github/workflows/image.yml`.
+Thẻ `latest` là bản mới nhất; mỗi commit còn một thẻ riêng theo mã băm, để quay lại được đúng
+bản đang chạy chứ không phải bản gần giống nó.
+
+Không có bước cài đặt nào trong đó, vì repo không phụ thuộc gói nào: không `npm install`, không
+`node_modules`, không lockfile để mà lệch. Chạy dưới người dùng `node` chứ không phải root, và
+`/app/data` là chỗ duy nhất nó ghi — gắn volume vào đó thì khởi động lại không phát lại những
+câu hỏi cũ vào phòng.
+
 | Biến môi trường | Để làm gì |
 | --- | --- |
 | `ZEPLAO_BOT_TOKEN` | Bắt buộc. Token của bot |
@@ -164,6 +182,7 @@ phải chỗ để cắt cho nhanh.
 
 | File | Là gì |
 | --- | --- |
+| `Dockerfile` | Đóng gói, không cài gì, không chạy bằng root |
 | `bocobot.mjs` | Vòng lặp, đọc câu hỏi, luật im lặng, gửi tin |
 | `market/quote.mjs` | Chỗ duy nhất hiểu "giá" nghĩa là gì: chuẩn hoá, câu chữ, phiên giao dịch |
 | `market/vps.mjs` | Nguồn 1 — feed công khai, kèm bộ nhớ vài giây |
