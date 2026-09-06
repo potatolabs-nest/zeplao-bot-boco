@@ -60,6 +60,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           image: ${{ steps.build.outputs.image }}
           tags: ${{ steps.build.outputs.tags }}
-          username: ${{ forgejo.actor }}
-          password: ${{ forgejo.token }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
           remote: true
