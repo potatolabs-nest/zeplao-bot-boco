@@ -18,7 +18,7 @@ jobs:
   image:
     runs-on: linux-amd64
     steps:
-      - uses: actions/checkout@v4
+      - uses: https://github.com/actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -27,27 +27,40 @@ jobs:
       # Không `npm ci`: repo không phụ thuộc gói nào, nên không có gì để cài.
       - run: npm test
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install Podman client
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends podman ca-certificates
+          podman --remote version
 
-      - uses: docker/login-action@v3
+      - uses: redhat-actions/podman-login@v1
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ forgejo.actor }}
           password: ${{ forgejo.token }}
 
-      - id: meta
-        uses: docker/metadata-action@v5
+      - name: Build image
+        id: build
+        uses: https://github.com/redhat-actions/buildah-build@v3
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Thẻ theo commit để quay lại được đúng bản đang chạy, và `latest` để chạy cho nhanh.
+          image: ${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,format=long
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-
-      - uses: docker/build-push-action@v6
-        with:
+            sha-${{ forgejo.sha }}
+            latest
+          containerfiles: |
+            ./Dockerfile
           context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          squash: false
+          labels: |
+            org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.revision=${{ forgejo.sha }}
+
+      - name: Push image
+        uses: https://github.com/redhat-actions/push-to-registry@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          image: ${{ steps.build.outputs.image }}
+          tags: ${{ steps.build.outputs.tags }}
+          username: ${{ forgejo.actor }}
+          password: ${{ forgejo.token }}
+          remote: true
