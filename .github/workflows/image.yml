@@ -14,7 +14,6 @@ env:
   REGISTRY: git.potatolabs.uk
   IMAGE_NAME: zeplao/zeplao-bot-boco
   CONTAINER_HOST: unix:///var/run/docker.sock
-  REGISTRY_AUTH_FILE: /tmp/containers-auth.json
 
 jobs:
   image:
@@ -38,12 +37,6 @@ jobs:
           test -S /var/run/docker.sock
           podman --remote version
           podman --remote info
-
-      - uses: redhat-actions/podman-login@v1
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ forgejo.actor }}
-          password: ${{ forgejo.token }}
 
       - name: Build image
         id: build
