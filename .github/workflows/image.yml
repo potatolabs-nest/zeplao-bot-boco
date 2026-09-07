@@ -77,7 +77,7 @@ jobs:
         env:
           IMAGE_TAG: sha-${{ forgejo.sha }}
         run: |
-          manifest="gitops/apps/zeplao/resources/deployment.yaml"
+          manifest="gitops/apps/zeplao-bot-boco/resources/deployment.yaml"
 
           sed -i -E \
             "s#(image: git\.potatolabs\.uk/zeplao/zeplao-bot-boco:).*#\1${IMAGE_TAG}#" \
