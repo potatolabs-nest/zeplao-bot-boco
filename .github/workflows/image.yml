@@ -63,3 +63,34 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_TOKEN }}
           remote: true
+
+      - name: Checkout home-ops
+        uses: actions/checkout@v7
+        with:
+          repository: homelabs/home-ops
+          ref: main
+          token: ${{ secrets.REGISTRY_TOKEN }}
+          path: home-ops
+
+      - name: Deploy through home-ops
+        working-directory: home-ops
+        env:
+          IMAGE_TAG: sha-${{ forgejo.sha }}
+        run: |
+          manifest="gitops/apps/zeplao/resources/deployment.yaml"
+
+          sed -i -E \
+            "s#(image: git\.potatolabs\.uk/zeplao/zeplao-bot-boco:).*#\1${IMAGE_TAG}#" \
+            "$manifest"
+
+          if git diff --quiet -- "$manifest"; then
+            echo "Image tag is already ${IMAGE_TAG}"
+            exit 0
+          fi
+
+          git config user.name "Zeplao Deploy Bot"
+          git config user.email "deploy-bot@potatolabs.uk"
+
+          git add "$manifest"
+          git commit -m "deploy(zeplao-bot-boco): ${IMAGE_TAG}"
+          git push origin HEAD:main
