@@ -10,6 +10,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: image-${{ forgejo.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: git.potatolabs.uk
   IMAGE_NAME: zeplao/zeplao-bot-boco
@@ -32,11 +36,6 @@ jobs:
         run: |
           apt-get update
           apt-get install --yes --no-install-recommends podman ca-certificates
-          podman --remote version
-
-          test -S /var/run/docker.sock
-          podman --remote version
-          podman --remote info
 
       - name: Build image
         id: build
@@ -63,6 +62,29 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_TOKEN }}
           remote: true
+
+      - name: Cleanup local image
+        if: ${{ always() }}
+        run: |
+          echo "Storage before cleanup:"
+          podman --remote system df || true
+
+          # Remove every local version of this application image.
+          podman --remote image ls \
+            --quiet \
+            --no-trunc \
+            "localhost/${IMAGE_NAME}" |
+            sort -u |
+            while read -r image_id; do
+              test -n "$image_id" || continue
+              podman --remote image rm --force "$image_id"
+            done
+
+          # Remove dangling layers and build cache.
+          podman --remote system prune --force
+
+          echo "Storage after cleanup:"
+          podman --remote system df || true
 
       - name: Checkout home-ops
         uses: actions/checkout@v7
@@ -94,3 +116,4 @@ jobs:
           git add "$manifest"
           git commit -m "deploy(zeplao-bot-boco): ${IMAGE_TAG}"
           git push origin HEAD:main
+
