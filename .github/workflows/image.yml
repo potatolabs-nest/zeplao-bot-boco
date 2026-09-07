@@ -88,7 +88,7 @@ jobs:
             exit 0
           fi
 
-          git config user.name "Zeplao Deploy Bot"
+          git config user.name "Deploy Bot"
           git config user.email "deploy-bot@potatolabs.uk"
 
           git add "$manifest"
