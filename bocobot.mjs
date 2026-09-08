@@ -38,8 +38,8 @@ import { MAX_SYMBOLS, reply } from './market/quote.mjs';
 import { publicFeed, withCache } from './market/vps.mjs';
 import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
-import { makeGuard, tokensIn } from './market/symbols.mjs';
-import { NEWS_SYMBOLS, googleNews, newsReply } from './market/news.mjs';
+import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
+import { googleNews, newsReply } from './market/news.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -166,10 +166,10 @@ export function askedNewsFor(message) {
 
   const symbols = tokensIn(asked.replace(/^tin\b/i, ''));
   if (symbols.length !== 1) {
-    return { addressed: true, error: 'Mỗi lần chỉ xem tin cho một mã: !tin vic hoặc !tin gex.' };
+    return { addressed: true, error: 'Mỗi lần chỉ xem tin cho một mã, ví dụ: !tin vic.' };
   }
-  if (!NEWS_SYMBOLS.has(symbols[0])) {
-    return { addressed: true, error: 'Tin mới hiện hỗ trợ VIC và GEX.' };
+  if (!looksLikeCode(symbols[0])) {
+    return { addressed: true, error: 'Không nhận ra mã cần xem tin.' };
   }
   return { addressed: true, symbol: symbols[0] };
 }

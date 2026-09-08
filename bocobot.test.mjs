@@ -142,36 +142,42 @@ function stubNews({ broken = false } = {}) {
           title: `${symbol} mở rộng dự án mới`,
           summary: 'Doanh nghiệp công bố kế hoạch đầu tư và cập nhật tiến độ trong quý này.',
           source: 'Nguồn A',
+          link: `https://example.test/${symbol.toLowerCase()}/1`,
           publishedAt: new Date('2026-09-08T02:30:00Z'),
         },
         {
           title: `${symbol} có thêm chuyển động trên thị trường`,
           summary: 'Cổ phiếu được nhắc tới trong nhóm vốn hóa lớn sau phiên giao dịch gần nhất.',
           source: 'Nguồn B',
+          link: `https://example.test/${symbol.toLowerCase()}/2`,
           publishedAt: new Date('2026-09-08T01:00:00Z'),
         },
         {
           title: `${symbol} cập nhật thông tin doanh nghiệp`,
           summary: 'Các mảng kinh doanh chính ghi nhận thêm thông tin mới.',
           source: 'Nguồn C',
+          link: `https://example.test/${symbol.toLowerCase()}/3`,
           publishedAt: new Date('2026-09-07T09:00:00Z'),
         },
         {
           title: `${symbol} được nhà đầu tư chú ý`,
           summary: 'Thanh khoản tăng so với trung bình những phiên trước đó.',
           source: 'Nguồn D',
+          link: `https://example.test/${symbol.toLowerCase()}/4`,
           publishedAt: new Date('2026-09-07T08:00:00Z'),
         },
         {
           title: `${symbol} xuất hiện trong báo cáo mới`,
           summary: 'Một báo cáo thị trường cập nhật góc nhìn về triển vọng cổ phiếu.',
           source: 'Nguồn E',
+          link: `https://example.test/${symbol.toLowerCase()}/5`,
           publishedAt: new Date('2026-09-07T07:00:00Z'),
         },
         {
           title: `${symbol} tin thứ sáu`,
           summary: 'Tin này không được hiện vì chỉ lấy năm tin.',
           source: 'Nguồn F',
+          link: `https://example.test/${symbol.toLowerCase()}/6`,
           publishedAt: new Date('2026-09-06T07:00:00Z'),
         },
       ];
@@ -332,16 +338,18 @@ test('!tin vic là lệnh tin tức, không bị đọc thành giá TIN và VIC'
   const { sent } = await withBot([update({ text: '!tin vic' })], { news });
   assert.deepEqual(news.calls, ['VIC']);
   assert.equal(sent.length, 1);
-  assert.match(sent[0].text, /^5 tin gần nhất về VIC:\n1\. VIC mở rộng dự án mới/);
-  assert.equal(sent[0].text.split('\n').length, 6);
+  assert.match(sent[0].text, /^5 bài viết gần nhất về VIC:\n1\. VIC mở rộng dự án mới/);
+  assert.equal(sent[0].text.split('\n').length, 11);
+  assert.match(sent[0].text, /https:\/\/example\.test\/vic\/1/);
   assert.doesNotMatch(sent[0].text, /^TIN /m);
 });
 
-test('!tin gex cũng là lệnh tin tức', async () => {
+test('!tin chạy động cho mọi mã hợp lệ', async () => {
   const news = stubNews();
-  const { sent } = await withBot([update({ text: '!tin gex' })], { news });
-  assert.deepEqual(news.calls, ['GEX']);
-  assert.match(sent[0].text, /^5 tin gần nhất về GEX:/);
+  const { sent } = await withBot([update({ text: '!tin fpt' })], { news });
+  assert.deepEqual(news.calls, ['FPT']);
+  assert.match(sent[0].text, /^5 bài viết gần nhất về FPT:/);
+  assert.match(sent[0].text, /https:\/\/example\.test\/fpt\/1/);
 });
 
 test('!tin một mình vẫn là hỏi giá mã TIN', async () => {
@@ -360,7 +368,7 @@ test('!tin chỉ nhận một mã tin tức mỗi lần', async () => {
   const news = stubNews();
   const { sent } = await withBot([update({ text: '!tin vic gex' })], { news });
   assert.deepEqual(news.calls, []);
-  assert.equal(sent[0].text, 'Mỗi lần chỉ xem tin cho một mã: !tin vic hoặc !tin gex.');
+  assert.equal(sent[0].text, 'Mỗi lần chỉ xem tin cho một mã, ví dụ: !tin vic.');
   assert.doesNotMatch(sent[0].text, /^TIN /m);
 });
 

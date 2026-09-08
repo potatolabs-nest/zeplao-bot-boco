@@ -3,24 +3,15 @@
 // Không kéo thêm thư viện chỉ để đọc một RSS feed nhỏ. Phần bot nhận một nguồn có hàm `latest()`
 // giống như nguồn giá nhận `quotes()`, để bộ test thay bằng dữ liệu giả và không phải chạm mạng.
 
-export const NEWS_SYMBOLS = new Set(['VIC', 'GEX']);
-
 export const NEWS_LIMIT = 5;
-
-const QUERY = {
-  VIC: 'VIC OR Vingroup OR "Tập đoàn Vingroup" cổ phiếu chứng khoán',
-  GEX: 'GEX OR GELEX OR "Tập đoàn GELEX" cổ phiếu chứng khoán',
-};
 
 export function googleNews({ fetcher = fetch } = {}) {
   return {
     async latest(symbol, limit = NEWS_LIMIT) {
       const normalized = String(symbol ?? '').toUpperCase();
-      const query = QUERY[normalized];
-      if (!query) return [];
 
       const url = new URL('https://news.google.com/rss/search');
-      url.searchParams.set('q', query);
+      url.searchParams.set('q', `${normalized} cổ phiếu chứng khoán`);
       url.searchParams.set('hl', 'vi');
       url.searchParams.set('gl', 'VN');
       url.searchParams.set('ceid', 'VN:vi');
@@ -40,13 +31,14 @@ export function newsReply(symbol, articles) {
   const items = articles.filter(Boolean).slice(0, NEWS_LIMIT);
   if (!items.length) return `Chưa thấy tin mới cho ${normalized}.`;
 
-  const lines = [`5 tin gần nhất về ${normalized}:`];
+  const lines = [`5 bài viết gần nhất về ${normalized}:`];
   for (const [index, article] of items.entries()) {
     const title = oneLine(article.title);
     const summary = shorten(oneLine(article.summary), 150);
     const meta = [article.source, when(article.publishedAt)].filter(Boolean).join(' · ');
     const body = summary && summary !== title ? `${title} — ${summary}` : title;
-    lines.push(`${index + 1}. ${body}${meta ? ` (${meta})` : ''}`);
+    const link = oneLine(article.link);
+    lines.push(`${index + 1}. ${body}${meta ? ` (${meta})` : ''}${link ? `\n${link}` : ''}`);
   }
   return lines.join('\n');
 }
