@@ -13,7 +13,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 
 import { askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
-import { MAX_NEWS_REPLY_CHARS } from './market/news.mjs';
+import { googleNews, MAX_NEWS_REPLY_CHARS } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
 const message = (fields) => ({ conversationId: 'p1', conversationType: 'group', messageId: 'm1', ...fields });
@@ -359,6 +359,36 @@ test('tin tức có 5 link nhưng vẫn nằm dưới giới hạn một tin nh�
   assert.deepEqual(news.calls, ['MWG']);
   assert.equal(sent[0].text.match(/^https:\/\/example\.test\/mwg\//gm).length, 5);
   assert.ok(sent[0].text.length <= MAX_NEWS_REPLY_CHARS);
+});
+
+test('nguồn tin đổi link Google News thành link gốc của bài báo', async () => {
+  const seen = [];
+  const feed = `<?xml version="1.0"?>
+    <rss><channel><item>
+      <title><![CDATA[FPT có tin mới - Báo Gốc]]></title>
+      <link>https://news.google.com/rss/articles/ABCDEF?oc=5</link>
+      <source>Báo Gốc</source>
+      <description><![CDATA[FPT có tin mới]]></description>
+      <pubDate>Tue, 08 Sep 2026 02:30:00 GMT</pubDate>
+    </item></channel></rss>`;
+
+  const news = googleNews({
+    async fetcher(url, options = {}) {
+      seen.push({ url: String(url), method: options.method ?? 'GET' });
+      if (String(url).startsWith('https://news.google.com/rss/search')) return new Response(feed);
+      if (String(url).startsWith('https://news.google.com/rss/articles/ABCDEF')) {
+        return new Response('<c-wiz><div data-n-a-sg="sig" data-n-a-ts="1788858484"></div></c-wiz>');
+      }
+      if (String(url).startsWith('https://news.google.com/_/DotsSplashUi/data/batchexecute')) {
+        return new Response(')]}\'\n\n[["wrb.fr","Fbv4je","[\\"garturlres\\",\\"https://bao-goc.test/fpt\\",1]"]]');
+      }
+      throw new Error(`không mong fetch ${url}`);
+    },
+  });
+
+  const articles = await news.latest('FPT');
+  assert.equal(articles[0].link, 'https://bao-goc.test/fpt');
+  assert.deepEqual(seen.map((call) => call.method), ['GET', 'GET', 'POST']);
 });
 
 test('!tin một mình vẫn là hỏi giá mã TIN', async () => {

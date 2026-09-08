@@ -20,11 +20,62 @@ export function googleNews({ fetcher = fetch } = {}) {
       const response = await fetcher(url);
       if (!response.ok) throw new Error(`Google News trả lời ${response.status}`);
 
-      return parseRss(await response.text())
+      const articles = parseRss(await response.text())
         .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
         .slice(0, limit);
+
+      return Promise.all(articles.map(async (article) => ({
+        ...article,
+        link: await originalUrl(article.link, fetcher).catch(() => article.link),
+      })));
     },
   };
+}
+
+export async function originalUrl(link, fetcher = fetch) {
+  const url = new URL(link);
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (url.hostname !== 'news.google.com' || parts.at(-2) !== 'articles') return link;
+
+  const id = parts.at(-1);
+  const page = await fetcher(link, {
+    headers: { 'user-agent': 'Mozilla/5.0' },
+    signal: timeoutSignal(4000),
+  });
+  if (!page.ok) throw new Error(`Google News article trả lời ${page.status}`);
+
+  const html = await page.text();
+  const signature = html.match(/data-n-a-sg="([^"]+)"/)?.[1];
+  const timestamp = Number(html.match(/data-n-a-ts="([^"]+)"/)?.[1]);
+  if (!id || !signature || !Number.isFinite(timestamp)) throw new Error('Không đọc được tham số link gốc');
+
+  const request = [[[
+    'Fbv4je',
+    JSON.stringify([
+      'garturlreq',
+      [['X', 'X', ['X', 'X'], null, null, 1, 1, 'US:en', null, 1, null, null, null, null, null, 0, 1],
+        'X', 'X', 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0],
+      id,
+      timestamp,
+      signature,
+    ]),
+  ]]];
+  const decoded = await fetcher('https://news.google.com/_/DotsSplashUi/data/batchexecute', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      'user-agent': 'Mozilla/5.0',
+    },
+    body: `f.req=${encodeURIComponent(JSON.stringify(request))}`,
+    signal: timeoutSignal(4000),
+  });
+  if (!decoded.ok) throw new Error(`Google News decode trả lời ${decoded.status}`);
+
+  const payload = JSON.parse((await decoded.text()).split('\n\n')[1]);
+  const result = JSON.parse(payload.find((row) => row[0] === 'wrb.fr' && row[1] === 'Fbv4je')?.[2] ?? '[]');
+  const original = result[1];
+  if (!/^https?:\/\//i.test(original)) throw new Error('Google News không trả link gốc');
+  return original;
 }
 
 export function newsReply(symbol, articles) {
@@ -144,4 +195,10 @@ function when(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(value);
+}
+
+function timeoutSignal(ms) {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms).unref?.();
+  return controller.signal;
 }
