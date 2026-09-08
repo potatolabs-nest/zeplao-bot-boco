@@ -4,6 +4,7 @@
 // giống như nguồn giá nhận `quotes()`, để bộ test thay bằng dữ liệu giả và không phải chạm mạng.
 
 export const NEWS_LIMIT = 5;
+export const MAX_NEWS_REPLY_CHARS = 1900;
 
 export function googleNews({ fetcher = fetch } = {}) {
   return {
@@ -31,16 +32,16 @@ export function newsReply(symbol, articles) {
   const items = articles.filter(Boolean).slice(0, NEWS_LIMIT);
   if (!items.length) return `Chưa thấy tin mới cho ${normalized}.`;
 
-  const lines = [`5 bài viết gần nhất về ${normalized}:`];
-  for (const [index, article] of items.entries()) {
-    const title = oneLine(article.title);
-    const summary = shorten(oneLine(article.summary), 150);
-    const meta = [article.source, when(article.publishedAt)].filter(Boolean).join(' · ');
-    const body = summary && summary !== title ? `${title} — ${summary}` : title;
-    const link = oneLine(article.link);
-    lines.push(`${index + 1}. ${body}${meta ? ` (${meta})` : ''}${link ? `\n${link}` : ''}`);
+  for (const option of [
+    { title: 100, summary: 80, meta: true },
+    { title: 90, summary: 0, meta: true },
+    { title: 70, summary: 0, meta: false },
+  ]) {
+    const text = renderReply(normalized, items, option);
+    if (text.length <= MAX_NEWS_REPLY_CHARS) return text;
   }
-  return lines.join('\n');
+
+  return renderReply(normalized, items, { title: 50, summary: 0, meta: false });
 }
 
 export function parseRss(xml) {
@@ -98,7 +99,21 @@ function oneLine(value) {
 
 function shorten(value, max) {
   if (!value || value.length <= max) return value;
+  if (max <= 1) return '';
   return `${value.slice(0, max - 1).trimEnd()}…`;
+}
+
+function renderReply(symbol, articles, option) {
+  const lines = [`5 bài viết gần nhất về ${symbol}:`];
+  for (const [index, article] of articles.entries()) {
+    const title = shorten(oneLine(article.title), option.title);
+    const summary = shorten(oneLine(article.summary), option.summary);
+    const meta = option.meta ? [article.source, when(article.publishedAt)].filter(Boolean).join(' · ') : '';
+    const body = summary && summary !== title ? `${title} — ${summary}` : title;
+    const link = oneLine(article.link);
+    lines.push(`${index + 1}. ${body}${meta ? ` (${meta})` : ''}${link ? `\n${link}` : ''}`);
+  }
+  return lines.join('\n');
 }
 
 function sourceFromGoogleTitle(title) {

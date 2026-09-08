@@ -13,6 +13,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 
 import { askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
+import { MAX_NEWS_REPLY_CHARS } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
 const message = (fields) => ({ conversationId: 'p1', conversationType: 'group', messageId: 'm1', ...fields });
@@ -350,6 +351,14 @@ test('!tin chạy động cho mọi mã hợp lệ', async () => {
   assert.deepEqual(news.calls, ['FPT']);
   assert.match(sent[0].text, /^5 bài viết gần nhất về FPT:/);
   assert.match(sent[0].text, /https:\/\/example\.test\/fpt\/1/);
+});
+
+test('tin tức có 5 link nhưng vẫn nằm dưới giới hạn một tin nhắn', async () => {
+  const news = stubNews();
+  const { sent } = await withBot([update({ text: '!tin mwg' })], { news });
+  assert.deepEqual(news.calls, ['MWG']);
+  assert.equal(sent[0].text.match(/^https:\/\/example\.test\/mwg\//gm).length, 5);
+  assert.ok(sent[0].text.length <= MAX_NEWS_REPLY_CHARS);
 });
 
 test('!tin một mình vẫn là hỏi giá mã TIN', async () => {
