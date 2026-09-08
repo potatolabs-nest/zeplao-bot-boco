@@ -39,6 +39,7 @@ import { publicFeed, withCache } from './market/vps.mjs';
 import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
 import { makeGuard, tokensIn } from './market/symbols.mjs';
+import { NEWS_SYMBOLS, googleNews, newsReply } from './market/news.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -68,6 +69,7 @@ const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
 export const SORRY = {
   nothing: 'Không nhận ra mã nào.',
   source: 'Nguồn giá đang không trả lời. Thử lại sau một lát.',
+  news: 'Nguồn tin đang không trả lời. Thử lại sau một lát.',
 };
 
 /**
@@ -147,6 +149,31 @@ export function askedFor(message, me, mine = new Set()) {
   return { symbols: tokensIn(asked), addressed: named, strict: false };
 }
 
+/**
+ * `!tin vic` là lệnh tin tức, còn `!tin` một mình vẫn là hỏi giá mã TIN.
+ *
+ * Chỗ này chạy trước `askedFor`, vì nếu để bộ đọc giá nhìn thấy cả câu thì nó sẽ hiểu thành hai
+ * mã `TIN` và `VIC`. Chỉ có dạng `!tin <một mã>` đi vào đây; một câu dài hơn được giữ lại để
+ * nhắc người hỏi chọn đúng một mã thay vì âm thầm đem đi tra giá.
+ */
+export function askedNewsFor(message) {
+  const text = String(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+
+  const asked = text.slice(CALL.length).trim();
+  if (!/^tin(\s|$)/i.test(asked)) return null;
+  if (/^tin$/i.test(asked)) return null;
+
+  const symbols = tokensIn(asked.replace(/^tin\b/i, ''));
+  if (symbols.length !== 1) {
+    return { addressed: true, error: 'Mỗi lần chỉ xem tin cho một mã: !tin vic hoặc !tin gex.' };
+  }
+  if (!NEWS_SYMBOLS.has(symbols[0])) {
+    return { addressed: true, error: 'Tin mới hiện hỗ trợ VIC và GEX.' };
+  }
+  return { addressed: true, symbol: symbols[0] };
+}
+
 // ---- vòng lặp -------------------------------------------------------------------------------
 
 /**
@@ -163,6 +190,7 @@ export async function run(token, {
   signal,
   api = API,
   market = withCache(chain(publicFeed(), dnse())),
+  news = googleNews(),
   statePath = STATE,
   at = () => new Date(),
 } = {}) {
@@ -243,6 +271,23 @@ export async function run(token, {
   }
 
   async function onMessage(message) {
+    const newsAsked = askedNewsFor(message);
+    if (newsAsked) {
+      if (newsAsked.error) {
+        await say(message.conversationId, newsAsked.error, message.messageId);
+        return;
+      }
+
+      try {
+        const articles = await news.latest(newsAsked.symbol);
+        await say(message.conversationId, newsReply(newsAsked.symbol, articles), message.messageId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, SORRY.news, message.messageId);
+      }
+      return;
+    }
+
     const asked = askedFor(message, me, mine);
     if (!asked) return;
 
