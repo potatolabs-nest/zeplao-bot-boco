@@ -12,21 +12,38 @@ const INTRADAY_RESOLUTION = '5';
 const DAILY_RESOLUTION = '1D';
 const MAX_INTRADAY_POINTS = 64;
 const MAX_RANGE_POINTS = 96;
+const MAX_RANGE_DAYS = 365 * 20;
 
-export const CHART_PERIODS = new Map([
-  ['1m', { key: '1m', days: 31, label: '1 tháng' }],
-  ['6m', { key: '6m', days: 183, label: '6 tháng' }],
-  ['1n', { key: '1n', days: 370, label: '1 năm' }],
-  ['5n', { key: '5n', days: 1835, label: '5 năm' }],
-]);
+export function parseChartPeriod(value) {
+  const matched = /^([1-9]\d{0,3})([dmy]|n)$/i.exec(String(value ?? '').trim());
+  if (!matched) return null;
+
+  const count = Number(matched[1]);
+  const writtenUnit = matched[2].toLowerCase();
+  const unit = writtenUnit === 'n' ? 'y' : writtenUnit;
+  const spanDays = unit === 'd' ? count : unit === 'm' ? count * 31 : count * 365;
+  if (!Number.isSafeInteger(count) || spanDays > MAX_RANGE_DAYS) return null;
+
+  const labelUnit = unit === 'd' ? 'ngày' : unit === 'm' ? 'tháng' : 'năm';
+  return {
+    key: `${count}${writtenUnit}`,
+    count,
+    unit,
+    label: `${count} ${labelUnit}`,
+    intraday: unit === 'd' && count === 1,
+    spanDays,
+    lookbackDays: unit === 'd' ? count * 2 + 10 : spanDays + 10,
+    limit: unit === 'd' && count > 1 ? count : null,
+  };
+}
 
 export function intradayChart({ base = CHART, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now() } = {}) {
   async function candles(symbol, periodKey) {
     const normalized = String(symbol ?? '').toUpperCase();
-    const period = CHART_PERIODS.get(String(periodKey ?? '').toLowerCase());
+    const period = parseChartPeriod(periodKey);
     const to = Math.floor(now() / 1000);
-    const days = period?.days ?? LOOKBACK_DAYS;
-    const resolution = period ? DAILY_RESOLUTION : INTRADAY_RESOLUTION;
+    const days = period?.lookbackDays ?? LOOKBACK_DAYS;
+    const resolution = period && !period.intraday ? DAILY_RESOLUTION : INTRADAY_RESOLUTION;
     const from = to - days * 24 * 60 * 60;
     const url = `${base}/${kindOf(normalized)}?from=${from}&to=${to}&symbol=${normalized}&resolution=${resolution}`;
 
@@ -35,7 +52,9 @@ export function intradayChart({ base = CHART, fetchImpl = fetch, timeout = TIMEO
 
     const data = await response.json();
     if (!Array.isArray(data?.t) || !Array.isArray(data?.c) || data.t.length !== data.c.length) return null;
-    return period ? rangeSession(normalized, data, period) : latestSession(normalized, data);
+    return period && !period.intraday
+      ? rangeSession(normalized, data, { ...period, from: to - period.spanDays * 24 * 60 * 60 })
+      : latestSession(normalized, data);
   }
 
   return {
@@ -85,7 +104,9 @@ export function latestSession(symbol, data) {
 }
 
 export function rangeSession(symbol, data, period) {
-  const points = rowsFrom(data);
+  let points = rowsFrom(data);
+  if (period.limit) points = points.slice(-period.limit);
+  else if (period.from) points = points.filter((point) => point.time >= period.from);
   if (points.length < 2) return null;
 
   const sampled = sample(points, MAX_RANGE_POINTS);
@@ -102,7 +123,7 @@ export function rangeSession(symbol, data, period) {
     period: period.key,
     periodLabel: period.label,
     day,
-    labels: sampled.map((point) => dateLabel(point.time, period.key)),
+    labels: sampled.map((point) => dateLabel(point.time, period)),
     closes: sampled.map((point) => round(point.close)),
     open,
     close,
@@ -254,7 +275,7 @@ function label(seconds) {
 
 function dateLabel(seconds, period) {
   const at = new Date(seconds * 1000);
-  if (period === '5n') {
+  if (period?.unit === 'y') {
     return new Intl.DateTimeFormat('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',
       month: '2-digit',

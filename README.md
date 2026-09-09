@@ -16,7 +16,7 @@ dài đúng một dòng.
 | Gõ | Được gì |
 | --- | --- |
 | `!vic` | Một mã, kèm chart biến động giá trong phiên gần nhất và trục giá |
-| `!gex 1m`, `!gex 6m`, `!gex 1n`, `!gex 5n` | Một mã, kèm chart theo 1 tháng, 6 tháng, 1 năm, hoặc 5 năm |
+| `!gex 1d`, `!gex 2d`, `!gex 3m`, `!gex 4y` | Một mã, kèm chart theo số ngày/tháng/năm tuỳ gõ |
 | `!vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
@@ -29,8 +29,11 @@ tảng cho mỗi phòng một tin mỗi giây; ba mã thành ba tin là hai lầ
 
 Riêng `!tin <mã>` là lệnh đọc tin. Mỗi lần chỉ nhận một mã, để `!tin vic gex` không bị hiểu lẫn
 thành hỏi giá ba mã `TIN`, `VIC`, `GEX`. `!tin` đứng một mình vẫn là hỏi giá mã `TIN`. Chart
-dài hạn cũng chỉ nhận một mã mỗi lần: `!gex 1n` được, còn hỏi nhiều mã thì bot chỉ trả giá,
+dài hạn cũng chỉ nhận một mã mỗi lần: `!gex 1y` được, còn hỏi nhiều mã thì bot chỉ trả giá,
 không gắn chart riêng.
+
+Kỳ hạn chart nhận từ `1d` tới tối đa `20y`: `d` là ngày, `m` là tháng, `y` là năm. Chữ `n` vẫn
+được hiểu là năm, nên `!gex 5n` và `!gex 5y` đều chạy.
 
 ## Vì sao là dấu chấm than, không phải gạch chéo
 

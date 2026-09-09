@@ -40,7 +40,7 @@ import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
 import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
 import { googleNews, newsMessage } from './market/news.mjs';
-import { CHART_PERIODS, intradayChart, withRich } from './market/chart.mjs';
+import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -179,7 +179,7 @@ export function askedNewsFor(message) {
  * `!gex 1n` vẫn là hỏi giá GEX, nhưng chart đi kèm dùng khung 1 năm.
  *
  * Chỉ nhận đúng dạng `!<mã> <kỳ hạn>` để một câu hỏi nhiều mã không bị hiểu nhầm là chart riêng.
- * `1m`, `6m`, `1n`, `5n` là các kỳ hạn đang hỗ trợ.
+ * Kỳ hạn là số cộng `d`, `m`, `y`; `n` được giữ như alias tiếng Việt của `y`.
  */
 export function askedChartFor(message) {
   const text = String(message?.text ?? '').trimStart();
@@ -189,9 +189,9 @@ export function askedChartFor(message) {
   if (parts.length !== 2) return null;
 
   const symbol = parts[0].toUpperCase();
-  const period = parts[1].toLowerCase();
-  if (!looksLikeCode(symbol) || !CHART_PERIODS.has(period)) return null;
-  return { symbol, period };
+  const period = parseChartPeriod(parts[1]);
+  if (!looksLikeCode(symbol) || !period) return null;
+  return { symbol, period: period.key };
 }
 
 // ---- vòng lặp -------------------------------------------------------------------------------

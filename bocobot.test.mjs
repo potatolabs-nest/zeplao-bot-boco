@@ -13,7 +13,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 
 import { askedChartFor, askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
-import { chartRich, rangeSession } from './market/chart.mjs';
+import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
@@ -199,6 +199,18 @@ function stubChart({ broken = false, rich = null } = {}) {
   };
 }
 
+function pickPeriod(period) {
+  if (!period) return null;
+  return {
+    key: period.key,
+    count: period.count,
+    unit: period.unit,
+    label: period.label,
+    intraday: period.intraday,
+    limit: period.limit,
+  };
+}
+
 /**
  * Cho bot chạy tới khi nó đã làm xong việc, rồi bảo nó dừng.
  *
@@ -353,9 +365,33 @@ test('dấu gọi chạy thật, từ đầu tới cuối', async () => {
 
 test('dấu gọi nhận kỳ hạn chart cho đúng một mã', () => {
   assert.deepEqual(askedChartFor(message({ text: '!gex 1n' })), { symbol: 'GEX', period: '1n' });
+  assert.deepEqual(askedChartFor(message({ text: '!gex 2d' })), { symbol: 'GEX', period: '2d' });
+  assert.deepEqual(askedChartFor(message({ text: '!gex 3m' })), { symbol: 'GEX', period: '3m' });
+  assert.deepEqual(askedChartFor(message({ text: '!gex 2y' })), { symbol: 'GEX', period: '2y' });
   assert.deepEqual(askedChartFor(message({ text: '  !gex 6M' })), { symbol: 'GEX', period: '6m' });
   assert.equal(askedChartFor(message({ text: '!gex 1n hpg' })), null);
   assert.equal(askedChartFor(message({ text: '!tin gex' })), null);
+  assert.equal(askedChartFor(message({ text: '!gex 0d' })), null);
+});
+
+test('kỳ hạn chart được đọc động từ số và đơn vị', () => {
+  assert.deepEqual(
+    pickPeriod(parseChartPeriod('1d')),
+    { key: '1d', count: 1, unit: 'd', label: '1 ngày', intraday: true, limit: null },
+  );
+  assert.deepEqual(
+    pickPeriod(parseChartPeriod('12m')),
+    { key: '12m', count: 12, unit: 'm', label: '12 tháng', intraday: false, limit: null },
+  );
+  assert.deepEqual(
+    pickPeriod(parseChartPeriod('4y')),
+    { key: '4y', count: 4, unit: 'y', label: '4 năm', intraday: false, limit: null },
+  );
+  assert.deepEqual(
+    pickPeriod(parseChartPeriod('5n')),
+    { key: '5n', count: 5, unit: 'y', label: '5 năm', intraday: false, limit: null },
+  );
+  assert.equal(parseChartPeriod('21y'), null);
 });
 
 test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', async () => {
@@ -410,6 +446,47 @@ test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async 
   assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
   assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
   assert.match(sent[0].rich.blocks[1].text, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
+});
+
+test('chart 1d dùng nến trong phiên, còn kỳ hạn dài dùng nến ngày', async () => {
+  const urls = [];
+  const chart = intradayChart({
+    now: () => Date.parse('2026-09-09T08:00:00Z'),
+    async fetchImpl(url) {
+      urls.push(String(url));
+      const daily = String(url).includes('resolution=1D');
+      return new Response(JSON.stringify(daily
+        ? {
+          t: [
+            Date.parse('2026-09-07T03:00:00Z') / 1000,
+            Date.parse('2026-09-08T03:00:00Z') / 1000,
+            Date.parse('2026-09-09T03:00:00Z') / 1000,
+          ],
+          c: [18, 19, 20],
+          h: [18.2, 19.2, 20.2],
+          l: [17.8, 18.8, 19.8],
+          v: [100, 200, 300],
+        }
+        : {
+          t: [
+            Date.parse('2026-09-09T02:15:00Z') / 1000,
+            Date.parse('2026-09-09T02:20:00Z') / 1000,
+          ],
+          c: [18, 18.1],
+          h: [18.1, 18.2],
+          l: [17.9, 18],
+          v: [100, 200],
+        }));
+    },
+  });
+
+  await chart.rich('GEX', {}, '1d');
+  const ranged = await chart.rich('GEX', {}, '2d');
+
+  assert.match(urls[0], /resolution=5/);
+  assert.match(urls[1], /resolution=1D/);
+  assert.equal(ranged.image.fileName, 'gex-2d-2026-09-09.svg');
+  assert.match(ranged.blocks[0].text, /Đầu kỳ 19/);
 });
 
 test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () => {
