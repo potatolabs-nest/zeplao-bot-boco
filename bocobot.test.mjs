@@ -372,12 +372,13 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
 
   assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIX']);
   assert.match(sent[0].text, /^VIX 256,1/);
+  assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
+  assert.match(sent[0].image.svg, /<line x1="86" y1="64" x2="86"/);
+  assert.match(sent[0].image.svg, />13,45</);
+  assert.match(sent[0].image.svg, />13,2</);
+  assert.match(sent[0].image.svg, />13,15</);
   assert.equal(sent[0].rich.blocks[0].type, 'paragraph');
-  assert.equal(sent[0].rich.blocks[1].type, 'paragraph');
-  assert.match(sent[0].rich.blocks[1].text, /Thang Y: \+250đ = 13,45 · 0đ = 13,2 · -50đ = 13,15/);
-  assert.equal(sent[0].rich.blocks[2].type, 'chart');
-  assert.equal(sent[0].rich.blocks[2].chart, 'area');
-  assert.deepEqual(sent[0].rich.blocks[2].series[0].values, [0, 150, 200]);
+  assert.match(sent[0].rich.blocks[1].text, /Cao 13,45 \(\+250đ\)/);
 });
 
 test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () => {
@@ -397,10 +398,9 @@ test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () 
     percent: 0.78,
   }, { reference: 12.9 });
 
-  assert.equal(rich.blocks[1].labels.length, 6);
-  assert.equal(rich.blocks[1].labels[0], '09:15');
-  assert.equal(rich.blocks[1].labels.at(-1), '14:45');
-  assert.equal(rich.blocks[1].series[0].values.length, 46);
+  assert.match(rich.image.svg, />09:15</);
+  assert.match(rich.image.svg, />14:45</);
+  assert.doesNotMatch(rich.image.svg, />09:40</);
 });
 
 test('chart vẽ biến động theo đồng để không bị bẹt sát trục 0', () => {
@@ -417,12 +417,13 @@ test('chart vẽ biến động theo đồng để không bị bẹt sát trục
     percent: 0,
   }, { reference: 27 });
 
-  assert.match(rich.blocks[0].text, /Thang Y: \+850đ = 28,2 · 0đ = 27,35 · -200đ = 27,15/);
-  assert.equal(rich.blocks[1].chart, 'area');
-  assert.deepEqual(rich.blocks[1].series[0].values, [0, 850, -200, 0]);
-  assert.deepEqual(rich.blocks[1].series[1].values, [-350, -350, -350, -350]);
-  assert.match(rich.blocks[2].text, /Cao 28,2 \(\+850đ\)/);
-  assert.match(rich.blocks[2].text, /Thấp 27,15 \(-200đ\)/);
+  assert.match(rich.image.svg, />28,2</);
+  assert.match(rich.image.svg, />27,35</);
+  assert.match(rich.image.svg, />27,15</);
+  assert.match(rich.image.svg, /<polyline points=/);
+  assert.doesNotMatch(rich.blocks[0].text, /Thang Y/);
+  assert.match(rich.blocks[0].text, /Cao 28,2 \(\+850đ\)/);
+  assert.match(rich.blocks[0].text, /Thấp 27,15 \(-200đ\)/);
 });
 
 test('hỏi nhiều mã thì không kèm chart', async () => {

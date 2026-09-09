@@ -15,7 +15,7 @@ dài đúng một dòng.
 
 | Gõ | Được gì |
 | --- | --- |
-| `!vic` | Một mã, kèm chart biến động giá trong phiên gần nhất |
+| `!vic` | Một mã, kèm chart biến động giá trong phiên gần nhất và trục giá |
 | `!vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
@@ -189,7 +189,7 @@ phải chỗ để cắt cho nhanh.
 | `Dockerfile` | Đóng gói, không cài gì, không chạy bằng root |
 | `bocobot.mjs` | Vòng lặp, đọc câu hỏi, luật im lặng, gửi tin |
 | `market/quote.mjs` | Chỗ duy nhất hiểu "giá" nghĩa là gì: chuẩn hoá, câu chữ, phiên giao dịch |
-| `market/chart.mjs` | Nến 5 phút và rich chart cho một mã |
+| `market/chart.mjs` | Nến 5 phút và SVG chart có trục giá cho một mã |
 | `market/news.mjs` | Nguồn tin RSS và câu chữ cho `!tin <mã>` |
 | `market/vps.mjs` | Nguồn 1 — feed công khai, kèm bộ nhớ vài giây |
 | `market/dnse.mjs` | Nguồn 2 và 3 — nến ngày, và tầng có khoá |
