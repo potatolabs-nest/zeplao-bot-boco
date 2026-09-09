@@ -4,7 +4,7 @@
 // DNSE intraday 5 phút, rồi chọn phiên mới nhất có nến: hôm nay nếu có, hoặc phiên gần nhất
 // trước đó nếu hôm nay nghỉ/chưa mở cửa.
 import { CHART, kindOf } from './dnse.mjs';
-import { money } from './quote.mjs';
+import { count, money } from './quote.mjs';
 
 const TIMEOUT_MS = 8000;
 const LOOKBACK_DAYS = 10;
@@ -79,26 +79,29 @@ export function latestSession(symbol, data) {
 export function chartRich(session, quote) {
   const direction = session.change > 0 ? 'tăng' : session.change < 0 ? 'giảm' : 'đi ngang';
   const color = session.change > 0 ? '#16a34a' : session.change < 0 ? '#dc2626' : '#64748b';
-  const reference = quote?.reference > 0 ? round(quote.reference) : null;
+  const baseline = session.open;
+  const deltas = session.closes.map((price) => dong(price - baseline));
   const series = [
-    { name: 'Giá', values: session.closes, color },
+    { name: 'Biến động', values: deltas, color },
   ];
-  if (reference) {
-    series.push({ name: 'Tham chiếu', values: session.closes.map(() => reference), color: '#94a3b8' });
+  if (quote?.reference > 0) {
+    series.push({ name: 'Tham chiếu', values: session.closes.map(() => dong(quote.reference - baseline)), color: '#94a3b8' });
   }
 
+  const highMove = dong(session.high - baseline);
+  const lowMove = dong(session.low - baseline);
   return {
     blocks: [
       {
         type: 'chart',
-        chart: 'line',
-        title: `${session.symbol} trong phiên ${formatDay(session.day)} · ${direction} ${signed(session.change)} (${signed(session.percent)}%)`,
+        chart: 'area',
+        title: `${session.symbol} trong phiên ${formatDay(session.day)} · ${direction} ${signedDong(dong(session.change))} (${signed(session.percent)}%)`,
         labels: axisLabels(session.labels),
         series,
       },
       {
         type: 'paragraph',
-        text: `Mở ${money(session.open)} · Cao ${money(session.high)} · Thấp ${money(session.low)} · Đóng ${money(session.close)}`,
+        text: `Mở ${money(session.open)} · Cao ${money(session.high)} (${signedDong(highMove)}) · Thấp ${money(session.low)} (${signedDong(lowMove)}) · Đóng ${money(session.close)}`,
       },
     ],
   };
@@ -156,6 +159,17 @@ function signed(value) {
   if (value > 0) return `+${rounded}`;
   if (value < 0) return `-${rounded}`;
   return rounded;
+}
+
+function signedDong(value) {
+  const rounded = count(Math.abs(value));
+  if (value > 0) return `+${rounded}đ`;
+  if (value < 0) return `-${rounded}đ`;
+  return '0đ';
+}
+
+function dong(value) {
+  return Math.round(Number(value) * 1000);
 }
 
 function round(value) {

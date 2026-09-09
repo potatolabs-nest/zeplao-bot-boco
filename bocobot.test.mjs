@@ -374,8 +374,8 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   assert.match(sent[0].text, /^VIX 256,1/);
   assert.equal(sent[0].rich.blocks[0].type, 'paragraph');
   assert.equal(sent[0].rich.blocks[1].type, 'chart');
-  assert.equal(sent[0].rich.blocks[1].chart, 'line');
-  assert.deepEqual(sent[0].rich.blocks[1].series[0].values, [13.2, 13.35, 13.4]);
+  assert.equal(sent[0].rich.blocks[1].chart, 'area');
+  assert.deepEqual(sent[0].rich.blocks[1].series[0].values, [0, 150, 200]);
 });
 
 test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () => {
@@ -399,6 +399,27 @@ test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () 
   assert.equal(rich.blocks[0].labels[0], '09:15');
   assert.equal(rich.blocks[0].labels.at(-1), '14:45');
   assert.equal(rich.blocks[0].series[0].values.length, 46);
+});
+
+test('chart vẽ biến động theo đồng để không bị bẹt sát trục 0', () => {
+  const rich = chartRich({
+    symbol: 'BSR',
+    day: '2026-09-09',
+    labels: ['09:15', '10:00', '13:00', '14:45'],
+    closes: [27.35, 28.2, 27.15, 27.35],
+    open: 27.35,
+    close: 27.35,
+    high: 28.2,
+    low: 27.15,
+    change: 0,
+    percent: 0,
+  }, { reference: 27 });
+
+  assert.equal(rich.blocks[0].chart, 'area');
+  assert.deepEqual(rich.blocks[0].series[0].values, [0, 850, -200, 0]);
+  assert.deepEqual(rich.blocks[0].series[1].values, [-350, -350, -350, -350]);
+  assert.match(rich.blocks[1].text, /Cao 28,2 \(\+850đ\)/);
+  assert.match(rich.blocks[1].text, /Thấp 27,15 \(-200đ\)/);
 });
 
 test('hỏi nhiều mã thì không kèm chart', async () => {
