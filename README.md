@@ -17,7 +17,7 @@ dài đúng một dòng.
 | --- | --- |
 | `!vic` | Một mã |
 | `!vic hpg fpt` | Nhiều mã, một tin nhắn |
-| `!tin vic` | 5 tin tóm tắt gần nhất của một mã, kèm link |
+| `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
 | Nhắn riêng | Không cần dấu gì cả, gõ `vic` là đủ |

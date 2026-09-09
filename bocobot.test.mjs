@@ -13,7 +13,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 
 import { askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
-import { googleNews, MAX_NEWS_REPLY_CHARS } from './market/news.mjs';
+import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
 const message = (fields) => ({ conversationId: 'p1', conversationType: 'group', messageId: 'm1', ...fields });
@@ -340,8 +340,9 @@ test('!tin vic là lệnh tin tức, không bị đọc thành giá TIN và VIC'
   assert.deepEqual(news.calls, ['VIC']);
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /^5 bài viết gần nhất về VIC:\n1\. VIC mở rộng dự án mới/);
-  assert.equal(sent[0].text.split('\n').length, 11);
-  assert.match(sent[0].text, /https:\/\/example\.test\/vic\/1/);
+  assert.equal(sent[0].text.split('\n').length, 6);
+  assert.doesNotMatch(sent[0].text, /https:\/\/example\.test\/vic\/1/);
+  assert.equal(sent[0].rich.blocks[1].entities[0].url, 'https://example.test/vic/1');
   assert.doesNotMatch(sent[0].text, /^TIN /m);
 });
 
@@ -350,15 +351,35 @@ test('!tin chạy động cho mọi mã hợp lệ', async () => {
   const { sent } = await withBot([update({ text: '!tin fpt' })], { news });
   assert.deepEqual(news.calls, ['FPT']);
   assert.match(sent[0].text, /^5 bài viết gần nhất về FPT:/);
-  assert.match(sent[0].text, /https:\/\/example\.test\/fpt\/1/);
+  assert.doesNotMatch(sent[0].text, /https:\/\/example\.test\/fpt\/1/);
+  assert.equal(sent[0].rich.blocks[1].entities[0].url, 'https://example.test/fpt/1');
 });
 
-test('tin tức có 5 link nhưng vẫn nằm dưới giới hạn một tin nhắn', async () => {
+test('tin tức giấu 5 link trong rich text thay vì in URL dài ra ngoài', async () => {
   const news = stubNews();
   const { sent } = await withBot([update({ text: '!tin mwg' })], { news });
   assert.deepEqual(news.calls, ['MWG']);
-  assert.equal(sent[0].text.match(/^https:\/\/example\.test\/mwg\//gm).length, 5);
+  assert.equal(sent[0].text.match(/https:\/\/example\.test\/mwg\//g), null);
+  assert.equal(sent[0].rich.blocks.slice(1).flatMap((block) => block.entities).length, 5);
+  assert.equal(sent[0].rich.blocks[1].entities[0].offset, 3);
   assert.ok(sent[0].text.length <= MAX_NEWS_REPLY_CHARS);
+});
+
+test('rich text bọc link quanh tiêu đề bài viết', () => {
+  const message = newsMessage('MWG', [{
+    title: 'Một tiêu đề',
+    source: 'Báo A',
+    link: 'https://bao-a.test/mwg',
+    publishedAt: new Date('2026-09-08T02:30:00Z'),
+  }]);
+
+  assert.equal(message.text, '5 bài viết gần nhất về MWG:\n1. Một tiêu đề (Báo A · 09:30 08-09)');
+  assert.deepEqual(message.rich.blocks[1].entities, [{
+    type: 'link',
+    offset: 3,
+    length: 'Một tiêu đề'.length,
+    url: 'https://bao-a.test/mwg',
+  }]);
 });
 
 test('nguồn tin đổi link Google News thành link gốc của bài báo', async () => {

@@ -39,7 +39,7 @@ import { publicFeed, withCache } from './market/vps.mjs';
 import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
 import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
-import { googleNews, newsReply } from './market/news.mjs';
+import { googleNews, newsMessage } from './market/news.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -280,7 +280,7 @@ export async function run(token, {
 
       try {
         const articles = await news.latest(newsAsked.symbol);
-        await say(message.conversationId, newsReply(newsAsked.symbol, articles), message.messageId);
+        await say(message.conversationId, newsMessage(newsAsked.symbol, articles), message.messageId);
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.news, message.messageId);
@@ -346,7 +346,8 @@ export async function run(token, {
   async function say(conversationId, text, replyToMessageId) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const posted = await call('sendMessage', { conversationId, text, replyToMessageId });
+        const content = typeof text === 'string' ? { text } : text;
+        const posted = await call('sendMessage', { conversationId, ...content, replyToMessageId });
         const id = posted?.id ?? posted?.messageId;
         if (id) {
           mine.add(id);
