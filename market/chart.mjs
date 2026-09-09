@@ -93,6 +93,10 @@ export function chartRich(session, quote) {
   return {
     blocks: [
       {
+        type: 'paragraph',
+        text: `Thang Y: ${signedDong(highMove)} = ${money(session.high)} · 0đ = ${money(session.open)} · ${signedDong(lowMove)} = ${money(session.low)}`,
+      },
+      {
         type: 'chart',
         chart: 'area',
         title: `${session.symbol} trong phiên ${formatDay(session.day)} · ${direction} ${signedDong(dong(session.change))} (${signed(session.percent)}%)`,
