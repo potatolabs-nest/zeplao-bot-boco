@@ -106,10 +106,17 @@ export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date() 
 
   const stats = summarize(rows);
   const day = tradingDay(at);
+  const text = `Bản đồ nhiệt VN ${formatDay(day)}`;
   return {
+    text,
     image: {
       fileName: `vboa-${day}.svg`,
       svg: heatmapSvg(groups, stats, day),
+    },
+    rich: {
+      blocks: [
+        { type: 'paragraph', text },
+      ],
     },
   };
 }
