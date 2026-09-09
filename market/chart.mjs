@@ -93,7 +93,7 @@ export function chartRich(session, quote) {
         type: 'chart',
         chart: 'line',
         title: `${session.symbol} trong phiên ${formatDay(session.day)} · ${direction} ${signed(session.change)} (${signed(session.percent)}%)`,
-        labels: session.labels,
+        labels: axisLabels(session.labels),
         series,
       },
       {
@@ -121,6 +121,12 @@ function sample(points, max) {
   if (points.length <= max) return points;
   const step = (points.length - 1) / (max - 1);
   return Array.from({ length: max }, (_, index) => points[Math.round(index * step)]);
+}
+
+function axisLabels(labels, ticks = 6) {
+  if (labels.length <= ticks) return labels;
+  const step = (labels.length - 1) / (ticks - 1);
+  return Array.from({ length: ticks }, (_, index) => labels[Math.round(index * step)]);
 }
 
 function tradingDay(seconds) {

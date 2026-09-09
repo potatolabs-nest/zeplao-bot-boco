@@ -378,6 +378,29 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   assert.deepEqual(sent[0].rich.blocks[1].series[0].values, [13.2, 13.35, 13.4]);
 });
 
+test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () => {
+  const labels = Array.from({ length: 46 }, (_, index) => `${String(9 + Math.floor(index / 12)).padStart(2, '0')}:${String((index % 12) * 5).padStart(2, '0')}`);
+  labels[0] = '09:15';
+  labels[45] = '14:45';
+  const rich = chartRich({
+    symbol: 'NVL',
+    day: '2026-09-09',
+    labels,
+    closes: Array.from({ length: 46 }, (_, index) => 12.9 + index / 100),
+    open: 12.9,
+    close: 13,
+    high: 13,
+    low: 12.7,
+    change: 0.1,
+    percent: 0.78,
+  }, { reference: 12.9 });
+
+  assert.equal(rich.blocks[0].labels.length, 6);
+  assert.equal(rich.blocks[0].labels[0], '09:15');
+  assert.equal(rich.blocks[0].labels.at(-1), '14:45');
+  assert.equal(rich.blocks[0].series[0].values.length, 46);
+});
+
 test('hỏi nhiều mã thì không kèm chart', async () => {
   const chart = stubChart();
   const { sent } = await withBot([update({ text: '!vic hpg' })], { chart });
