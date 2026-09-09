@@ -1,4 +1,4 @@
-// Chart trong ngày cho một mã.
+// Chart giá cho một mã: trong phiên bằng nến 5 phút, dài hạn bằng nến ngày.
 //
 // Kuku rich message có block `chart`, nhưng renderer hiện tại không vẽ nhãn trục Y. Vì chart
 // giá mà thiếu thang giá thì khó đọc, phần này tự dựng một SVG an toàn rồi gửi qua field
@@ -8,40 +8,46 @@ import { count, money } from './quote.mjs';
 
 const TIMEOUT_MS = 8000;
 const LOOKBACK_DAYS = 10;
-const RESOLUTION = '5';
-const MAX_POINTS = 64;
+const INTRADAY_RESOLUTION = '5';
+const DAILY_RESOLUTION = '1D';
+const MAX_INTRADAY_POINTS = 64;
+const MAX_RANGE_POINTS = 96;
+
+export const CHART_PERIODS = new Map([
+  ['1m', { key: '1m', days: 31, label: '1 tháng' }],
+  ['6m', { key: '6m', days: 183, label: '6 tháng' }],
+  ['1n', { key: '1n', days: 370, label: '1 năm' }],
+  ['5n', { key: '5n', days: 1835, label: '5 năm' }],
+]);
 
 export function intradayChart({ base = CHART, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now() } = {}) {
-  async function candles(symbol) {
+  async function candles(symbol, periodKey) {
     const normalized = String(symbol ?? '').toUpperCase();
+    const period = CHART_PERIODS.get(String(periodKey ?? '').toLowerCase());
     const to = Math.floor(now() / 1000);
-    const from = to - LOOKBACK_DAYS * 24 * 60 * 60;
-    const url = `${base}/${kindOf(normalized)}?from=${from}&to=${to}&symbol=${normalized}&resolution=${RESOLUTION}`;
+    const days = period?.days ?? LOOKBACK_DAYS;
+    const resolution = period ? DAILY_RESOLUTION : INTRADAY_RESOLUTION;
+    const from = to - days * 24 * 60 * 60;
+    const url = `${base}/${kindOf(normalized)}?from=${from}&to=${to}&symbol=${normalized}&resolution=${resolution}`;
 
     const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeout) });
     if (!response.ok) return null;
 
     const data = await response.json();
     if (!Array.isArray(data?.t) || !Array.isArray(data?.c) || data.t.length !== data.c.length) return null;
-    return latestSession(normalized, data);
+    return period ? rangeSession(normalized, data, period) : latestSession(normalized, data);
   }
 
   return {
-    async rich(symbol, quote) {
-      const session = await candles(symbol);
+    async rich(symbol, quote, period) {
+      const session = await candles(symbol, period);
       return session ? chartRich(session, quote) : null;
     },
   };
 }
 
 export function latestSession(symbol, data) {
-  const rows = data.t.map((stamp, index) => ({
-    time: Number(stamp),
-    close: Number(data.c[index]),
-    high: Number(data.h?.[index] ?? data.c[index]),
-    low: Number(data.l?.[index] ?? data.c[index]),
-    volume: Number(data.v?.[index] ?? 0),
-  })).filter((row) => Number.isFinite(row.time) && Number.isFinite(row.close) && row.close > 0);
+  const rows = rowsFrom(data);
 
   const sessions = new Map();
   for (const row of rows) {
@@ -53,7 +59,7 @@ export function latestSession(symbol, data) {
   const [day, points] = [...sessions.entries()].at(-1) ?? [];
   if (!day || points.length < 2) return null;
 
-  const sampled = sample(points, MAX_POINTS);
+  const sampled = sample(points, MAX_INTRADAY_POINTS);
   const closes = sampled.map((point) => round(point.close));
   const open = points[0].close;
   const close = points.at(-1).close;
@@ -63,6 +69,8 @@ export function latestSession(symbol, data) {
 
   return {
     symbol: String(symbol).toUpperCase(),
+    mode: 'intraday',
+    period: '1d',
     day,
     labels: sampled.map((point) => label(point.time)),
     closes,
@@ -76,22 +84,52 @@ export function latestSession(symbol, data) {
   };
 }
 
+export function rangeSession(symbol, data, period) {
+  const points = rowsFrom(data);
+  if (points.length < 2) return null;
+
+  const sampled = sample(points, MAX_RANGE_POINTS);
+  const open = points[0].close;
+  const close = points.at(-1).close;
+  const high = Math.max(...points.map((point) => point.high));
+  const low = Math.min(...points.map((point) => point.low));
+  const volume = points.reduce((sum, point) => sum + point.volume, 0);
+  const day = tradingDay(points.at(-1).time);
+
+  return {
+    symbol: String(symbol).toUpperCase(),
+    mode: 'range',
+    period: period.key,
+    periodLabel: period.label,
+    day,
+    labels: sampled.map((point) => dateLabel(point.time, period.key)),
+    closes: sampled.map((point) => round(point.close)),
+    open,
+    close,
+    high,
+    low,
+    volume,
+    change: round(close - open),
+    percent: open > 0 ? round(((close - open) / open) * 100) : 0,
+  };
+}
+
 export function chartRich(session, quote) {
   const direction = session.change > 0 ? 'tăng' : session.change < 0 ? 'giảm' : 'đi ngang';
-  const baseline = session.open;
-  const highMove = dong(session.high - baseline);
-  const lowMove = dong(session.low - baseline);
-  const title = `${session.symbol} trong phiên ${formatDay(session.day)} · ${direction} ${signedDong(dong(session.change))} (${signed(session.percent)}%)`;
+  const ranged = session.mode === 'range';
+  const title = ranged
+    ? `${session.symbol} ${session.periodLabel} đến ${formatDay(session.day)} · ${direction} ${signed(session.change)} (${signed(session.percent)}%)`
+    : `${session.symbol} trong phiên ${formatDay(session.day)} · ${direction} ${signedDong(dong(session.change))} (${signed(session.percent)}%)`;
+
   return {
     image: {
-      fileName: `${session.symbol.toLowerCase()}-${session.day}.svg`,
+      fileName: ranged
+        ? `${session.symbol.toLowerCase()}-${session.period}-${session.day}.svg`
+        : `${session.symbol.toLowerCase()}-${session.day}.svg`,
       svg: chartSvg(session, quote, title),
     },
     blocks: [
-      {
-        type: 'paragraph',
-        text: `Mở ${money(session.open)} · Cao ${money(session.high)} (${signedDong(highMove)}) · Thấp ${money(session.low)} (${signedDong(lowMove)}) · Đóng ${money(session.close)}`,
-      },
+      ranged ? rangeStats(session) : intradayStats(session),
     ],
   };
 }
@@ -122,12 +160,39 @@ function axisLabels(labels, ticks = 6) {
   return Array.from({ length: ticks }, (_, index) => labels[Math.round(index * step)]);
 }
 
+function rowsFrom(data) {
+  return data.t.map((stamp, index) => ({
+    time: Number(stamp),
+    close: Number(data.c[index]),
+    high: Number(data.h?.[index] ?? data.c[index]),
+    low: Number(data.l?.[index] ?? data.c[index]),
+    volume: Number(data.v?.[index] ?? 0),
+  })).filter((row) => Number.isFinite(row.time) && Number.isFinite(row.close) && row.close > 0);
+}
+
+function intradayStats(session) {
+  const baseline = session.open;
+  const highMove = dong(session.high - baseline);
+  const lowMove = dong(session.low - baseline);
+  return {
+    type: 'paragraph',
+    text: `Mở ${money(session.open)} · Cao ${money(session.high)} (${signedDong(highMove)}) · Thấp ${money(session.low)} (${signedDong(lowMove)}) · Đóng ${money(session.close)}`,
+  };
+}
+
+function rangeStats(session) {
+  return {
+    type: 'paragraph',
+    text: `Đầu kỳ ${money(session.open)} · Cao ${money(session.high)} · Thấp ${money(session.low)} · Cuối kỳ ${money(session.close)} · KL ${count(session.volume)}`,
+  };
+}
+
 function chartSvg(session, quote, title) {
   const width = 720;
   const height = 420;
   const plot = { left: 86, right: 26, top: 64, bottom: 58 };
   const prices = session.closes.map(Number).filter(Number.isFinite);
-  const reference = quote?.reference > 0 ? round(quote.reference) : null;
+  const reference = session.mode !== 'range' && quote?.reference > 0 ? round(quote.reference) : null;
   const floor = Math.min(session.low, ...prices, reference ?? session.low);
   const ceiling = Math.max(session.high, ...prices, reference ?? session.high);
   const padding = Math.max((ceiling - floor) * 0.12, 0.05);
@@ -185,6 +250,22 @@ function label(seconds) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(seconds * 1000));
+}
+
+function dateLabel(seconds, period) {
+  const at = new Date(seconds * 1000);
+  if (period === '5n') {
+    return new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      month: '2-digit',
+      year: '2-digit',
+    }).format(at);
+  }
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+  }).format(at);
 }
 
 function signed(value) {

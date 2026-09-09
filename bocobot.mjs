@@ -40,7 +40,7 @@ import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
 import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
 import { googleNews, newsMessage } from './market/news.mjs';
-import { intradayChart, withRich } from './market/chart.mjs';
+import { CHART_PERIODS, intradayChart, withRich } from './market/chart.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -173,6 +173,25 @@ export function askedNewsFor(message) {
     return { addressed: true, error: 'Không nhận ra mã cần xem tin.' };
   }
   return { addressed: true, symbol: symbols[0] };
+}
+
+/**
+ * `!gex 1n` vẫn là hỏi giá GEX, nhưng chart đi kèm dùng khung 1 năm.
+ *
+ * Chỉ nhận đúng dạng `!<mã> <kỳ hạn>` để một câu hỏi nhiều mã không bị hiểu nhầm là chart riêng.
+ * `1m`, `6m`, `1n`, `5n` là các kỳ hạn đang hỗ trợ.
+ */
+export function askedChartFor(message) {
+  const text = String(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+
+  const parts = text.slice(CALL.length).trim().split(/\s+/).filter(Boolean);
+  if (parts.length !== 2) return null;
+
+  const symbol = parts[0].toUpperCase();
+  const period = parts[1].toLowerCase();
+  if (!looksLikeCode(symbol) || !CHART_PERIODS.has(period)) return null;
+  return { symbol, period };
 }
 
 // ---- vòng lặp -------------------------------------------------------------------------------
@@ -335,7 +354,9 @@ export async function run(token, {
 
     if (asked.strict && asked.addressed && listing.length === 1 && found.has(listing[0])) {
       try {
-        const rich = await chart.rich(listing[0], quotes.find((quote) => quote.symbol === listing[0]));
+        const chartAsked = askedChartFor(message);
+        const period = chartAsked?.symbol === listing[0] ? chartAsked.period : undefined;
+        const rich = await chart.rich(listing[0], quotes.find((quote) => quote.symbol === listing[0]), period);
         await say(message.conversationId, withRich(text, rich), message.messageId);
         return;
       } catch (problem) {

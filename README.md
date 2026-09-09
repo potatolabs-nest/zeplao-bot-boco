@@ -16,6 +16,7 @@ dài đúng một dòng.
 | Gõ | Được gì |
 | --- | --- |
 | `!vic` | Một mã, kèm chart biến động giá trong phiên gần nhất và trục giá |
+| `!gex 1m`, `!gex 6m`, `!gex 1n`, `!gex 5n` | Một mã, kèm chart theo 1 tháng, 6 tháng, 1 năm, hoặc 5 năm |
 | `!vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
@@ -27,7 +28,9 @@ tảng cho mỗi phòng một tin mỗi giây; ba mã thành ba tin là hai lầ
 đẩy trôi vì một câu hỏi.
 
 Riêng `!tin <mã>` là lệnh đọc tin. Mỗi lần chỉ nhận một mã, để `!tin vic gex` không bị hiểu lẫn
-thành hỏi giá ba mã `TIN`, `VIC`, `GEX`. `!tin` đứng một mình vẫn là hỏi giá mã `TIN`.
+thành hỏi giá ba mã `TIN`, `VIC`, `GEX`. `!tin` đứng một mình vẫn là hỏi giá mã `TIN`. Chart
+dài hạn cũng chỉ nhận một mã mỗi lần: `!gex 1n` được, còn hỏi nhiều mã thì bot chỉ trả giá,
+không gắn chart riêng.
 
 ## Vì sao là dấu chấm than, không phải gạch chéo
 
@@ -189,7 +192,7 @@ phải chỗ để cắt cho nhanh.
 | `Dockerfile` | Đóng gói, không cài gì, không chạy bằng root |
 | `bocobot.mjs` | Vòng lặp, đọc câu hỏi, luật im lặng, gửi tin |
 | `market/quote.mjs` | Chỗ duy nhất hiểu "giá" nghĩa là gì: chuẩn hoá, câu chữ, phiên giao dịch |
-| `market/chart.mjs` | Nến 5 phút và SVG chart có trục giá cho một mã |
+| `market/chart.mjs` | Nến 5 phút, nến ngày, và SVG chart có trục giá cho một mã |
 | `market/news.mjs` | Nguồn tin RSS và câu chữ cho `!tin <mã>` |
 | `market/vps.mjs` | Nguồn 1 — feed công khai, kèm bộ nhớ vài giây |
 | `market/dnse.mjs` | Nguồn 2 và 3 — nến ngày, và tầng có khoá |

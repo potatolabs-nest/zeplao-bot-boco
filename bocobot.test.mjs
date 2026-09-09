@@ -11,9 +11,9 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
+import { askedChartFor, askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
-import { chartRich } from './market/chart.mjs';
+import { chartRich, rangeSession } from './market/chart.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
@@ -191,8 +191,8 @@ function stubChart({ broken = false, rich = null } = {}) {
   const calls = [];
   return {
     calls,
-    async rich(symbol, quote) {
-      calls.push({ symbol, quote });
+    async rich(symbol, quote, period) {
+      calls.push({ symbol, quote, period });
       if (broken) throw new Error('chart không trả lời');
       return rich;
     },
@@ -351,6 +351,13 @@ test('dấu gọi chạy thật, từ đầu tới cuối', async () => {
   assert.match(sent[0].text, /^VIC 256,1/);
 });
 
+test('dấu gọi nhận kỳ hạn chart cho đúng một mã', () => {
+  assert.deepEqual(askedChartFor(message({ text: '!gex 1n' })), { symbol: 'GEX', period: '1n' });
+  assert.deepEqual(askedChartFor(message({ text: '  !gex 6M' })), { symbol: 'GEX', period: '6m' });
+  assert.equal(askedChartFor(message({ text: '!gex 1n hpg' })), null);
+  assert.equal(askedChartFor(message({ text: '!tin gex' })), null);
+});
+
 test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', async () => {
   const rich = chartRich({
     symbol: 'VIX',
@@ -379,6 +386,30 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   assert.match(sent[0].image.svg, />13,15</);
   assert.equal(sent[0].rich.blocks[0].type, 'paragraph');
   assert.match(sent[0].rich.blocks[1].text, /Cao 13,45 \(\+250đ\)/);
+});
+
+test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async () => {
+  const rich = chartRich(rangeSession('GEX', {
+    t: [
+      Date.parse('2025-09-08T03:00:00Z') / 1000,
+      Date.parse('2026-03-09T03:00:00Z') / 1000,
+      Date.parse('2026-09-08T03:00:00Z') / 1000,
+    ],
+    c: [18, 22.5, 26.2],
+    h: [18.4, 23, 26.8],
+    l: [17.8, 21.9, 25.7],
+    v: [1000, 2000, 3000],
+  }, { key: '1n', label: '1 năm' }));
+  const chart = stubChart({ rich });
+  const { sent } = await withBot(
+    [update({ text: '!gex 1n' })],
+    { market: stubMarket({ listed: ['GEX'] }), chart },
+  );
+
+  assert.deepEqual(chart.calls.map((call) => [call.symbol, call.period]), [['GEX', '1n']]);
+  assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
+  assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
+  assert.match(sent[0].rich.blocks[1].text, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
 });
 
 test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () => {
