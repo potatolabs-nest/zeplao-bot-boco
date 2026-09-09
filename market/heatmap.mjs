@@ -3,7 +3,7 @@
 // VPS trả được danh sách niêm yết và giá hàng loạt, nhưng không có vốn hoá hay ngành. Nên bản
 // đồ này dùng giá trị giao dịch làm độ lớn ô, và một bảng ngành nhỏ cho các mã vốn hoá/thanh
 // khoản hay được nhìn trước; mã không có trong bảng vẫn hiện trong nhóm "Khác".
-import { money, sessionNote } from './quote.mjs';
+import { money } from './quote.mjs';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -105,24 +105,11 @@ export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date() 
     .filter((group) => group.quotes.length);
 
   const stats = summarize(rows);
-  const note = sessionNote(at);
   const day = tradingDay(at);
-  const text = [
-    `Bản đồ nhiệt VN ${formatDay(day)} · ${rows.length} mã thanh khoản lớn nhất`,
-    `Tăng ${stats.up} · Đứng ${stats.flat} · Giảm ${stats.down}`,
-    note,
-  ].filter(Boolean).join('\n');
-
   return {
-    text,
     image: {
       fileName: `vboa-${day}.svg`,
       svg: heatmapSvg(groups, stats, day),
-    },
-    rich: {
-      blocks: [
-        { type: 'paragraph', text },
-      ],
     },
   };
 }

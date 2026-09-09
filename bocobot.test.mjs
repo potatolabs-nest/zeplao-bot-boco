@@ -404,7 +404,8 @@ test('!vboa trả bản đồ nhiệt bằng ảnh SVG', async () => {
   const { sent } = await withBot([update({ text: '!vboa' })], { heatmap });
 
   assert.equal(heatmap.calls.length, 1);
-  assert.match(sent[0].text, /^Bản đồ nhiệt VN 07\/09\/2026/);
+  assert.equal(sent[0].text, undefined);
+  assert.equal(sent[0].rich, undefined);
   assert.equal(sent[0].image.fileName, 'vboa-2026-09-07.svg');
   assert.match(sent[0].image.svg, /Tài chính/);
   assert.match(sent[0].image.svg, /Nguyên vật liệu/);
