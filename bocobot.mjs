@@ -40,6 +40,7 @@ import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
 import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
 import { googleNews, newsMessage } from './market/news.mjs';
+import { intradayChart, withRich } from './market/chart.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -191,6 +192,7 @@ export async function run(token, {
   api = API,
   market = withCache(chain(publicFeed(), dnse())),
   news = googleNews(),
+  chart = intradayChart(),
   statePath = STATE,
   at = () => new Date(),
 } = {}) {
@@ -330,6 +332,17 @@ export async function run(token, {
 
     const text = reply(quotes, listing, at());
     console.log(`${listing.join(' ')} -> ${found.size} mã`);
+
+    if (asked.strict && asked.addressed && listing.length === 1 && found.has(listing[0])) {
+      try {
+        const rich = await chart.rich(listing[0], quotes.find((quote) => quote.symbol === listing[0]));
+        await say(message.conversationId, withRich(text, rich), message.messageId);
+        return;
+      } catch (problem) {
+        console.error(String(problem));
+      }
+    }
+
     await say(message.conversationId, text, message.messageId);
   }
 

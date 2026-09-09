@@ -13,6 +13,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 
 import { askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
+import { chartRich } from './market/chart.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
@@ -186,13 +187,28 @@ function stubNews({ broken = false } = {}) {
   };
 }
 
+function stubChart({ broken = false, rich = null } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async rich(symbol, quote) {
+      calls.push({ symbol, quote });
+      if (broken) throw new Error('chart không trả lời');
+      return rich;
+    },
+  };
+}
+
 /**
  * Cho bot chạy tới khi nó đã làm xong việc, rồi bảo nó dừng.
  *
  * `settle` là một khoảng lặng có chủ ý: để chứng minh bot **không** gửi gì thì phải cho nó đủ
  * thời gian để gửi. Một bài test khẳng định sự im lặng mà không đợi thì chỉ đang đo tốc độ máy.
  */
-async function withBot(updates, { market = stubMarket(), news = stubNews(), expect = 1, settle = 200 } = {}) {
+async function withBot(
+  updates,
+  { market = stubMarket(), news = stubNews(), chart = stubChart(), expect = 1, settle = 200 } = {},
+) {
   const platform = await stubApi(updates);
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
@@ -202,6 +218,7 @@ async function withBot(updates, { market = stubMarket(), news = stubNews(), expe
     api: platform.api,
     market,
     news,
+    chart,
     statePath,
     at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
   });
@@ -332,6 +349,48 @@ test('dấu gọi chạy thật, từ đầu tới cuối', async () => {
   assert.equal(sent.length, 1);
   assert.equal(sent[0].text.split('\n').length, 2);
   assert.match(sent[0].text, /^VIC 256,1/);
+});
+
+test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', async () => {
+  const rich = chartRich({
+    symbol: 'VIX',
+    day: '2026-09-07',
+    labels: ['09:15', '09:20', '09:25'],
+    closes: [13.2, 13.35, 13.4],
+    open: 13.2,
+    close: 13.4,
+    high: 13.45,
+    low: 13.15,
+    change: 0.2,
+    percent: 1.52,
+  }, normalize({ ...VIC, sym: 'VIX', r: 13.1, lastPrice: 13.4 }));
+  const chart = stubChart({ rich });
+  const { sent } = await withBot(
+    [update({ text: '!vix' })],
+    { market: stubMarket({ listed: ['VIX'] }), chart },
+  );
+
+  assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIX']);
+  assert.match(sent[0].text, /^VIX 256,1/);
+  assert.equal(sent[0].rich.blocks[0].type, 'paragraph');
+  assert.equal(sent[0].rich.blocks[1].type, 'chart');
+  assert.equal(sent[0].rich.blocks[1].chart, 'line');
+  assert.deepEqual(sent[0].rich.blocks[1].series[0].values, [13.2, 13.35, 13.4]);
+});
+
+test('hỏi nhiều mã thì không kèm chart', async () => {
+  const chart = stubChart();
+  const { sent } = await withBot([update({ text: '!vic hpg' })], { chart });
+  assert.deepEqual(chart.calls, []);
+  assert.equal(sent[0].rich, undefined);
+});
+
+test('nguồn chart chết thì vẫn trả giá', async () => {
+  const chart = stubChart({ broken: true });
+  const { sent } = await withBot([update({ text: '!vic' })], { chart });
+  assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIC']);
+  assert.match(sent[0].text, /^VIC 256,1/);
+  assert.equal(sent[0].rich, undefined);
 });
 
 test('!tin vic là lệnh tin tức, không bị đọc thành giá TIN và VIC', async () => {
