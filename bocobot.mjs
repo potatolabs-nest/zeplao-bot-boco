@@ -74,6 +74,43 @@ export const SORRY = {
   news: 'Nguồn tin đang không trả lời. Thử lại sau một lát.',
 };
 
+export const HELP = [
+  'Cú pháp xem bảng giá:',
+  '!vic — giá VIC kèm chart trong phiên gần nhất',
+  '!vic hpg fpt — xem nhiều mã, không kèm chart',
+  '!tin vic — 5 tin gần nhất về VIC',
+  '',
+  'Chart theo thời gian:',
+  '!gex 1d — chart trong phiên gần nhất',
+  '!gex 2d — chart 2 ngày',
+  '!gex 3m — chart 3 tháng',
+  '!gex 4y hoặc !gex 4n — chart 4 năm',
+  '',
+  'Bản đồ nhiệt:',
+  '!vboa — toàn thị trường',
+  '!vboa bds — bất động sản',
+  '!vboa bank — bank chứng',
+  '!vboa oil — dầu khí',
+  '!vboa retail — bán lẻ',
+  '!vboa cn — công nghiệp',
+].join('\n');
+
+export function askedHelpFor(message, me) {
+  if (!message) return null;
+
+  const handles = [me?.username, me?.displayName].filter(Boolean);
+  const text = String(message.text ?? '');
+  const named = handles.some((handle) => text.toLowerCase().includes(`@${handle}`.toLowerCase()));
+  if (!named) return null;
+
+  let asked = text;
+  for (const handle of handles) {
+    asked = asked.replace(new RegExp(`@${handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), ' ');
+  }
+  asked = asked.replace(/@\S+/g, ' ').trim();
+  return !asked || /^help$/i.test(asked) ? { addressed: true } : null;
+}
+
 /**
  * Câu hỏi này hỏi cái gì, nếu nó có hỏi gì.
  *
@@ -294,6 +331,12 @@ export async function run(token, {
   }
 
   async function onMessage(message) {
+    const helpAsked = askedHelpFor(message, me);
+    if (helpAsked) {
+      await say(message.conversationId, HELP, message.messageId);
+      return;
+    }
+
     const heatmapAsked = askedHeatmapFor(message);
     if (heatmapAsked) {
       if (heatmapAsked.error) {

@@ -11,13 +11,14 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { askedChartFor, askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
+import { askedChartFor, askedFor, askedHelpFor, askedNewsFor, HELP, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
+const TOP_ME = { username: 'topbot', displayName: 'Top Bot' };
 const message = (fields) => ({ conversationId: 'p1', conversationType: 'group', messageId: 'm1', ...fields });
 
 // ---- đọc câu hỏi ----------------------------------------------------------------------------
@@ -51,6 +52,14 @@ test('tên hiển thị cũng là một cách gọi', () => {
   // Trước tháng 8/2026 nền tảng viết tên hiển thị vào chỗ nhắc tên, và những tin nhắn ấy vẫn còn.
   const asked = askedFor(message({ text: '@Bảng giá vic' }), ME);
   assert.deepEqual(asked.symbols, ['VIC']);
+});
+
+test('gọi bot trống hoặc help thì là hỏi hướng dẫn', () => {
+  assert.deepEqual(askedHelpFor(message({ text: '@topbot' }), TOP_ME), { addressed: true });
+  assert.deepEqual(askedHelpFor(message({ text: '@topbot help' }), TOP_ME), { addressed: true });
+  assert.deepEqual(askedHelpFor(message({ text: '@Top Bot help' }), TOP_ME), { addressed: true });
+  assert.equal(askedHelpFor(message({ text: '@topbot vic' }), TOP_ME), null);
+  assert.equal(askedHelpFor(message({ text: 'topbot help' }), TOP_ME), null);
 });
 
 test('nhắn riêng thì không phải gọi tên', () => {
@@ -307,6 +316,22 @@ test('những chữ ba ký tự lẫn trong một câu thì bỏ qua, không kê
 test('gọi tên mà không có mã nào thì được nói cho biết', async () => {
   const { sent } = await withBot([update({ text: '@bocobot ơi' })]);
   assert.equal(sent[0].text, SORRY.nothing);
+});
+
+test('gọi bot trống thì trả hướng dẫn', async () => {
+  const { sent } = await withBot([update({ text: '@bocobot' })]);
+
+  assert.equal(sent[0].text, HELP);
+  assert.match(sent[0].text, /!vboa bds — bất động sản/);
+  assert.match(sent[0].text, /!gex 3m — chart 3 tháng/);
+  assert.equal(sent[0].replyToMessageId, 'm1');
+});
+
+test('gọi bot help thì trả hướng dẫn thay vì đọc HELP như mã', async () => {
+  const { sent } = await withBot([update({ text: '@bocobot help' })]);
+
+  assert.equal(sent[0].text, HELP);
+  assert.doesNotMatch(sent[0].text, /HELP — không có dữ liệu/);
 });
 
 test('trả lời người khác thì không phải việc của bot', async () => {
