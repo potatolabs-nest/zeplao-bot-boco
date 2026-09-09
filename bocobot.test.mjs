@@ -14,6 +14,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { askedChartFor, askedFor, askedNewsFor, run, SORRY } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
+import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
@@ -199,6 +200,23 @@ function stubChart({ broken = false, rich = null } = {}) {
   };
 }
 
+function stubHeatmap({ broken = false, rich = null } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async rich(market) {
+      calls.push(market);
+      if (broken) throw new Error('heatmap không trả lời');
+      return rich ?? heatmapRich([
+        normalize({ ...VIC, sym: 'VIC', lastPrice: 250, r: 244.5, lot: 900000 }),
+        normalize({ ...VIC, sym: 'SHB', lastPrice: 12, r: 12.1, c: 12.9, f: 11.3, lot: 1500000 }),
+        normalize({ ...VIC, sym: 'HPG', lastPrice: 28, r: 27.8, c: 29.7, f: 25.9, lot: 1200000 }),
+        normalize({ ...VIC, sym: 'FPT', lastPrice: 102, r: 103, c: 110.2, f: 95.8, lot: 300000 }),
+      ], { at: new Date('2026-09-07T03:00:00Z') });
+    },
+  };
+}
+
 function pickPeriod(period) {
   if (!period) return null;
   return {
@@ -219,7 +237,7 @@ function pickPeriod(period) {
  */
 async function withBot(
   updates,
-  { market = stubMarket(), news = stubNews(), chart = stubChart(), expect = 1, settle = 200 } = {},
+  { market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), expect = 1, settle = 200 } = {},
 ) {
   const platform = await stubApi(updates);
   const stopping = new AbortController();
@@ -231,6 +249,7 @@ async function withBot(
     market,
     news,
     chart,
+    heatmap,
     statePath,
     at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
   });
@@ -372,6 +391,31 @@ test('dấu gọi nhận kỳ hạn chart cho đúng một mã', () => {
   assert.equal(askedChartFor(message({ text: '!gex 1n hpg' })), null);
   assert.equal(askedChartFor(message({ text: '!tin gex' })), null);
   assert.equal(askedChartFor(message({ text: '!gex 0d' })), null);
+});
+
+test('!vboa là lệnh bản đồ nhiệt, không phải mã VBOA', () => {
+  assert.deepEqual(askedHeatmapFor(message({ text: '!vboa' })), { addressed: true });
+  assert.deepEqual(askedHeatmapFor(message({ text: '  !vboa hom nay' })), { addressed: true });
+  assert.equal(askedHeatmapFor(message({ text: '!vic' })), null);
+});
+
+test('!vboa trả bản đồ nhiệt bằng ảnh SVG', async () => {
+  const heatmap = stubHeatmap();
+  const { sent } = await withBot([update({ text: '!vboa' })], { heatmap });
+
+  assert.equal(heatmap.calls.length, 1);
+  assert.match(sent[0].text, /^Bản đồ nhiệt VN 07\/09\/2026/);
+  assert.equal(sent[0].image.fileName, 'vboa-2026-09-07.svg');
+  assert.match(sent[0].image.svg, /Tài chính/);
+  assert.match(sent[0].image.svg, /Nguyên vật liệu/);
+  assert.match(sent[0].image.svg, /Công nghệ thông tin/);
+  assert.match(sent[0].image.svg, />VIC</);
+  assert.equal(sent[0].replyToMessageId, 'm1');
+});
+
+test('nguồn bản đồ nhiệt chết thì nói ra', async () => {
+  const { sent } = await withBot([update({ text: '!vboa' })], { heatmap: stubHeatmap({ broken: true }) });
+  assert.equal(sent[0].text, SORRY.source);
 });
 
 test('kỳ hạn chart được đọc động từ số và đơn vị', () => {

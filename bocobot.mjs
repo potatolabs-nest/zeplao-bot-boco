@@ -41,6 +41,7 @@ import { chain } from './market/chain.mjs';
 import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
 import { googleNews, newsMessage } from './market/news.mjs';
 import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
+import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -214,6 +215,7 @@ export async function run(token, {
   chart = intradayChart(),
   statePath = STATE,
   at = () => new Date(),
+  heatmap = marketHeatmap({ at }),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -292,6 +294,18 @@ export async function run(token, {
   }
 
   async function onMessage(message) {
+    const heatmapAsked = askedHeatmapFor(message);
+    if (heatmapAsked) {
+      try {
+        const rich = await heatmap.rich(market);
+        await say(message.conversationId, rich ?? 'Chưa dựng được bản đồ nhiệt. Thử lại sau một lát.', message.messageId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, SORRY.source, message.messageId);
+      }
+      return;
+    }
+
     const newsAsked = askedNewsFor(message);
     if (newsAsked) {
       if (newsAsked.error) {
