@@ -296,8 +296,13 @@ export async function run(token, {
   async function onMessage(message) {
     const heatmapAsked = askedHeatmapFor(message);
     if (heatmapAsked) {
+      if (heatmapAsked.error) {
+        await say(message.conversationId, heatmapAsked.error, message.messageId);
+        return;
+      }
+
       try {
-        const rich = await heatmap.rich(market);
+        const rich = await heatmap.rich(market, heatmapAsked);
         await say(message.conversationId, rich ?? 'Chưa dựng được bản đồ nhiệt. Thử lại sau một lát.', message.messageId);
       } catch (problem) {
         console.error(String(problem));

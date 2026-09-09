@@ -204,15 +204,15 @@ function stubHeatmap({ broken = false, rich = null } = {}) {
   const calls = [];
   return {
     calls,
-    async rich(market) {
-      calls.push(market);
+    async rich(market, asked) {
+      calls.push({ market, asked });
       if (broken) throw new Error('heatmap không trả lời');
       return rich ?? heatmapRich([
         normalize({ ...VIC, sym: 'VIC', lastPrice: 250, r: 244.5, lot: 900000 }),
         normalize({ ...VIC, sym: 'SHB', lastPrice: 12, r: 12.1, c: 12.9, f: 11.3, lot: 1500000 }),
         normalize({ ...VIC, sym: 'HPG', lastPrice: 28, r: 27.8, c: 29.7, f: 25.9, lot: 1200000 }),
         normalize({ ...VIC, sym: 'FPT', lastPrice: 102, r: 103, c: 110.2, f: 95.8, lot: 300000 }),
-      ], { at: new Date('2026-09-07T03:00:00Z') });
+      ], { at: new Date('2026-09-07T03:00:00Z'), filter: asked.filter });
     },
   };
 }
@@ -395,7 +395,15 @@ test('dấu gọi nhận kỳ hạn chart cho đúng một mã', () => {
 
 test('!vboa là lệnh bản đồ nhiệt, không phải mã VBOA', () => {
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa' })), { addressed: true });
-  assert.deepEqual(askedHeatmapFor(message({ text: '  !vboa hom nay' })), { addressed: true });
+  assert.deepEqual(askedHeatmapFor(message({ text: '  !vboa bds' })), {
+    addressed: true,
+    filter: { key: 'bds', title: 'Bất động sản', sectors: ['Bất động sản'] },
+  });
+  assert.deepEqual(askedHeatmapFor(message({ text: '!vboa bank' })).filter.title, 'Bank chứng');
+  assert.deepEqual(askedHeatmapFor(message({ text: '!vboa oil' })).filter.title, 'Dầu khí');
+  assert.deepEqual(askedHeatmapFor(message({ text: '!vboa retail' })).filter.title, 'Bán lẻ');
+  assert.deepEqual(askedHeatmapFor(message({ text: '!vboa cn' })).filter.title, 'Công nghiệp');
+  assert.match(askedHeatmapFor(message({ text: '  !vboa hom nay' })).error, /Chỉ hỗ trợ/);
   assert.equal(askedHeatmapFor(message({ text: '!vic' })), null);
 });
 
@@ -404,6 +412,7 @@ test('!vboa trả bản đồ nhiệt bằng ảnh SVG', async () => {
   const { sent } = await withBot([update({ text: '!vboa' })], { heatmap });
 
   assert.equal(heatmap.calls.length, 1);
+  assert.equal(heatmap.calls[0].asked.filter, undefined);
   assert.equal(sent[0].text, 'Bản đồ nhiệt VN 07/09/2026');
   assert.equal(sent[0].text.split('\n').length, 1);
   assert.equal(sent[0].image.fileName, 'vboa-2026-09-07.svg');
@@ -412,6 +421,26 @@ test('!vboa trả bản đồ nhiệt bằng ảnh SVG', async () => {
   assert.match(sent[0].image.svg, /Công nghệ thông tin/);
   assert.match(sent[0].image.svg, />VIC</);
   assert.equal(sent[0].replyToMessageId, 'm1');
+});
+
+test('!vboa bds chỉ vẽ nhóm bất động sản', async () => {
+  const heatmap = stubHeatmap();
+  const { sent } = await withBot([update({ text: '!vboa bds' })], { heatmap });
+
+  assert.equal(heatmap.calls[0].asked.filter.key, 'bds');
+  assert.equal(sent[0].text, 'Bản đồ nhiệt VN Bất động sản 07/09/2026');
+  assert.equal(sent[0].image.fileName, 'vboa-bds-2026-09-07.svg');
+  assert.match(sent[0].image.svg, /Bất động sản/);
+  assert.match(sent[0].image.svg, />VIC</);
+  assert.doesNotMatch(sent[0].image.svg, />HPG</);
+});
+
+test('!vboa không nhận ngành ngoài danh sách hỗ trợ', async () => {
+  const heatmap = stubHeatmap();
+  const { sent } = await withBot([update({ text: '!vboa thep' })], { heatmap });
+
+  assert.equal(heatmap.calls.length, 0);
+  assert.equal(sent[0].text, 'Chỉ hỗ trợ: !vboa bds, !vboa bank, !vboa oil, !vboa retail, !vboa cn.');
 });
 
 test('nguồn bản đồ nhiệt chết thì nói ra', async () => {

@@ -14,6 +14,14 @@ const FOOTER = 42;
 const MIN_TILE = 36;
 const MAX_SYMBOLS = 240;
 
+const FILTERS = {
+  bds: { key: 'bds', title: 'Bất động sản', sectors: ['Bất động sản'] },
+  bank: { key: 'bank', title: 'Bank chứng', sectors: ['Tài chính'] },
+  oil: { key: 'oil', title: 'Dầu khí', sectors: ['Năng lượng'] },
+  retail: { key: 'retail', title: 'Bán lẻ', sectors: ['Tiêu dùng không thiết yếu'] },
+  cn: { key: 'cn', title: 'Công nghiệp', sectors: ['Công nghiệp'] },
+};
+
 const SECTOR_ORDER = [
   'Tài chính',
   'Bất động sản',
@@ -74,20 +82,29 @@ const SECTORS = {
 export function askedHeatmapFor(message) {
   const text = String(message?.text ?? '').trimStart();
   if (!text.startsWith('!')) return null;
-  return /^vboa(?:\s|$)/i.test(text.slice(1).trim()) ? { addressed: true } : null;
+  const parts = text.slice(1).trim().split(/\s+/).filter(Boolean);
+  if (parts[0]?.toLowerCase() !== 'vboa') return null;
+  if (parts.length === 1) return { addressed: true };
+
+  const filter = FILTERS[parts[1].toLowerCase()];
+  if (filter && parts.length === 2) return { addressed: true, filter };
+  return {
+    addressed: true,
+    error: 'Chỉ hỗ trợ: !vboa bds, !vboa bank, !vboa oil, !vboa retail, !vboa cn.',
+  };
 }
 
 export function marketHeatmap({ maxSymbols = MAX_SYMBOLS, at = () => new Date() } = {}) {
   return {
-    async rich(market) {
+    async rich(market, asked = {}) {
       const universe = await market.universe();
       const quotes = await market.quotes(universe);
-      return heatmapRich(quotes, { maxSymbols, at: at() });
+      return heatmapRich(quotes, { maxSymbols, at: at(), filter: asked.filter });
     },
   };
 }
 
-export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date() } = {}) {
+export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date(), filter = null } = {}) {
   const rows = quotes
     .filter((quote) => quote?.reference > 0 && quote.price > 0)
     .map((quote) => ({
@@ -95,22 +112,25 @@ export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date() 
       value: Math.max(quote.price * quote.volume, 1),
       sector: SECTORS[quote.symbol] ?? 'Khác',
     }))
+    .filter((quote) => !filter || filter.sectors.includes(quote.sector))
     .sort((a, b) => b.value - a.value)
     .slice(0, maxSymbols);
 
   if (!rows.length) return null;
 
-  const groups = SECTOR_ORDER
-    .map((sector) => ({ sector, quotes: rows.filter((quote) => quote.sector === sector) }))
-    .filter((group) => group.quotes.length);
+  const groups = filter
+    ? [{ sector: filter.title, quotes: rows }]
+    : SECTOR_ORDER
+      .map((sector) => ({ sector, quotes: rows.filter((quote) => quote.sector === sector) }))
+      .filter((group) => group.quotes.length);
 
   const stats = summarize(rows);
   const day = tradingDay(at);
-  const text = `Bản đồ nhiệt VN ${formatDay(day)}`;
+  const text = `Bản đồ nhiệt VN${filter ? ` ${filter.title}` : ''} ${formatDay(day)}`;
   return {
     text,
     image: {
-      fileName: `vboa-${day}.svg`,
+      fileName: `vboa${filter ? `-${filter.key}` : ''}-${day}.svg`,
       svg: heatmapSvg(groups, stats, day),
     },
     rich: {
