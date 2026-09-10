@@ -441,7 +441,7 @@ test('!vboa trả bản đồ nhiệt bằng ảnh SVG', async () => {
   assert.equal(sent[0].text, 'Bản đồ nhiệt VN 07/09/2026');
   assert.equal(sent[0].text.split('\n').length, 1);
   assert.equal(sent[0].image.fileName, 'vboa-2026-09-07.svg');
-  assert.match(sent[0].image.svg, /width="5120" height="2880" viewBox="0 0 1280 720"/);
+  assert.match(sent[0].image.svg, /width="2560" height="1440" viewBox="0 0 1280 720"/);
   assert.match(sent[0].image.svg, /Tài chính/);
   assert.match(sent[0].image.svg, /Nguyên vật liệu/);
   assert.match(sent[0].image.svg, /Công nghệ thông tin/);

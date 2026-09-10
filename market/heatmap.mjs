@@ -7,7 +7,7 @@ import { money } from './quote.mjs';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
-const OUTPUT_SCALE = 4;
+const OUTPUT_SCALE = 2;
 const PAD = 14;
 const GAP = 4;
 const HEADER = 34;
