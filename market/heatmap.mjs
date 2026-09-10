@@ -13,7 +13,7 @@ const GAP = 4;
 const HEADER = 34;
 const FOOTER = 42;
 const MIN_TILE = 36;
-const MAX_SYMBOLS = 240;
+const MAX_SYMBOLS = 500;
 
 const FILTERS = {
   bds: { key: 'bds', title: 'Bất động sản', sectors: ['Bất động sản'] },
@@ -181,14 +181,14 @@ function sectorSvg(group, rect) {
 }
 
 function tileSvg(quote, rect) {
-  if (rect.w < 2 || rect.h < 2) return '';
+  if (rect.w <= 0 || rect.h <= 0) return '';
   const color = colorFor(quote);
   const label = rect.w >= MIN_TILE && rect.h >= MIN_TILE;
   const symbolSize = clamp(Math.min(rect.w / 4.4, rect.h / 3.2), 13, 31);
   const pctSize = clamp(symbolSize * 0.8, 11, 25);
   const percent = signed(quote.percent);
 
-  return `<g>
+  return `<g data-symbol="${escapeXml(quote.symbol)}">
     <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="3" fill="${color}"/>
     ${label ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - 3)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(symbolSize)}" font-weight="800">${escapeXml(quote.symbol)}</text>
     <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + pctSize)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(pctSize)}" font-weight="700">${escapeXml(percent)}%</text>` : ''}

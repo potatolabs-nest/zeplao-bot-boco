@@ -461,6 +461,22 @@ test('!vboa bds chỉ vẽ nhóm bất động sản', async () => {
   assert.doesNotMatch(sent[0].image.svg, />HPG</);
 });
 
+test('!vboa lấy tối đa 500 mã thanh khoản lớn nhất', () => {
+  const quotes = Array.from({ length: 501 }, (_, index) => normalize({
+    ...VIC,
+    sym: `X${String(index + 1).padStart(3, '0')}`,
+    lastPrice: 10,
+    r: 10,
+    c: 10.7,
+    f: 9.3,
+    lot: 501 - index,
+  }));
+  const rich = heatmapRich(quotes, { at: new Date('2026-09-07T03:00:00Z') });
+
+  assert.match(rich.image.svg, /data-symbol="X500"/);
+  assert.doesNotMatch(rich.image.svg, /data-symbol="X501"/);
+});
+
 test('!vboa không nhận ngành ngoài danh sách hỗ trợ', async () => {
   const heatmap = stubHeatmap();
   const { sent } = await withBot([update({ text: '!vboa thep' })], { heatmap });
