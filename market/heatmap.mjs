@@ -7,6 +7,7 @@ import { money } from './quote.mjs';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
+const OUTPUT_SCALE = 4;
 const PAD = 14;
 const GAP = 4;
 const HEADER = 34;
@@ -149,7 +150,7 @@ function heatmapSvg(groups, stats, day) {
   }));
   const groupRects = treemap(groupItems, area);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH * OUTPUT_SCALE}" height="${HEIGHT * OUTPUT_SCALE}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
   <rect width="${WIDTH}" height="${HEIGHT}" fill="#f1f5f9"/>
   ${groupRects.map(({ item, ...rect }) => sectorSvg(item.group, rect)).join('')}
   <g transform="translate(${PAD}, ${HEIGHT - FOOTER + 8})">
