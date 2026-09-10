@@ -11,7 +11,9 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { askedChartFor, askedFor, askedHelpFor, askedNewsFor, HELP, run, SORRY } from './bocobot.mjs';
+import {
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, HELP, privateRecipientFor, run, SORRY,
+} from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
@@ -19,7 +21,13 @@ import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
 const TOP_ME = { username: 'topbot', displayName: 'Top Bot' };
-const message = (fields) => ({ conversationId: 'p1', conversationType: 'group', messageId: 'm1', ...fields });
+const message = (fields) => ({
+  conversationId: 'p1',
+  conversationType: 'group',
+  messageId: 'm1',
+  from: { userId: 'u1', displayName: 'Người hỏi' },
+  ...fields,
+});
 
 // ---- đọc câu hỏi ----------------------------------------------------------------------------
 
@@ -57,6 +65,7 @@ test('tên hiển thị cũng là một cách gọi', () => {
 test('gọi bot trống hoặc help thì là hỏi hướng dẫn', () => {
   assert.deepEqual(askedHelpFor(message({ text: '@topbot' }), TOP_ME), { addressed: true });
   assert.deepEqual(askedHelpFor(message({ text: '@topbot help' }), TOP_ME), { addressed: true });
+  assert.deepEqual(askedHelpFor(message({ text: '@topbot help -v' }), TOP_ME), { addressed: true });
   assert.deepEqual(askedHelpFor(message({ text: '@Top Bot help' }), TOP_ME), { addressed: true });
   assert.equal(askedHelpFor(message({ text: '@topbot vic' }), TOP_ME), null);
   assert.equal(askedHelpFor(message({ text: 'topbot help' }), TOP_ME), null);
@@ -324,13 +333,15 @@ test('gọi bot trống thì trả hướng dẫn', async () => {
   assert.equal(sent[0].text, HELP);
   assert.match(sent[0].text, /!vboa bds — bất động sản/);
   assert.match(sent[0].text, /!gex 3m — chart 3 tháng/);
+  assert.match(sent[0].text, /!gex 3m -v hoặc !vboa bank -v/);
   assert.equal(sent[0].replyToMessageId, 'm1');
 });
 
 test('gọi bot help thì trả hướng dẫn thay vì đọc HELP như mã', async () => {
-  const { sent } = await withBot([update({ text: '@bocobot help' })]);
+  const { sent } = await withBot([update({ text: '@bocobot help -v' })]);
 
   assert.equal(sent[0].text, HELP);
+  assert.equal(sent[0].onlyForUserId, 'u1');
   assert.doesNotMatch(sent[0].text, /HELP — không có dữ liệu/);
 });
 
@@ -385,6 +396,12 @@ test('dấu chấm than là cách gọi bot', () => {
   assert.equal(asked.strict, true);      // gõ hẳn một dấu là có chủ ý, nên mã sai được nói ra
 });
 
+test('-v cuối lệnh là gửi riêng cho người gõ, không phải mã V', () => {
+  assert.equal(privateRecipientFor(message({ text: '!gex -v' })), 'u1');
+  assert.equal(privateRecipientFor(message({ text: '!gex 3m' })), null);
+  assert.deepEqual(askedFor(message({ text: '!gex -v' }), ME).symbols, ['GEX']);
+});
+
 test('một dấu, nhiều mã', () => {
   assert.deepEqual(askedFor(message({ text: '!vic hpg fpt' }), ME).symbols, ['VIC', 'HPG', 'FPT']);
 });
@@ -411,6 +428,8 @@ test('dấu gọi nhận kỳ hạn chart cho đúng một mã', () => {
   assert.deepEqual(askedChartFor(message({ text: '!gex 1n' })), { symbol: 'GEX', period: '1n' });
   assert.deepEqual(askedChartFor(message({ text: '!gex 2d' })), { symbol: 'GEX', period: '2d' });
   assert.deepEqual(askedChartFor(message({ text: '!gex 3m' })), { symbol: 'GEX', period: '3m' });
+  assert.deepEqual(askedChartFor(message({ text: '!gex 3m -v' })), { symbol: 'GEX', period: '3m' });
+  assert.deepEqual(askedChartFor(message({ text: '!gex -v' })), null);
   assert.deepEqual(askedChartFor(message({ text: '!gex 2y' })), { symbol: 'GEX', period: '2y' });
   assert.deepEqual(askedChartFor(message({ text: '  !gex 6M' })), { symbol: 'GEX', period: '6m' });
   assert.equal(askedChartFor(message({ text: '!gex 1n hpg' })), null);
@@ -428,6 +447,7 @@ test('!vboa là lệnh bản đồ nhiệt, không phải mã VBOA', () => {
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa oil' })).filter.title, 'Dầu khí');
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa retail' })).filter.title, 'Bán lẻ');
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa cn' })).filter.title, 'Công nghiệp');
+  assert.deepEqual(askedHeatmapFor(message({ text: '!vboa bank -v' })).filter.title, 'Bank chứng');
   assert.match(askedHeatmapFor(message({ text: '  !vboa hom nay' })).error, /Chỉ hỗ trợ/);
   assert.equal(askedHeatmapFor(message({ text: '!vic' })), null);
 });
@@ -459,6 +479,16 @@ test('!vboa bds chỉ vẽ nhóm bất động sản', async () => {
   assert.match(sent[0].image.svg, /Bất động sản/);
   assert.match(sent[0].image.svg, />VIC</);
   assert.doesNotMatch(sent[0].image.svg, />HPG</);
+});
+
+test('!vboa -v chỉ gửi bản đồ nhiệt cho người gõ', async () => {
+  const heatmap = stubHeatmap();
+  const { sent } = await withBot([update({ text: '!vboa bank -v' })], { heatmap });
+
+  assert.equal(heatmap.calls[0].asked.filter.key, 'bank');
+  assert.equal(sent[0].onlyForUserId, 'u1');
+  assert.equal(sent[0].text, 'Bản đồ nhiệt VN Bank chứng 07/09/2026');
+  assert.equal(sent[0].image.fileName, 'vboa-bank-2026-09-07.svg');
 });
 
 test('!vboa lấy tối đa 500 mã thanh khoản lớn nhất', () => {
@@ -562,6 +592,29 @@ test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async 
   assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
   assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
   assert.match(sent[0].rich.blocks[1].text, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
+});
+
+test('hỏi chart với -v thì chỉ gửi cho người gõ', async () => {
+  const rich = chartRich(rangeSession('GEX', {
+    t: [
+      Date.parse('2026-07-08T03:00:00Z') / 1000,
+      Date.parse('2026-08-08T03:00:00Z') / 1000,
+      Date.parse('2026-09-08T03:00:00Z') / 1000,
+    ],
+    c: [18, 20, 21],
+    h: [18.4, 20.2, 21.2],
+    l: [17.8, 19.7, 20.8],
+    v: [1000, 2000, 3000],
+  }, { key: '3m', label: '3 tháng' }));
+  const chart = stubChart({ rich });
+  const { sent } = await withBot(
+    [update({ text: '!gex 3m -v' })],
+    { market: stubMarket({ listed: ['GEX'] }), chart },
+  );
+
+  assert.deepEqual(chart.calls.map((call) => [call.symbol, call.period]), [['GEX', '3m']]);
+  assert.equal(sent[0].onlyForUserId, 'u1');
+  assert.equal(sent[0].image.fileName, 'gex-3m-2026-09-08.svg');
 });
 
 test('chart 1d dùng nến trong phiên, còn kỳ hạn dài dùng nến ngày', async () => {

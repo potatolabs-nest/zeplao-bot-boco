@@ -81,7 +81,7 @@ const SECTORS = {
 };
 
 export function askedHeatmapFor(message) {
-  const text = String(message?.text ?? '').trimStart();
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
   if (!text.startsWith('!')) return null;
   const parts = text.slice(1).trim().split(/\s+/).filter(Boolean);
   if (parts[0]?.toLowerCase() !== 'vboa') return null;
@@ -93,6 +93,10 @@ export function askedHeatmapFor(message) {
     addressed: true,
     error: 'Chỉ hỗ trợ: !vboa bds, !vboa bank, !vboa oil, !vboa retail, !vboa cn.',
   };
+}
+
+function withoutPrivateFlag(text) {
+  return String(text ?? '').replace(/\s+-v\s*$/i, '').trimEnd();
 }
 
 export function marketHeatmap({ maxSymbols = MAX_SYMBOLS, at = () => new Date() } = {}) {
