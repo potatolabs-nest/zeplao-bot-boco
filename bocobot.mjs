@@ -42,6 +42,7 @@ import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
 import { googleNews, newsMessage } from './market/news.mjs';
 import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
+import { technicalAnalysis } from './market/technical.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -80,6 +81,7 @@ export const HELP = [
   '!vic — giá VIC kèm chart trong phiên gần nhất',
   '!vic hpg fpt — xem nhiều mã, không kèm chart',
   '!tin vic — 5 tin gần nhất về VIC',
+  '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
   '',
   'Chart theo thời gian:',
   '!gex 1d — chart trong phiên gần nhất',
@@ -237,6 +239,30 @@ export function askedNewsFor(message) {
 }
 
 /**
+ * `!ptkt vic` là lệnh phân tích kỹ thuật, mỗi lần đúng một mã.
+ *
+ * Chạy trước `askedFor` vì cùng lý do với `!tin`: để bộ đọc giá thấy cả câu thì nó tra `PTKT` và
+ * `VIC`. `PTKT` không phải mã nào, nên `!ptkt` đứng một mình được nhắc cú pháp chứ không rơi
+ * xuống tra giá.
+ */
+export function askedTechnicalFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+
+  const asked = text.slice(CALL.length).trim();
+  if (!/^ptkt(\s|$)/i.test(asked)) return null;
+
+  const symbols = tokensIn(asked.replace(/^ptkt\b/i, ''));
+  if (symbols.length !== 1) {
+    return { addressed: true, error: 'Mỗi lần chỉ phân tích kỹ thuật một mã, ví dụ: !ptkt vic.' };
+  }
+  if (!looksLikeCode(symbols[0])) {
+    return { addressed: true, error: 'Không nhận ra mã cần phân tích, ví dụ: !ptkt vic.' };
+  }
+  return { addressed: true, symbol: symbols[0] };
+}
+
+/**
  * `!gex 1n` vẫn là hỏi giá GEX, nhưng chart đi kèm dùng khung 1 năm.
  *
  * Chỉ nhận đúng dạng `!<mã> <kỳ hạn>` để một câu hỏi nhiều mã không bị hiểu nhầm là chart riêng.
@@ -276,6 +302,7 @@ export async function run(token, {
   statePath = STATE,
   at = () => new Date(),
   heatmap = marketHeatmap({ at }),
+  technical = technicalAnalysis(),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -397,6 +424,23 @@ export async function run(token, {
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.news, message.messageId, onlyForUserId);
+      }
+      return;
+    }
+
+    const technicalAsked = askedTechnicalFor(message);
+    if (technicalAsked) {
+      if (technicalAsked.error) {
+        await say(message.conversationId, technicalAsked.error, message.messageId, onlyForUserId);
+        return;
+      }
+
+      try {
+        const text = await technical.report(technicalAsked.symbol);
+        await say(message.conversationId, text, message.messageId, onlyForUserId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);
       }
       return;
     }

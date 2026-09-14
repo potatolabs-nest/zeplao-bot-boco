@@ -12,12 +12,13 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, HELP, privateRecipientFor, run, SORRY,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, HELP, privateRecipientFor, run, SORRY,
 } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
+import { analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage } from './market/technical.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
 const TOP_ME = { username: 'topbot', displayName: 'Top Bot' };
@@ -240,6 +241,18 @@ function stubHeatmap({ broken = false, rich = null } = {}) {
   };
 }
 
+function stubTechnical({ broken = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async report(symbol) {
+      calls.push(symbol);
+      if (broken) throw new Error('nến không trả lời');
+      return `PTKT ${symbol} · phiên 11/09/2026 · giá 243,3 (-1,78%)\n- Xu hướng tăng rõ.`;
+    },
+  };
+}
+
 function pickPeriod(period) {
   if (!period) return null;
   return {
@@ -260,7 +273,10 @@ function pickPeriod(period) {
  */
 async function withBot(
   updates,
-  { market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), expect = 1, settle = 200 } = {},
+  {
+    market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
+    expect = 1, settle = 200,
+  } = {},
 ) {
   const platform = await stubApi(updates);
   const stopping = new AbortController();
@@ -273,6 +289,7 @@ async function withBot(
     news,
     chart,
     heatmap,
+    technical,
     statePath,
     at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
   });
@@ -836,6 +853,127 @@ test('!tin chỉ nhận một mã tin tức mỗi lần', async () => {
   assert.deepEqual(news.calls, []);
   assert.equal(sent[0].text, 'Mỗi lần chỉ xem tin cho một mã, ví dụ: !tin vic.');
   assert.doesNotMatch(sent[0].text, /^TIN /m);
+});
+
+test('!ptkt đọc đúng một mã, và không bị đọc thành giá PTKT', () => {
+  assert.deepEqual(askedTechnicalFor(message({ text: '!ptkt vic' })), { addressed: true, symbol: 'VIC' });
+  assert.deepEqual(askedTechnicalFor(message({ text: '!PTKT hpg -v' })), { addressed: true, symbol: 'HPG' });
+  assert.match(askedTechnicalFor(message({ text: '!ptkt' })).error, /ví dụ: !ptkt vic/);
+  assert.match(askedTechnicalFor(message({ text: '!ptkt vic hpg' })).error, /một mã/);
+  assert.equal(askedTechnicalFor(message({ text: 'ptkt vic' })), null);
+  assert.equal(askedTechnicalFor(message({ text: '!tin vic' })), null);
+});
+
+test('!ptkt vic gửi bài phân tích của đúng mã ấy, một tin nhắn', async () => {
+  const technical = stubTechnical();
+  const { sent } = await withBot([update({ text: '!ptkt vic' })], { technical });
+  assert.deepEqual(technical.calls, ['VIC']);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /^PTKT VIC · /);
+  assert.equal(sent[0].replyToMessageId, 'm1');
+});
+
+test('!ptkt nhiều mã thì nhắc cú pháp, không phân tích mã nào', async () => {
+  const technical = stubTechnical();
+  const { sent } = await withBot([update({ text: '!ptkt vic hpg' })], { technical });
+  assert.deepEqual(technical.calls, []);
+  assert.equal(sent[0].text, 'Mỗi lần chỉ phân tích kỹ thuật một mã, ví dụ: !ptkt vic.');
+});
+
+test('!ptkt kèm -v thì chỉ gửi cho người hỏi', async () => {
+  const { sent } = await withBot([update({ text: '!ptkt vic -v' })]);
+  assert.equal(sent[0].onlyForUserId, 'u1');
+});
+
+test('nguồn nến chết khi !ptkt thì nói ra', async () => {
+  const { sent } = await withBot([update({ text: '!ptkt vic' })], { technical: stubTechnical({ broken: true }) });
+  assert.equal(sent[0].text, SORRY.source);
+});
+
+// ---- phân tích kỹ thuật ---------------------------------------------------------------------
+
+const candles = (length, price, { volume = 2e6 } = {}) => Array.from({ length }, (_, i) => {
+  const close = price(i);
+  return { time: 1754013600 + i * 86400, open: i ? price(i - 1) : close, high: close * 1.01, low: close * 0.99, close, volume };
+});
+const SATURDAY = new Date('2026-09-12T03:00:00Z');
+const INDEX_ROWS = candles(260, (i) => 1000 * 1.001 ** i);
+const RISING = candles(260, (i) => 20 * 1.004 ** i * (1 + 0.02 * Math.sin(i / 3)));
+const FALLING = candles(260, (i) => 40 * 0.996 ** i * (1 + 0.02 * Math.sin(i / 3)));
+const asRaw = (rows) => ({
+  t: rows.map((row) => row.time), o: rows.map((row) => row.open), h: rows.map((row) => row.high),
+  l: rows.map((row) => row.low), c: rows.map((row) => row.close), v: rows.map((row) => row.volume),
+});
+
+test('chỉ báo tính đúng trên những chuỗi kiểm được bằng tay', () => {
+  assert.deepEqual(sma([1, 2, 3, 4, 5], 3), [null, null, 2, 3, 4]);
+  assert.deepEqual(ema([1, 2, 3, 4, 5], 3), [null, null, 2, 3, 4]);
+  assert.equal(rsi(Array.from({ length: 16 }, (_, i) => i + 1), 14).at(-1), 100);
+  assert.equal(rsi(Array.from({ length: 16 }, (_, i) => 16 - i), 14).at(-1), 0);
+  assert.ok(Math.abs(atr(candles(20, () => 10), 14).at(-1) - 0.2) < 1e-9);
+});
+
+test('xu hướng tăng ra tích cực, kèm điểm mua dưới giá và cắt lỗ dưới điểm mua', () => {
+  const analysis = analyze('ABC', RISING, INDEX_ROWS, { at: SATURDAY });
+  assert.equal(analysis.verdict, 'positive');
+  assert.ok(analysis.steps.length >= 6 && analysis.steps.length <= 10);
+
+  const text = technicalMessage(analysis);
+  assert.match(text, /^PTKT ABC · phiên /);
+  assert.match(text, /Đánh giá: TÍCH CỰC/);
+  assert.match(text, /Độ tin cậy: (CAO|TRUNG BÌNH|THẤP) — /);
+  assert.equal(text.split('\n').filter((line) => line.startsWith('- ')).length, analysis.steps.length);
+  assert.ok(text.length <= MAX_NEWS_REPLY_CHARS);
+
+  const number = (value) => Number(value.replace(/\./g, '').replace(',', '.'));
+  const [, buyLow, buyHigh] = text.match(/Điểm mua: ([\d.,]+)–([\d.,]+)/);
+  const [, target] = text.match(/Điểm bán\/chốt lời: ([\d.,]+)/);
+  const [, stop] = text.match(/Cắt lỗ: dưới ([\d.,]+)/);
+  assert.ok(number(stop) < number(buyLow));
+  assert.ok(number(buyLow) <= number(buyHigh));
+  assert.ok(number(buyHigh) <= analysis.close);
+  assert.ok(number(target) > analysis.close);
+});
+
+test('xu hướng giảm ra tiêu cực và không khuyên mua', () => {
+  const analysis = analyze('ABC', FALLING, INDEX_ROWS, { at: SATURDAY });
+  assert.equal(analysis.verdict, 'negative');
+  const text = technicalMessage(analysis);
+  assert.match(text, /Đánh giá: TIÊU CỰC/);
+  assert.match(text, /Điểm mua: chưa mua/);
+});
+
+test('chưa đủ nến thì không phân tích, thiếu VN-Index thì bỏ hai bước so với thị trường', () => {
+  assert.equal(analyze('ABC', RISING.slice(0, 34), INDEX_ROWS, { at: SATURDAY }), null);
+  const withMarket = analyze('ABC', RISING, INDEX_ROWS, { at: SATURDAY });
+  const alone = analyze('ABC', RISING, null, { at: SATURDAY });
+  assert.equal(withMarket.steps.length - alone.steps.length, 2);
+  assert.ok(alone.steps.length >= 6);
+  assert.doesNotMatch(technicalMessage(alone), /VN-Index/);
+});
+
+test('nguồn nến: mã không có thật là không có dữ liệu, VN-Index hỏng thì vẫn phân tích', async () => {
+  const fetched = [];
+  const technical = technicalAnalysis({
+    now: () => SATURDAY.getTime(),
+    async fetchImpl(url) {
+      fetched.push(String(url));
+      if (/symbol=ZZZZ/.test(url)) return new Response('{}', { status: 400 });
+      if (/symbol=VNINDEX/.test(url)) return new Response('lỗi', { status: 502 });
+      return Response.json(asRaw(RISING));
+    },
+  });
+
+  assert.equal(await technical.report('zzzz'), 'ZZZZ — không có dữ liệu');
+  const text = await technical.report('abc');
+  assert.match(text, /^PTKT ABC · /);
+  assert.doesNotMatch(text, /VN-Index/);
+  assert.ok(fetched.some((url) => url.includes('/stock?') && url.includes('resolution=1D')));
+});
+
+test('nguồn nến chết hẳn thì ném, để bot nói nguồn đang không trả lời', async () => {
+  const technical = technicalAnalysis({ fetchImpl: async () => new Response('lỗi', { status: 503 }) });
+  await assert.rejects(technical.report('VIC'));
 });
 
 test('nguồn tin chết thì nói ra', async () => {

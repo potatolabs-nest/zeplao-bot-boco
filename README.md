@@ -19,6 +19,7 @@ dài đúng một dòng.
 | `!gex 1d`, `!gex 2d`, `!gex 3m`, `!gex 4y` | Một mã, kèm chart theo số ngày/tháng/năm tuỳ gõ |
 | `!vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
+| `!ptkt vic` | Phân tích kỹ thuật một mã: 6–10 gạch đầu dòng, đánh giá, độ tin cậy, điểm mua bán |
 | `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
 
@@ -33,6 +34,16 @@ Riêng `!tin <mã>` là lệnh đọc tin. Mỗi lần chỉ nhận một mã, �
 thành hỏi giá ba mã `TIN`, `VIC`, `GEX`. `!tin` đứng một mình vẫn là hỏi giá mã `TIN`. Chart
 dài hạn cũng chỉ nhận một mã mỗi lần: `!gex 1y` được, còn hỏi nhiều mã thì bot chỉ trả giá,
 không gắn chart riêng.
+
+`!ptkt <mã>` là phân tích kỹ thuật, cũng mỗi lần một mã. Nó đọc khoảng 300 nến ngày của mã và
+của VN-Index rồi đi qua từng bước: xu hướng theo MA20/50/200, động lượng theo RSI(14) và
+MACD(12, 26, 9), dòng tiền theo khối lượng 5 phiên so với 20 phiên, biên độ theo Bollinger(20) và
+ATR(14), hỗ trợ/kháng cự từ đỉnh đáy 120 phiên, vị trí trong vùng giá một năm, và sức mạnh so với
+VN-Index. Mỗi bước là một gạch đầu dòng và một điểm. Tổng điểm từ +3 trở lên là **tích cực**, từ
+-3 trở xuống là **tiêu cực**, còn lại là **bình thường**; các bước cùng chiều nhau tới đâu thì độ
+tin cậy **cao / trung bình / thấp** tới đó, và dữ liệu ngắn hay thanh khoản mỏng luôn kéo về
+thấp. Điểm mua, chốt lời, cắt lỗ đặt theo vùng hỗ trợ/kháng cự và ATR. Không có mô hình ngôn ngữ
+nào: cùng dữ liệu thì ra cùng nhận định, và đây là tín hiệu tự động, không phải khuyến nghị.
 
 Kỳ hạn chart nhận từ `1d` tới tối đa `20y`: `d` là ngày, `m` là tháng, `y` là năm. Chữ `n` vẫn
 được hiểu là năm, nên `!gex 5n` và `!gex 5y` đều chạy.

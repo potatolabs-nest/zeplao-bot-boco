@@ -251,7 +251,7 @@ function priceTicks(session) {
   return [...new Set(values)].sort((a, b) => b - a);
 }
 
-function tradingDay(seconds) {
+export function tradingDay(seconds) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh',
     year: 'numeric',
@@ -260,7 +260,7 @@ function tradingDay(seconds) {
   }).format(new Date(seconds * 1000));
 }
 
-function formatDay(day) {
+export function formatDay(day) {
   const [year, month, date] = day.split('-');
   return `${date}/${month}/${year}`;
 }
