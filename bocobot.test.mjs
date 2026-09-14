@@ -106,7 +106,7 @@ const VIC = {
 
 /// Một nền tảng bot đủ dùng: nói tên mình, nhận danh sách lệnh, phát ra một xấp cập nhật đúng
 /// một lần, và ghi lại mọi thứ được gửi vào phòng.
-async function stubApi(updates) {
+async function stubApi(updates, { refuseImages = false } = {}) {
   const sent = [];
   const registered = [];
   let queue = [...updates];
@@ -127,6 +127,10 @@ async function stubApi(updates) {
         return answer({ ok: true });
       }
       if (path === '/sendMessage') {
+        if (refuseImages && JSON.parse(body).image) {
+          response.writeHead(503, { 'Content-Type': 'application/json' });
+          return response.end('{"error":"write_not_carried_out","message":"write not carried out.","details":{}}');
+        }
         sent.push(JSON.parse(body));
         return answer({ messageId: `m${sent.length}` });
       }
@@ -284,10 +288,10 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
-    expect = 1, settle = 200,
+    expect = 1, settle = 200, refuseImages = false,
   } = {},
 ) {
-  const platform = await stubApi(updates);
+  const platform = await stubApi(updates, { refuseImages });
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
 
@@ -966,6 +970,20 @@ test('!view vic là giá VIC như !vic trước đây, cả khi máy chủ đã 
 
   assert.equal(canonicalMessage(message({ text: '!view vic' }), ME).text, '!vic');
   assert.equal(canonicalMessage(message({ text: '!vic' }), ME).text, '!vic');   // lối cũ vẫn đọc được
+});
+
+test('máy chủ không nhận hình thì vẫn gửi chữ cho người hỏi, không im', async () => {
+  // 15/09/2026: tin bot kèm hình bị trả 503 write_not_carried_out, tin chữ vẫn đi.
+  const chart = stubChart({ rich: { image: { fileName: 'vic.svg', svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' }, blocks: [] } });
+  const { sent } = await withBot(
+    [update({ text: '!view vic', command: 'view', commandArgs: 'vic', commandPrefix: '!', private: true })],
+    { chart, refuseImages: true },
+  );
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].image, undefined);
+  assert.match(sent[0].text, /^VIC 256,1/);
+  assert.match(sent[0].text, /Chưa gửi được hình lúc này/);
+  assert.equal(sent[0].onlyForUserId, 'u1');
 });
 
 // ---- phân tích kỹ thuật ---------------------------------------------------------------------

@@ -604,9 +604,19 @@ export async function run(token, {
    * không ai còn nhớ đã hỏi.
    */
   async function say(conversationId, text, replyToMessageId, onlyForUserId) {
+    const content = typeof text === 'string' ? { text } : text;
+    const posted = await send(conversationId, content, replyToMessageId, onlyForUserId);
+    if (posted || !content.image) return posted;
+
+    // Hình không gửi được thì vẫn gửi chữ. Từ 15/09/2026 máy chủ trả `503 write_not_carried_out`
+    // cho tin bot kèm hình trong khi tin chữ vẫn đi — và một câu trả lời thiếu hình vẫn hơn im
+    // lặng, vì từ phía người hỏi im lặng trông y như bot chết.
+    return send(conversationId, { text: `${content.text}\n(Chưa gửi được hình lúc này.)` }, replyToMessageId, onlyForUserId);
+  }
+
+  async function send(conversationId, content, replyToMessageId, onlyForUserId) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const content = typeof text === 'string' ? { text } : text;
         const posted = await call('sendMessage', {
           conversationId,
           ...content,
