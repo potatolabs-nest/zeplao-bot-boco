@@ -12,7 +12,8 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, HELP, privateRecipientFor, run, SORRY,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, canonicalMessage, HELP, privateRecipientFor, run,
+  SORRY,
 } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
@@ -898,6 +899,53 @@ test('nguồn nến chết khi !ptkt thì nói ra', async () => {
   assert.equal(sent[0].text, SORRY.source);
 });
 
+// ---- lệnh ! theo tài liệu 15/09/2026 ----------------------------------------------------------
+
+test('lệnh máy chủ đã tách thì đọc theo command và commandArgs, kể cả khi gọi @tênbot', () => {
+  const privateCall = message({
+    text: '!ptkt@bocobot vic', command: 'ptkt', commandArgs: 'vic', commandPrefix: '!', private: true,
+  });
+  assert.equal(canonicalMessage(privateCall, ME).text, '!ptkt vic');
+  assert.deepEqual(askedTechnicalFor(canonicalMessage(privateCall, ME)), { addressed: true, symbol: 'VIC' });
+
+  const slash = message({ text: '/gia vic hpg', command: 'gia', commandArgs: 'vic hpg', commandPrefix: '/' });
+  assert.deepEqual(askedFor(canonicalMessage(slash, ME), ME).symbols, ['VIC', 'HPG']);
+  assert.deepEqual(askedFor(message({ text: '!gia vic' }), ME).symbols, ['VIC']);
+});
+
+test('dấu ！ toàn độ rộng, ký tự vô hình và @tênbot trong chữ của phòng vẫn là lệnh của bot này', () => {
+  assert.deepEqual(askedFor(canonicalMessage(message({ text: '\u200B ！ｖｉｃ' }), ME), ME).symbols, ['VIC']);
+  assert.deepEqual(askedFor(canonicalMessage(message({ text: '!vic@bocobot hpg' }), ME), ME).symbols, ['VIC', 'HPG']);
+  assert.equal(canonicalMessage(message({ text: '!ptkt@botkhac vic' }), ME), null);
+});
+
+test('lệnh riêng !ptkt@bocobot được trả lời bằng reply vào đúng tin', async () => {
+  const technical = stubTechnical();
+  const { sent } = await withBot(
+    [update({ text: '!ptkt@bocobot vic', command: 'ptkt', commandArgs: 'vic', commandPrefix: '!', private: true })],
+    { technical },
+  );
+  assert.deepEqual(technical.calls, ['VIC']);
+  assert.equal(sent[0].replyToMessageId, 'm1');
+});
+
+test('lệnh riêng khai báo sẵn như !vic tới bot thì vẫn ra giá', async () => {
+  const { sent } = await withBot([update({ text: '!vic', command: 'vic', commandArgs: null, commandPrefix: '!', private: true })]);
+  assert.match(sent[0].text, /^VIC 256,1/);
+});
+
+test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', async () => {
+  const { sent } = await withBot([update({ text: '!xyz@bocobot', command: 'xyz', commandArgs: null, commandPrefix: '!', private: true })]);
+  assert.equal(sent.length, 1);
+});
+
+test('!help@bocobot và !bocobot trả hướng dẫn, còn !help nói giữa phòng thì không', async () => {
+  const { sent } = await withBot([update({ text: '!help@bocobot', command: 'help', commandArgs: null, commandPrefix: '!', private: true })]);
+  assert.equal(sent[0].text, HELP);
+  assert.deepEqual(askedHelpFor(message({ text: '!bocobot' }), ME), { addressed: true });
+  assert.equal(askedHelpFor(message({ text: '!help' }), ME), null);
+});
+
 // ---- phân tích kỹ thuật ---------------------------------------------------------------------
 
 const candles = (length, price, { volume = 2e6 } = {}) => Array.from({ length }, (_, i) => {
@@ -1007,9 +1055,10 @@ test('nguồn tin chết thì nói ra', async () => {
   assert.equal(sent[0].text, SORRY.news);
 });
 
-test('khởi động là xoá sạch danh sách lệnh cũ', async () => {
-  // Không đăng ký gì cả, và nói ra điều đó: `setCommands` thay nguyên si, nên một danh sách
-  // rỗng là cách duy nhất dọn những gì đã đăng ký ở lần chạy trước.
+test('khởi động là thay danh sách lệnh cũ bằng đúng một lệnh bocobot, không khai báo mã nào', async () => {
+  // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm; `[]` thì không dọn được danh
+  // sách cũ trên máy chủ. Nên gửi đúng một từ riêng của bot.
   const { registered } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered, []);
+  assert.deepEqual(registered.map((one) => one.command), ['bocobot']);
+  assert.ok(registered.every((one) => one.description.length <= 256));
 });

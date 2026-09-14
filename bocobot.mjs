@@ -70,6 +70,23 @@ export const PRIVATE_FLAG = '-v';
 /// `/gia@bocobot vic` — vì lệnh nêu tên thì nền tảng giao thẳng, biết chữ ấy hay không.
 const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
 
+/**
+ * Lệnh khai báo với máy chủ: đúng một từ, và cố ý chỉ một.
+ *
+ * Từ 15/09/2026, một `!từ` mà bot trong phòng đã khai báo là **lệnh riêng**: tin biến khỏi phòng,
+ * chỉ người gõ và bot thấy, và hai bot cùng khai báo một từ thì người gõ bị từ chối. Bot này từng
+ * khai báo 98 mã — nên sau thay đổi ấy `!vic` biến mất khỏi nhóm, và trong phòng có một bot giá
+ * khác thì bị chặn hẳn. Không khai báo mã nào thì `!vic` là chữ của phòng, bot nghe được vì đã tắt
+ * chế độ riêng tư, và trả lời cho cả nhóm như trước.
+ *
+ * Danh sách phải **có** một từ: `[]` không dọn được danh sách cũ trên máy chủ. `bocobot` là tên
+ * riêng của bot, không trùng ai, và `!bocobot` mở hướng dẫn. Muốn hỏi riêng thì `!vic@bocobot` —
+ * gọi đích danh luôn tới đúng bot này, dù từ ấy có khai báo hay không.
+ */
+export const COMMANDS = [
+  { command: 'bocobot', description: 'Hướng dẫn: gõ !vic, !ptkt vic, !tin vic, !vboa. Phòng có bot trùng lệnh thì thêm @bocobot, ví dụ !vic@bocobot' },
+];
+
 export const SORRY = {
   nothing: 'Không nhận ra mã nào.',
   source: 'Nguồn giá đang không trả lời. Thử lại sau một lát.',
@@ -98,6 +115,7 @@ export const HELP = [
   '!vboa cn — công nghiệp',
   '',
   'Thêm -v ở cuối lệnh để chỉ gửi cho riêng bạn, ví dụ: !gex 3m -v hoặc !vboa bank -v',
+  'Phòng có bot khác trùng lệnh thì thêm @bocobot, ví dụ: !vic@bocobot — câu trả lời chỉ bạn thấy',
 ].join('\n');
 
 export function askedHelpFor(message, me) {
@@ -105,6 +123,10 @@ export function askedHelpFor(message, me) {
 
   const handles = [me?.username, me?.displayName].filter(Boolean);
   const text = withoutPrivateFlag(message.text ?? '');
+  if (text.trimStart().startsWith(CALL)) {
+    const word = text.trimStart().slice(CALL.length).trim().toLowerCase();
+    return HELP_WORDS.has(word) && (word !== 'help' || message.delivered) ? { addressed: true } : null;
+  }
   const named = handles.some((handle) => text.toLowerCase().includes(`@${handle}`.toLowerCase()));
   if (!named) return null;
 
@@ -131,6 +153,48 @@ function withoutPrivateFlag(text) {
   return String(text ?? '').replace(new RegExp(`\\s+${PRIVATE_FLAG.replace('-', '\\-')}\\s*$`, 'i'), '').trimEnd();
 }
 
+/// Ký tự vô hình mà máy chủ bỏ qua khi đọc lệnh: khoảng trắng độ rộng 0, nối chữ, BOM.
+const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF]/g;
+
+/// Những lệnh gọi ra hướng dẫn. `help` trơn chỉ tính khi máy chủ đã giao nó cho bot này — một
+/// `!help` nói giữa phòng rất có thể là của bot bên cạnh.
+const HELP_WORDS = new Set(['help', 'boco', 'bocobot']);
+
+/**
+ * Tin nhắn, viết lại về đúng một dạng mà mọi bộ đọc bên dưới hiểu: `!lệnh tham số`.
+ *
+ * Từ 15/09/2026 máy chủ tự đọc lệnh `!` như đọc `/` (kuku.vn/bot/doc, "Lệnh riêng với !"):
+ * `!lệnh@tênbot`, dấu `！` toàn độ rộng, ký tự vô hình đứng trước — tất cả đã được tách sẵn thành
+ * `command`, `commandArgs`, `commandPrefix`. Tin nào mang `commandPrefix` là tin máy chủ đã giao
+ * **cho chính bot này**, nên dùng đúng những gì nó tách, không cắt lại chuỗi `text` — trong đó
+ * còn nguyên `@bocobot`, và `!ptkt@bocobot vic` cắt tay thì thành ba mã PTKT, BOCOBOT, VIC.
+ *
+ * Tin không mang `commandPrefix` là chữ của phòng mà bot nghe được vì đã tắt chế độ riêng tư: một
+ * `!từ` không bot nào khai báo. Chỗ đó tự nới lỏng giống máy chủ. Trả về `null` khi câu ấy gọi
+ * đích danh ai khác — `!ptkt@ai_do vic` lọt vào phòng khi `ai_do` không phải bot trong phòng, và
+ * nó không nói với bot này.
+ */
+export function canonicalMessage(message, me) {
+  if (!message) return null;
+
+  if (message.commandPrefix && message.command) {
+    const args = message.commandArgs ? ` ${message.commandArgs}` : '';
+    return { ...message, text: `${CALL}${message.command}${args}`, command: null, commandArgs: null, delivered: true };
+  }
+
+  const text = String(message.text ?? '').replace(INVISIBLE, '');
+  const leading = text.trimStart();
+  if (!/^[!！]/.test(leading)) return text === message.text ? message : { ...message, text };
+
+  let body = leading.slice(1).normalize('NFKC');
+  const named = /^([A-Za-z0-9_]{1,32})@([A-Za-z0-9._-]+)(.*)$/s.exec(body);
+  if (named) {
+    if (named[2].toLowerCase() !== String(me?.username ?? '').toLowerCase()) return null;
+    body = `${named[1]}${named[3]}`;
+  }
+  return { ...message, text: `${CALL}${body}` };
+}
+
 /**
  * Câu hỏi này hỏi cái gì, nếu nó có hỏi gì.
  *
@@ -155,8 +219,11 @@ export function askedFor(message, me, mine = new Set()) {
   const named = handles.some((handle) => text.toLowerCase().includes(`@${handle}`.toLowerCase()));
   // Dấu gọi, trước tiên. Đây là đường vào chính và là đường duy nhất phủ hết 1.522 mã.
   if (text.trimStart().startsWith(CALL)) {
+    // `!gia vic hpg` — và `/gia vic hpg` sau khi `canonicalMessage` viết lại — thì GIA là tên lệnh,
+    // không phải một mã.
+    const words = tokensIn(text.trimStart().slice(CALL.length));
     return {
-      symbols: tokensIn(text.trimStart().slice(CALL.length)),
+      symbols: OWN.has(words[0]?.toLowerCase()) ? words.slice(1) : words,
       addressed: true,
       strict: true,
     };
@@ -324,15 +391,9 @@ export async function run(token, {
 
   const guard = makeGuard({ market });
 
-  // **Không đăng ký lệnh nào**, và nói ra điều đó để máy chủ xoá danh sách cũ.
-  //
-  // Nền tảng chỉ giao `/xyz` cho bot đã khai là có `/xyz`, mà chỗ khai có đúng 100 ô cho 1.522
-  // mã — nên đường gạch chéo không bao giờ phủ hết được. Đường đi là chữ thường: tắt chế độ
-  // riêng tư thì bot nghe cả phòng, và `vic` gõ trần trụi chạy với mọi mã, không trừ mã nào.
-  //
-  // Danh sách rỗng gửi lên có việc của nó: `setCommands` thay nguyên si, nên đây là cách duy
-  // nhất dọn những gì đã đăng ký trước đó.
-  await call('setCommands', { commands: [] }).catch((problem) => console.error(String(problem)));
+  // Khai báo đúng `COMMANDS`, thay nguyên si danh sách cũ — xem ghi chú ở `COMMANDS` vì sao không
+  // khai báo mã nào nữa.
+  await call('setCommands', { commands: COMMANDS }).catch((problem) => console.error(String(problem)));
 
   // Danh sách niêm yết tải ngay nhưng không đợi: câu hỏi đầu tiên có thể tới trước khi ba sàn
   // trả lời xong, và lúc ấy cái sàng vẫn làm việc được — bằng cách dò thay vì tra.
@@ -380,7 +441,9 @@ export async function run(token, {
     }
   }
 
-  async function onMessage(message) {
+  async function onMessage(received) {
+    const message = canonicalMessage(received, me);
+    if (!message) return;
     const onlyForUserId = privateRecipientFor(message);
 
     const helpAsked = askedHelpFor(message, me);

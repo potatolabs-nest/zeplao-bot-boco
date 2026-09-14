@@ -81,6 +81,18 @@ Bot **không đăng ký lệnh nào**, và lúc khởi động nó gửi lên m�
 đã đăng ký ở lần chạy trước. Riêng `/gia@bocobot vic` vẫn chạy: một lệnh nêu đích danh thì nền
 tảng giao thẳng, biết chữ ấy hay không.
 
+
+### Lệnh riêng với `!` (từ 15/09/2026)
+
+Nền tảng giờ đọc `!từ` như một lệnh: nếu một bot trong phòng đã khai báo `từ` bằng `setCommands`,
+tin ấy thành **lệnh riêng** — biến khỏi phòng, chỉ người gõ và bot thấy — và hai bot cùng khai báo
+một từ thì người gõ bị từ chối. Bot này vì vậy chỉ khai báo đúng `bocobot` (mở hướng dẫn) và
+**không khai báo mã nào**: `!vic`, `!ptkt vic`, `!tin vic`, `!vboa` là chữ bình thường của phòng,
+bot nghe được vì đã tắt chế độ riêng tư, và trả lời cho cả nhóm. Muốn hỏi riêng, hoặc phòng có
+bot khác trùng lệnh, thì gọi đích danh: `!vic@bocobot` luôn tới đúng bot này, và câu trả lời chỉ
+người hỏi thấy. Bot đọc lệnh máy chủ đã tách qua `command`, `commandArgs`, `commandPrefix`, và trả
+lời cả lệnh lạ gọi đích danh thay vì im.
+
 ## Giá lấy ở đâu
 
 Một **dây nguồn**, không phải một nguồn. Hỏi nguồn đầu; mã nào nó không có thì đem xuống nguồn
