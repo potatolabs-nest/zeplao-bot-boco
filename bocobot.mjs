@@ -436,8 +436,9 @@ export async function run(token, {
       }
 
       try {
-        const text = await technical.report(technicalAsked.symbol);
-        await say(message.conversationId, text, message.messageId, onlyForUserId);
+        // Một tin nhắn có hình, hoặc một dòng chữ khi mã không có dữ liệu để phân tích.
+        const reply = await technical.report(technicalAsked.symbol);
+        await say(message.conversationId, reply, message.messageId, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);

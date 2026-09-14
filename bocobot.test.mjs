@@ -18,7 +18,9 @@ import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
-import { analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage } from './market/technical.mjs';
+import {
+  analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich,
+} from './market/technical.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
 const TOP_ME = { username: 'topbot', displayName: 'Top Bot' };
@@ -248,7 +250,12 @@ function stubTechnical({ broken = false } = {}) {
     async report(symbol) {
       calls.push(symbol);
       if (broken) throw new Error('nến không trả lời');
-      return `PTKT ${symbol} · phiên 11/09/2026 · giá 243,3 (-1,78%)\n- Xu hướng tăng rõ.`;
+      const text = `PTKT ${symbol} · phiên 11/09/2026 · 243,3 (-1,78%)`;
+      return {
+        text,
+        image: { fileName: `ptkt-${symbol.toLowerCase()}-2026-09-11.svg`, svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
+        rich: { blocks: [{ type: 'paragraph', text }] },
+      };
     },
   };
 }
@@ -870,6 +877,7 @@ test('!ptkt vic gửi bài phân tích của đúng mã ấy, một tin nhắn',
   assert.deepEqual(technical.calls, ['VIC']);
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /^PTKT VIC · /);
+  assert.equal(sent[0].image.fileName, 'ptkt-vic-2026-09-11.svg');   // hình đi cùng chữ, một tin nhắn
   assert.equal(sent[0].replyToMessageId, 'm1');
 });
 
@@ -918,29 +926,46 @@ test('xu hướng tăng ra tích cực, kèm điểm mua dưới giá và cắt 
   assert.equal(analysis.verdict, 'positive');
   assert.ok(analysis.steps.length >= 6 && analysis.steps.length <= 10);
 
+  const { plan } = analysis;
+  assert.ok(plan.stop < plan.buy[0]);
+  assert.ok(plan.buy[0] <= plan.buy[1]);
+  assert.ok(plan.buy[1] <= analysis.close);
+  assert.ok(plan.targets[0] > analysis.close);
+
   const text = technicalMessage(analysis);
   assert.match(text, /^PTKT ABC · phiên /);
-  assert.match(text, /Đánh giá: TÍCH CỰC/);
-  assert.match(text, /Độ tin cậy: (CAO|TRUNG BÌNH|THẤP) — /);
+  assert.match(text, /\nTÍCH CỰC · tin cậy (CAO|TRUNG BÌNH|THẤP) \(/);
+  assert.match(text, /\nMua: .+ hoặc khi vượt /);
+  assert.match(text, /\nChốt lời: .+ · Cắt lỗ: /);
   assert.equal(text.split('\n').filter((line) => line.startsWith('- ')).length, analysis.steps.length);
-  assert.ok(text.length <= MAX_NEWS_REPLY_CHARS);
+});
 
-  const number = (value) => Number(value.replace(/\./g, '').replace(',', '.'));
-  const [, buyLow, buyHigh] = text.match(/Điểm mua: ([\d.,]+)–([\d.,]+)/);
-  const [, target] = text.match(/Điểm bán\/chốt lời: ([\d.,]+)/);
-  const [, stop] = text.match(/Cắt lỗ: dưới ([\d.,]+)/);
-  assert.ok(number(stop) < number(buyLow));
-  assert.ok(number(buyLow) <= number(buyHigh));
-  assert.ok(number(buyHigh) <= analysis.close);
-  assert.ok(number(target) > analysis.close);
+test('!ptkt trả vài dòng chữ ngắn, còn con số nằm trên hình SVG', () => {
+  const reply = technicalRich(analyze('ABC', RISING, INDEX_ROWS, { at: SATURDAY }));
+  assert.ok(reply.text.length <= 700, `${reply.text.length} ký tự`);
+  assert.ok(reply.text.split('\n').every((line) => line.length <= 90));
+  assert.equal(reply.rich.blocks[0].text, reply.text);
+  assert.match(reply.image.fileName, /^ptkt-abc-\d{4}-\d{2}-\d{2}\.svg$/);
+
+  const { svg } = reply.image;
+  assert.match(svg, /width="2000" height="2600" viewBox="0 0 1000 1300"/);
+  for (const label of ['TÍCH CỰC', 'MA20', 'MA50', 'MA200', 'Mua ', 'Chốt lời', 'Cắt lỗ', 'TB20', 'quá mua', 'quá bán', 'Tín hiệu']) {
+    assert.ok(svg.includes(label), `thiếu ${label}`);
+  }
+  assert.doesNotMatch(svg, /NaN|undefined|Infinity/);
 });
 
 test('xu hướng giảm ra tiêu cực và không khuyên mua', () => {
   const analysis = analyze('ABC', FALLING, INDEX_ROWS, { at: SATURDAY });
   assert.equal(analysis.verdict, 'negative');
   const text = technicalMessage(analysis);
-  assert.match(text, /Đánh giá: TIÊU CỰC/);
-  assert.match(text, /Điểm mua: chưa mua/);
+  assert.match(text, /\nTIÊU CỰC · /);
+  assert.match(text, /\nMua: chưa/);
+
+  const { svg } = technicalRich(analysis).image;
+  assert.ok(svg.includes('TIÊU CỰC'));
+  assert.ok(svg.includes('Bán '));
+  assert.doesNotMatch(svg, /NaN|undefined|Infinity/);
 });
 
 test('chưa đủ nến thì không phân tích, thiếu VN-Index thì bỏ hai bước so với thị trường', () => {
@@ -965,9 +990,10 @@ test('nguồn nến: mã không có thật là không có dữ liệu, VN-Index 
   });
 
   assert.equal(await technical.report('zzzz'), 'ZZZZ — không có dữ liệu');
-  const text = await technical.report('abc');
-  assert.match(text, /^PTKT ABC · /);
-  assert.doesNotMatch(text, /VN-Index/);
+  const reply = await technical.report('abc');
+  assert.match(reply.text, /^PTKT ABC · /);
+  assert.doesNotMatch(reply.text, /VN-Index/);
+  assert.match(reply.image.svg, /^<svg /);
   assert.ok(fetched.some((url) => url.includes('/stock?') && url.includes('resolution=1D')));
 });
 
