@@ -84,7 +84,7 @@ const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
  * gọi đích danh luôn tới đúng bot này, dù từ ấy có khai báo hay không.
  */
 export const COMMANDS = [
-  { command: 'bocobot', description: 'Hướng dẫn: gõ !vic, !ptkt vic, !tin vic, !vboa. Phòng có bot trùng lệnh thì thêm @bocobot, ví dụ !vic@bocobot' },
+  { command: 'bocobot', description: 'Hướng dẫn: !vic, !ptkt vic, !tin vic, !vboa' },
 ];
 
 export const SORRY = {
@@ -115,7 +115,6 @@ export const HELP = [
   '!vboa cn — công nghiệp',
   '',
   'Thêm -v ở cuối lệnh để chỉ gửi cho riêng bạn, ví dụ: !gex 3m -v hoặc !vboa bank -v',
-  'Phòng có bot khác trùng lệnh thì thêm @bocobot, ví dụ: !vic@bocobot — câu trả lời chỉ bạn thấy',
 ].join('\n');
 
 export function askedHelpFor(message, me) {

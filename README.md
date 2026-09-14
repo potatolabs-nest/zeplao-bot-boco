@@ -88,10 +88,9 @@ Nền tảng giờ đọc `!từ` như một lệnh: nếu một bot trong phòn
 tin ấy thành **lệnh riêng** — biến khỏi phòng, chỉ người gõ và bot thấy — và hai bot cùng khai báo
 một từ thì người gõ bị từ chối. Bot này vì vậy chỉ khai báo đúng `bocobot` (mở hướng dẫn) và
 **không khai báo mã nào**: `!vic`, `!ptkt vic`, `!tin vic`, `!vboa` là chữ bình thường của phòng,
-bot nghe được vì đã tắt chế độ riêng tư, và trả lời cho cả nhóm. Muốn hỏi riêng, hoặc phòng có
-bot khác trùng lệnh, thì gọi đích danh: `!vic@bocobot` luôn tới đúng bot này, và câu trả lời chỉ
-người hỏi thấy. Bot đọc lệnh máy chủ đã tách qua `command`, `commandArgs`, `commandPrefix`, và trả
-lời cả lệnh lạ gọi đích danh thay vì im.
+bot nghe được vì đã tắt chế độ riêng tư, và trả lời cho cả nhóm — lệnh gõ y như trước. Bot đọc
+lệnh máy chủ đã tách qua `command`, `commandArgs`, `commandPrefix`, nên `!vic@bocobot` cũng chạy
+nếu có ai gõ, nhưng không ai phải gõ như vậy.
 
 ## Giá lấy ở đâu
 
