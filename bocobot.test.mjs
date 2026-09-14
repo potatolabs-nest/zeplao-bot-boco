@@ -364,7 +364,7 @@ test('gọi bot trống thì trả hướng dẫn', async () => {
   assert.equal(sent[0].text, HELP);
   assert.match(sent[0].text, /!vboa bds — bất động sản/);
   assert.match(sent[0].text, /!view gex 3m — chart 3 tháng/);
-  assert.match(sent[0].text, /gõ \/ thì cả nhóm cùng xem, ví dụ \/view vic/);
+  assert.match(sent[0].text, /thêm -v ở cuối để chỉ mình bạn thấy/);
   assert.equal(sent[0].replyToMessageId, 'm1');
 });
 
@@ -920,14 +920,22 @@ test('dấu ！ toàn độ rộng, ký tự vô hình và @tênbot trong chữ 
   assert.equal(canonicalMessage(message({ text: '!ptkt@botkhac vic' }), ME), null);
 });
 
-test('lệnh riêng !ptkt@bocobot được trả lời bằng reply vào đúng tin', async () => {
+test('lệnh riêng !ptkt@bocobot được trả lời cho cả nhóm, còn có -v thì chỉ người hỏi thấy', async () => {
   const technical = stubTechnical();
   const { sent } = await withBot(
     [update({ text: '!ptkt@bocobot vic', command: 'ptkt', commandArgs: 'vic', commandPrefix: '!', private: true })],
     { technical },
   );
   assert.deepEqual(technical.calls, ['VIC']);
-  assert.equal(sent[0].replyToMessageId, 'm1');
+  assert.equal(sent[0].replyToMessageId, undefined);   // không reply vào tin riêng: câu trả lời ra cả nhóm
+  assert.equal(sent[0].onlyForUserId, undefined);
+
+  const quiet = await withBot(
+    [update({ text: '!ptkt vic -v', command: 'ptkt', commandArgs: 'vic -v', commandPrefix: '!', private: true })],
+    { technical: stubTechnical() },
+  );
+  assert.equal(quiet.sent[0].replyToMessageId, 'm1');
+  assert.equal(quiet.sent[0].onlyForUserId, 'u1');
 });
 
 test('lệnh riêng khai báo sẵn như !vic tới bot thì vẫn ra giá', async () => {

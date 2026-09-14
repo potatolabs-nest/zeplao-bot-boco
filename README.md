@@ -85,11 +85,12 @@ tảng giao thẳng, biết chữ ấy hay không.
 ### Khai báo lệnh trước (từ 15/09/2026)
 
 Nền tảng giờ chỉ giao `!từ` và `/từ` cho bot **đã khai báo** `từ` bằng `setCommands`. Bot khai báo
-đúng năm lệnh: `v` (giá), `ptkt`, `tin`, `vboa`, và tên của chính nó (hướng dẫn, ví dụ `!topbot`).
-Mã không khai báo được — 1.522 mã mà chỉ có 100 ô — nên giá đi sau chữ `view`: `!view vic`, `!view vic hpg
-fpt`, `!view gex 3m`. Gõ bằng `!` là hỏi riêng: tin và câu trả lời chỉ người gõ thấy. Gõ bằng `/`
-(`/view vic`, `/vboa bank`) là hỏi trước cả nhóm. Bot đọc lệnh máy chủ đã tách qua `command`,
-`commandArgs`, `commandPrefix`, và vẫn hiểu lối cũ `!vic` nếu nghe được nó.
+đúng năm lệnh: `view` (giá), `ptkt`, `tin`, `vboa`, và tên của chính nó (hướng dẫn, ví dụ
+`!topbot`). Mã không khai báo được — 1.522 mã mà chỉ có 100 ô — nên giá đi sau chữ `view`:
+`!view vic`, `!view vic hpg fpt`, `!view gex 3m`. `!lệnh` tới bot như một tin riêng, và máy chủ
+ép mọi reply vào tin riêng thành riêng — y như `-v`. Nên bot trả lời **không kèm reply**: câu trả
+lời ra cả nhóm như trước. Thêm `-v` thì bot reply, và chỉ người hỏi thấy. Bot đọc lệnh máy chủ đã
+tách qua `command`, `commandArgs`, `commandPrefix`, và vẫn hiểu lối cũ `!vic` nếu nghe được nó.
 
 ## Giá lấy ở đâu
 
