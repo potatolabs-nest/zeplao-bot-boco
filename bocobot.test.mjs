@@ -920,14 +920,15 @@ test('dấu ！ toàn độ rộng, ký tự vô hình và @tênbot trong chữ 
   assert.equal(canonicalMessage(message({ text: '!ptkt@botkhac vic' }), ME), null);
 });
 
-test('lệnh riêng !ptkt@bocobot được trả lời bằng reply vào đúng tin', async () => {
+test('lệnh riêng !ptkt@bocobot được trả lời bằng tin cho đúng người gõ, không reply', async () => {
   const technical = stubTechnical();
   const { sent } = await withBot(
     [update({ text: '!ptkt@bocobot vic', command: 'ptkt', commandArgs: 'vic', commandPrefix: '!', private: true })],
     { technical },
   );
   assert.deepEqual(technical.calls, ['VIC']);
-  assert.equal(sent[0].replyToMessageId, 'm1');
+  assert.equal(sent[0].onlyForUserId, 'u1');           // chỉ người gõ thấy, như -v
+  assert.equal(sent[0].replyToMessageId, undefined);
 });
 
 test('lệnh riêng khai báo sẵn như !vic tới bot thì vẫn ra giá', async () => {

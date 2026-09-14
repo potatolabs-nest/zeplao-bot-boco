@@ -146,6 +146,11 @@ export function askedHelpFor(message, me) {
 export function privateRecipientFor(message) {
   const text = String(message?.text ?? '').trim();
   if (!new RegExp(`(^|\\s)${PRIVATE_FLAG.replace('-', '\\-')}$`, 'i').test(text)) return null;
+  return senderOf(message);
+}
+
+/// Người gửi tin, dù nền tảng đặt id ở trường nào.
+export function senderOf(message) {
   return message?.from?.userId
     ?? message?.from?.id
     ?? message?.userId
@@ -461,18 +466,22 @@ export async function run(token, {
   async function onMessage(received) {
     const message = canonicalMessage(received, me);
     if (!message) return;
-    const onlyForUserId = privateRecipientFor(message);
+    // Lệnh `!` tới bot như tin riêng thì trả lời bằng **tin cho một người** — `onlyForUserId` là
+    // người gõ, đúng cách `-v` vẫn làm — không kèm reply. Tin thường thì reply như trước, và `-v`
+    // vẫn là chỉ người hỏi thấy.
+    const onlyForUserId = message.private ? senderOf(message) : privateRecipientFor(message);
+    const replyTo = message.private ? undefined : message.messageId;
 
     const helpAsked = !message.priceOnly && askedHelpFor(message, me);
     if (helpAsked) {
-      await say(message.conversationId, HELP, message.messageId, onlyForUserId);
+      await say(message.conversationId, HELP, replyTo, onlyForUserId);
       return;
     }
 
     const heatmapAsked = !message.priceOnly && askedHeatmapFor(message);
     if (heatmapAsked) {
       if (heatmapAsked.error) {
-        await say(message.conversationId, heatmapAsked.error, message.messageId, onlyForUserId);
+        await say(message.conversationId, heatmapAsked.error, replyTo, onlyForUserId);
         return;
       }
 
@@ -486,7 +495,7 @@ export async function run(token, {
         );
       } catch (problem) {
         console.error(String(problem));
-        await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);
+        await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
       }
       return;
     }
@@ -494,16 +503,16 @@ export async function run(token, {
     const newsAsked = !message.priceOnly && askedNewsFor(message);
     if (newsAsked) {
       if (newsAsked.error) {
-        await say(message.conversationId, newsAsked.error, message.messageId, onlyForUserId);
+        await say(message.conversationId, newsAsked.error, replyTo, onlyForUserId);
         return;
       }
 
       try {
         const articles = await news.latest(newsAsked.symbol);
-        await say(message.conversationId, newsMessage(newsAsked.symbol, articles), message.messageId, onlyForUserId);
+        await say(message.conversationId, newsMessage(newsAsked.symbol, articles), replyTo, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
-        await say(message.conversationId, SORRY.news, message.messageId, onlyForUserId);
+        await say(message.conversationId, SORRY.news, replyTo, onlyForUserId);
       }
       return;
     }
@@ -511,17 +520,17 @@ export async function run(token, {
     const technicalAsked = !message.priceOnly && askedTechnicalFor(message);
     if (technicalAsked) {
       if (technicalAsked.error) {
-        await say(message.conversationId, technicalAsked.error, message.messageId, onlyForUserId);
+        await say(message.conversationId, technicalAsked.error, replyTo, onlyForUserId);
         return;
       }
 
       try {
         // Một tin nhắn có hình, hoặc một dòng chữ khi mã không có dữ liệu để phân tích.
         const reply = await technical.report(technicalAsked.symbol);
-        await say(message.conversationId, reply, message.messageId, onlyForUserId);
+        await say(message.conversationId, reply, replyTo, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
-        await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);
+        await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
       }
       return;
     }
@@ -535,7 +544,7 @@ export async function run(token, {
     if (!candidates.length) {
       // Không có gì trông giống một mã. Nếu có người gọi thẳng thì phải nói, còn không thì đây
       // là lệnh của con bot bên cạnh và việc đúng đắn duy nhất là không nói gì.
-      if (asked.addressed) await say(message.conversationId, SORRY.nothing, message.messageId, onlyForUserId);
+      if (asked.addressed) await say(message.conversationId, SORRY.nothing, replyTo, onlyForUserId);
       return;
     }
 
@@ -544,7 +553,7 @@ export async function run(token, {
       quotes = await market.quotes(candidates);
     } catch (problem) {
       console.error(String(problem));
-      if (asked.addressed) await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);
+      if (asked.addressed) await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
       return;
     }
 
@@ -562,7 +571,7 @@ export async function run(token, {
       : candidates.filter((symbol) => found.has(symbol));
 
     if (!listing.length) {
-      if (asked.addressed) await say(message.conversationId, SORRY.nothing, message.messageId, onlyForUserId);
+      if (asked.addressed) await say(message.conversationId, SORRY.nothing, replyTo, onlyForUserId);
       return;
     }
 
@@ -574,14 +583,14 @@ export async function run(token, {
         const chartAsked = askedChartFor(message);
         const period = chartAsked?.symbol === listing[0] ? chartAsked.period : undefined;
         const rich = await chart.rich(listing[0], quotes.find((quote) => quote.symbol === listing[0]), period);
-        await say(message.conversationId, withRich(text, rich), message.messageId, onlyForUserId);
+        await say(message.conversationId, withRich(text, rich), replyTo, onlyForUserId);
         return;
       } catch (problem) {
         console.error(String(problem));
       }
     }
 
-    await say(message.conversationId, text, message.messageId, onlyForUserId);
+    await say(message.conversationId, text, replyTo, onlyForUserId);
   }
 
   /**
