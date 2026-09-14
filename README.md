@@ -86,7 +86,7 @@ tảng giao thẳng, biết chữ ấy hay không.
 
 Nền tảng giờ đọc `!từ` như một lệnh: nếu một bot trong phòng đã khai báo `từ` bằng `setCommands`,
 tin ấy thành **lệnh riêng** — biến khỏi phòng, chỉ người gõ và bot thấy — và hai bot cùng khai báo
-một từ thì người gõ bị từ chối. Bot này vì vậy chỉ khai báo đúng `bocobot` (mở hướng dẫn) và
+một từ thì người gõ bị từ chối. Bot này vì vậy chỉ khai báo đúng một lệnh là tên của chính nó (ví dụ `topbot`, mở hướng dẫn) và
 **không khai báo mã nào**: `!vic`, `!ptkt vic`, `!tin vic`, `!vboa` là chữ bình thường của phòng,
 bot nghe được vì đã tắt chế độ riêng tư, và trả lời cho cả nhóm — lệnh gõ y như trước. Bot đọc
 lệnh máy chủ đã tách qua `command`, `commandArgs`, `commandPrefix`, nên `!vic@bocobot` cũng chạy

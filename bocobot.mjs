@@ -71,21 +71,21 @@ export const PRIVATE_FLAG = '-v';
 const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
 
 /**
- * Lệnh khai báo với máy chủ: đúng một từ, và cố ý chỉ một.
+ * Lệnh khai báo với máy chủ: đúng một từ — tên của chính bot — và cố ý chỉ một.
  *
  * Từ 15/09/2026, một `!từ` mà bot trong phòng đã khai báo là **lệnh riêng**: tin biến khỏi phòng,
- * chỉ người gõ và bot thấy, và hai bot cùng khai báo một từ thì người gõ bị từ chối. Bot này từng
- * khai báo 98 mã — nên sau thay đổi ấy `!vic` biến mất khỏi nhóm, và trong phòng có một bot giá
- * khác thì bị chặn hẳn. Không khai báo mã nào thì `!vic` là chữ của phòng, bot nghe được vì đã tắt
- * chế độ riêng tư, và trả lời cho cả nhóm như trước.
+ * chỉ người gõ và bot đó thấy, và hai bot cùng khai báo một từ thì người gõ bị từ chối. Không khai
+ * báo mã nào thì `!vic` là chữ của phòng, bot nghe được vì đã tắt chế độ riêng tư, và trả lời cho
+ * cả nhóm như trước. Đã hỏng đúng theo cách ấy: tài khoản cũ @bocobot còn ngồi trong nhóm với 98
+ * mã khai báo, nên `!vic` bị đưa riêng cho một bot không còn ai chạy.
  *
- * Danh sách phải **có** một từ: `[]` không dọn được danh sách cũ trên máy chủ. `bocobot` là tên
- * riêng của bot, không trùng ai, và `!bocobot` mở hướng dẫn. Muốn hỏi riêng thì `!vic@bocobot` —
- * gọi đích danh luôn tới đúng bot này, dù từ ấy có khai báo hay không.
+ * Từ khai báo là tên người dùng của bot (`topbot`, `bocobot`…) chứ không viết cứng: tên ấy không
+ * trùng bot nào, và `!topbot` mở hướng dẫn.
  */
-export const COMMANDS = [
-  { command: 'bocobot', description: 'Hướng dẫn: !vic, !ptkt vic, !tin vic, !vboa' },
-];
+export function commandsFor(me) {
+  const name = String(me?.username ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32) || 'bocobot';
+  return [{ command: name, description: 'Hướng dẫn: !vic, !ptkt vic, !tin vic, !vboa' }];
+}
 
 export const SORRY = {
   nothing: 'Không nhận ra mã nào.',
@@ -124,7 +124,8 @@ export function askedHelpFor(message, me) {
   const text = withoutPrivateFlag(message.text ?? '');
   if (text.trimStart().startsWith(CALL)) {
     const word = text.trimStart().slice(CALL.length).trim().toLowerCase();
-    return HELP_WORDS.has(word) && (word !== 'help' || message.delivered) ? { addressed: true } : null;
+    const own = word === String(me?.username ?? '').toLowerCase();
+    return own || (HELP_WORDS.has(word) && (word !== 'help' || message.delivered)) ? { addressed: true } : null;
   }
   const named = handles.some((handle) => text.toLowerCase().includes(`@${handle}`.toLowerCase()));
   if (!named) return null;
@@ -390,9 +391,9 @@ export async function run(token, {
 
   const guard = makeGuard({ market });
 
-  // Khai báo đúng `COMMANDS`, thay nguyên si danh sách cũ — xem ghi chú ở `COMMANDS` vì sao không
+  // Khai báo đúng `commandsFor(me)`, thay nguyên si danh sách cũ — xem ghi chú ở đó vì sao không
   // khai báo mã nào nữa.
-  await call('setCommands', { commands: COMMANDS }).catch((problem) => console.error(String(problem)));
+  await call('setCommands', { commands: commandsFor(me) }).catch((problem) => console.error(String(problem)));
 
   // Danh sách niêm yết tải ngay nhưng không đợi: câu hỏi đầu tiên có thể tới trước khi ba sàn
   // trả lời xong, và lúc ấy cái sàng vẫn làm việc được — bằng cách dò thay vì tra.

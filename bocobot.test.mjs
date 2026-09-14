@@ -12,7 +12,8 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, canonicalMessage, HELP, privateRecipientFor, run,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, canonicalMessage, commandsFor, HELP,
+  privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
@@ -939,6 +940,12 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
   assert.equal(sent.length, 1);
 });
 
+test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
+  assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), ['topbot']);
+  assert.deepEqual(commandsFor(ME).map((one) => one.command), ['bocobot']);
+  assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
+});
+
 test('!help@bocobot và !bocobot trả hướng dẫn, còn !help nói giữa phòng thì không', async () => {
   const { sent } = await withBot([update({ text: '!help@bocobot', command: 'help', commandArgs: null, commandPrefix: '!', private: true })]);
   assert.equal(sent[0].text, HELP);
@@ -1056,8 +1063,7 @@ test('nguồn tin chết thì nói ra', async () => {
 });
 
 test('khởi động là thay danh sách lệnh cũ bằng đúng một lệnh bocobot, không khai báo mã nào', async () => {
-  // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm; `[]` thì không dọn được danh
-  // sách cũ trên máy chủ. Nên gửi đúng một từ riêng của bot.
+  // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered } = await withBot([], { expect: 0 });
   assert.deepEqual(registered.map((one) => one.command), ['bocobot']);
   assert.ok(registered.every((one) => one.description.length <= 256));
