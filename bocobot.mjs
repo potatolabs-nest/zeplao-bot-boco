@@ -75,8 +75,8 @@ const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
  *
  * Từ 15/09/2026 máy chủ chỉ giao `!từ` và `/từ` trơn cho bot đã khai báo `từ`, nên mọi lệnh phải
  * khai báo trước. Không khai báo được 1.522 mã (tối đa 100 lệnh), nên giá đi sau một chữ riêng:
- * `!view vic` thay cho `!vic`, `!view gex 3m` thay cho `!gex 3m`. Khai báo rồi thì `!lệnh` tới bot
- * như một tin riêng; câu trả lời vẫn ra cả nhóm — xem `replyTo` trong `onMessage`.
+ * `!view vic` thay cho `!vic`, `!view gex 3m` thay cho `!gex 3m`. Khai báo rồi thì `!lệnh` là hỏi riêng
+ * — chỉ người gõ thấy câu trả lời — còn `/lệnh` là hỏi trước cả nhóm; máy chủ lo phần đó.
  *
  * Chữ cuối là tên của chính bot (`topbot`, `bocobot`…), không viết cứng: `!topbot` mở hướng dẫn.
  */
@@ -87,7 +87,7 @@ export function commandsFor(me) {
     { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'vboa', description: 'Bản đồ nhiệt: !vboa · theo ngành: !vboa bank, bds, oil, retail, cn' },
-    { command: name, description: 'Hướng dẫn dùng bot' },
+    { command: name, description: 'Hướng dẫn. Gõ ! để hỏi riêng, / để cả nhóm cùng xem, ví dụ /view vic' },
   ];
   return commands.filter((one, index) => commands.findIndex((other) => other.command === one.command) === index);
 }
@@ -119,7 +119,7 @@ export const HELP = [
   '!vboa retail — bán lẻ',
   '!vboa cn — công nghiệp',
   '',
-  'Câu trả lời hiện cho cả nhóm; thêm -v ở cuối để chỉ mình bạn thấy, ví dụ: !view vic -v',
+  'Gõ ! thì chỉ bạn thấy câu trả lời; gõ / thì cả nhóm cùng xem, ví dụ /view vic hoặc /vboa bank',
 ].join('\n');
 
 export function askedHelpFor(message, me) {
@@ -462,21 +462,17 @@ export async function run(token, {
     const message = canonicalMessage(received, me);
     if (!message) return;
     const onlyForUserId = privateRecipientFor(message);
-    // `!lệnh` đã khai báo tới bot như một tin riêng, và reply vào tin riêng thì câu trả lời cũng
-    // riêng — y như `-v`, nên cả nhóm thấy bot im. Không có `-v` thì gửi không kèm reply: câu trả
-    // lời ra cả nhóm như trước. Có `-v` thì vẫn reply, và câu trả lời chỉ người hỏi thấy.
-    const replyTo = message.private && !onlyForUserId ? undefined : message.messageId;
 
     const helpAsked = !message.priceOnly && askedHelpFor(message, me);
     if (helpAsked) {
-      await say(message.conversationId, HELP, replyTo, onlyForUserId);
+      await say(message.conversationId, HELP, message.messageId, onlyForUserId);
       return;
     }
 
     const heatmapAsked = !message.priceOnly && askedHeatmapFor(message);
     if (heatmapAsked) {
       if (heatmapAsked.error) {
-        await say(message.conversationId, heatmapAsked.error, replyTo, onlyForUserId);
+        await say(message.conversationId, heatmapAsked.error, message.messageId, onlyForUserId);
         return;
       }
 
@@ -490,7 +486,7 @@ export async function run(token, {
         );
       } catch (problem) {
         console.error(String(problem));
-        await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
+        await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);
       }
       return;
     }
@@ -498,16 +494,16 @@ export async function run(token, {
     const newsAsked = !message.priceOnly && askedNewsFor(message);
     if (newsAsked) {
       if (newsAsked.error) {
-        await say(message.conversationId, newsAsked.error, replyTo, onlyForUserId);
+        await say(message.conversationId, newsAsked.error, message.messageId, onlyForUserId);
         return;
       }
 
       try {
         const articles = await news.latest(newsAsked.symbol);
-        await say(message.conversationId, newsMessage(newsAsked.symbol, articles), replyTo, onlyForUserId);
+        await say(message.conversationId, newsMessage(newsAsked.symbol, articles), message.messageId, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
-        await say(message.conversationId, SORRY.news, replyTo, onlyForUserId);
+        await say(message.conversationId, SORRY.news, message.messageId, onlyForUserId);
       }
       return;
     }
@@ -515,17 +511,17 @@ export async function run(token, {
     const technicalAsked = !message.priceOnly && askedTechnicalFor(message);
     if (technicalAsked) {
       if (technicalAsked.error) {
-        await say(message.conversationId, technicalAsked.error, replyTo, onlyForUserId);
+        await say(message.conversationId, technicalAsked.error, message.messageId, onlyForUserId);
         return;
       }
 
       try {
         // Một tin nhắn có hình, hoặc một dòng chữ khi mã không có dữ liệu để phân tích.
         const reply = await technical.report(technicalAsked.symbol);
-        await say(message.conversationId, reply, replyTo, onlyForUserId);
+        await say(message.conversationId, reply, message.messageId, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
-        await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
+        await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);
       }
       return;
     }
@@ -539,7 +535,7 @@ export async function run(token, {
     if (!candidates.length) {
       // Không có gì trông giống một mã. Nếu có người gọi thẳng thì phải nói, còn không thì đây
       // là lệnh của con bot bên cạnh và việc đúng đắn duy nhất là không nói gì.
-      if (asked.addressed) await say(message.conversationId, SORRY.nothing, replyTo, onlyForUserId);
+      if (asked.addressed) await say(message.conversationId, SORRY.nothing, message.messageId, onlyForUserId);
       return;
     }
 
@@ -548,7 +544,7 @@ export async function run(token, {
       quotes = await market.quotes(candidates);
     } catch (problem) {
       console.error(String(problem));
-      if (asked.addressed) await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
+      if (asked.addressed) await say(message.conversationId, SORRY.source, message.messageId, onlyForUserId);
       return;
     }
 
@@ -566,7 +562,7 @@ export async function run(token, {
       : candidates.filter((symbol) => found.has(symbol));
 
     if (!listing.length) {
-      if (asked.addressed) await say(message.conversationId, SORRY.nothing, replyTo, onlyForUserId);
+      if (asked.addressed) await say(message.conversationId, SORRY.nothing, message.messageId, onlyForUserId);
       return;
     }
 
@@ -578,14 +574,14 @@ export async function run(token, {
         const chartAsked = askedChartFor(message);
         const period = chartAsked?.symbol === listing[0] ? chartAsked.period : undefined;
         const rich = await chart.rich(listing[0], quotes.find((quote) => quote.symbol === listing[0]), period);
-        await say(message.conversationId, withRich(text, rich), replyTo, onlyForUserId);
+        await say(message.conversationId, withRich(text, rich), message.messageId, onlyForUserId);
         return;
       } catch (problem) {
         console.error(String(problem));
       }
     }
 
-    await say(message.conversationId, text, replyTo, onlyForUserId);
+    await say(message.conversationId, text, message.messageId, onlyForUserId);
   }
 
   /**
