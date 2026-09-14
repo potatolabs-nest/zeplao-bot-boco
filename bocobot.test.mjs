@@ -71,10 +71,15 @@ test('gọi bot trống hoặc help thì là hỏi hướng dẫn', () => {
   assert.equal(askedHelpFor(message({ text: 'topbot help' }), TOP_ME), null);
 });
 
-test('nhắn riêng thì không phải gọi tên', () => {
-  const asked = askedFor(message({ conversationType: 'direct', text: 'vic' }), ME);
-  assert.deepEqual(asked.symbols, ['VIC']);
-  assert.equal(asked.addressed, false);   // trả lời cái tra được, và im khi không có gì
+test('nhắn riêng cũng phải gõ đúng lệnh, như trong nhóm', () => {
+  // Hộp thư 1:1 từng được đọc lỏng: `vic` trần trụi ra bảng giá, và mọi câu chuyện có một chữ
+  // ba ký tự hình mã cũng ra bảng giá.
+  const direct = { conversationType: 'direct' };
+  assert.equal(askedFor(message({ ...direct, text: 'vic' }), ME), null);
+  assert.equal(askedFor(message({ ...direct, text: 'hôm nay vic đẹp thế' }), ME), null);
+
+  assert.deepEqual(askedFor(message({ ...direct, text: '!vic' }), ME).symbols, ['VIC']);
+  assert.deepEqual(askedFor(message({ ...direct, text: '@bocobot vic' }), ME).symbols, ['VIC']);
 });
 
 test('một câu trong nhóm không nói với bot thì không phải việc của bot', () => {
@@ -356,6 +361,23 @@ test('trả lời người khác thì không phải việc của bot', async () 
     { expect: 0 },
   );
   assert.deepEqual(sent, []);
+});
+
+test('trong hộp thư 1:1, quote một tin không phải của bot thì vẫn không phải việc của bot', () => {
+  // Một tin quote là nói với cái nó quote. Bot không biết tin được quote là của ai, nên câu không
+  // đúng cú pháp mà tình cờ có chữ ba ký tự hình mã thì phải im.
+  const direct = { conversationType: 'direct', replyToMessageId: 'khong-biet-cua-ai' };
+  assert.equal(askedFor(message({ ...direct, text: 'vip zzzz' }), ME), null);
+  assert.equal(askedFor(message({ ...direct, text: 'cai nay sao the' }), ME), null);
+
+  // Gọi tên hoặc gõ dấu gọi thì vẫn được nghe, quote hay không.
+  assert.deepEqual(askedFor(message({ ...direct, text: '@bocobot vic' }), ME).symbols, ['VIC']);
+  assert.deepEqual(askedFor(message({ ...direct, text: '!vic' }), ME).symbols, ['VIC']);
+
+  // Và quote đúng một tin của bot thì như trong nhóm.
+  const mine = new Set(['tin-cua-bot']);
+  const onBot = message({ conversationType: 'direct', text: 'vic', replyToMessageId: 'tin-cua-bot' });
+  assert.deepEqual(askedFor(onBot, ME, mine).symbols, ['VIC']);
 });
 
 test('trả lời tin của chính bot thì có', () => {

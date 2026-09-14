@@ -21,7 +21,9 @@ dài đúng một dòng.
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
-| Nhắn riêng | Không cần dấu gì cả, gõ `vic` là đủ |
+
+Nhắn riêng với bot cũng theo đúng những lệnh trên: `vic` gõ trần trụi không được trả lời, phải
+là `!vic`.
 
 Nhiều nhất **10 mã** một lần hỏi, và câu trả lời luôn là **một tin nhắn** dù hỏi mấy mã. Nền
 tảng cho mỗi phòng một tin mỗi giây; ba mã thành ba tin là hai lần chờ và một cuộc trò chuyện bị

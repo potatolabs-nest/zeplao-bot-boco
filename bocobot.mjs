@@ -17,7 +17,7 @@
 // tảng giao, biết chữ ấy hay không.
 //
 // **Hai: cái gì là mã chứng khoán?** Những lệnh đã đăng ký không phải thứ duy nhất tới đây:
-// `/tienlen@bocobot` cũng tới, và trong nhắn riêng thì mọi câu đều tới. Nên luật là không chắc
+// `/tienlen@bocobot` cũng tới, và trong một phòng tắt chế độ riêng tư thì mọi câu đều tới. Nên luật là không chắc
 // thì im, và cái sàng làm việc đó ở `market/symbols.mjs`.
 //
 // **Ba: giá lấy ở đâu?** Một dây nguồn, không phải một nguồn. Feed công khai đứng trước vì nó
@@ -151,7 +151,6 @@ export function askedFor(message, me, mine = new Set()) {
   const handles = [me?.username, me?.displayName].filter(Boolean);
   const text = withoutPrivateFlag(message.text ?? '');
   const named = handles.some((handle) => text.toLowerCase().includes(`@${handle}`.toLowerCase()));
-  const alone = message.conversationType === 'direct';
   // Dấu gọi, trước tiên. Đây là đường vào chính và là đường duy nhất phủ hết 1.522 mã.
   if (text.trimStart().startsWith(CALL)) {
     return {
@@ -188,8 +187,14 @@ export function askedFor(message, me, mine = new Set()) {
   // kèm cho bot. Nên bot tự nhớ lấy id những tin mình đã gửi. Nhớ trong bộ nhớ, nên khởi động
   // lại là quên: trả lời một tin bot gửi trước lúc restart sẽ không được nghe. Đổi lại là một
   // dòng, không phải một cái sổ.
+  //
+  // Nhắn riêng **không** được miễn. Chỗ này từng cho hộp thư 1:1 đi thẳng qua, với lý do ở đấy
+  // mọi câu đều nói với bot — và thế là `vic` gõ trần trụi cũng ra bảng giá, quote một tin nào
+  // đó cũng ra bảng giá, chỉ vì trong câu có một chữ ba ký tự hình mã. Người ta vẫn nói chuyện
+  // trong hộp thư riêng. Nên 1:1 theo đúng luật của nhóm: dấu gọi, lệnh, gọi tên, hoặc trả lời
+  // tin của bot.
   const replyingToBot = Boolean(message.replyToMessageId && mine.has(message.replyToMessageId));
-  if (!named && !alone && !replyingToBot) return null;
+  if (!named && !replyingToBot) return null;
 
   // Bỏ mọi cách gọi tên ra khỏi câu trước khi đọc mã: `@bocobot` mà để nguyên thì `BOCOBOT` là
   // một chữ ba ký tự trở lên, đúng hình một mã, và sẽ được đem đi dò.
