@@ -363,8 +363,8 @@ test('gọi bot trống thì trả hướng dẫn', async () => {
 
   assert.equal(sent[0].text, HELP);
   assert.match(sent[0].text, /!vboa bds — bất động sản/);
-  assert.match(sent[0].text, /!gex 3m — chart 3 tháng/);
-  assert.match(sent[0].text, /!gex 3m -v hoặc !vboa bank -v/);
+  assert.match(sent[0].text, /!view gex 3m — chart 3 tháng/);
+  assert.match(sent[0].text, /gõ \/ thì cả nhóm cùng xem, ví dụ \/view vic/);
   assert.equal(sent[0].replyToMessageId, 'm1');
 });
 
@@ -844,12 +844,12 @@ test('nguồn tin đổi link Google News thành link gốc của bài báo', as
   assert.deepEqual(seen.map((call) => call.method), ['GET', 'GET', 'POST']);
 });
 
-test('!tin một mình vẫn là hỏi giá mã TIN', async () => {
-  assert.equal(askedNewsFor(message({ text: '!tin' })), null);
+test('!tin một mình thì nhắc cú pháp, còn giá mã TIN là !view tin', async () => {
+  assert.match(askedNewsFor(message({ text: '!tin' })).error, /!tin vic/);
 
   const news = stubNews();
   const { sent } = await withBot(
-    [update({ text: '!tin' })],
+    [update({ text: '!view tin', command: 'view', commandArgs: 'tin', commandPrefix: '!', private: true })],
     { market: stubMarket({ listed: ['TIN'] }), news },
   );
   assert.deepEqual(news.calls, []);
@@ -941,8 +941,8 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), ['topbot']);
-  assert.deepEqual(commandsFor(ME).map((one) => one.command), ['bocobot']);
+  assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'topbot']);
+  assert.deepEqual(commandsFor(ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
 });
 
@@ -951,6 +951,20 @@ test('!help@bocobot và !bocobot trả hướng dẫn, còn !help nói giữa ph
   assert.equal(sent[0].text, HELP);
   assert.deepEqual(askedHelpFor(message({ text: '!bocobot' }), ME), { addressed: true });
   assert.equal(askedHelpFor(message({ text: '!help' }), ME), null);
+});
+
+test('!view vic là giá VIC như !vic trước đây, cả khi máy chủ đã tách lệnh lẫn khi đọc chữ của phòng', () => {
+  const delivered = canonicalMessage(message({
+    text: '!view vic hpg', command: 'view', commandArgs: 'vic hpg', commandPrefix: '!', private: true,
+  }), ME);
+  assert.equal(delivered.text, '!vic hpg');
+  assert.deepEqual(askedFor(delivered, ME).symbols, ['VIC', 'HPG']);
+
+  const slash = canonicalMessage(message({ text: '/view gex 3m', command: 'view', commandArgs: 'gex 3m', commandPrefix: '/' }), ME);
+  assert.deepEqual(askedChartFor(slash), { symbol: 'GEX', period: '3m' });
+
+  assert.equal(canonicalMessage(message({ text: '!view vic' }), ME).text, '!vic');
+  assert.equal(canonicalMessage(message({ text: '!vic' }), ME).text, '!vic');   // lối cũ vẫn đọc được
 });
 
 // ---- phân tích kỹ thuật ---------------------------------------------------------------------
@@ -1065,6 +1079,6 @@ test('nguồn tin chết thì nói ra', async () => {
 test('khởi động là thay danh sách lệnh cũ bằng đúng một lệnh bocobot, không khai báo mã nào', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['bocobot']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'bocobot']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 });

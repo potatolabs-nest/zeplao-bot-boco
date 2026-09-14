@@ -71,20 +71,25 @@ export const PRIVATE_FLAG = '-v';
 const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
 
 /**
- * Lệnh khai báo với máy chủ: đúng một từ — tên của chính bot — và cố ý chỉ một.
+ * Lệnh khai báo với máy chủ.
  *
- * Từ 15/09/2026, một `!từ` mà bot trong phòng đã khai báo là **lệnh riêng**: tin biến khỏi phòng,
- * chỉ người gõ và bot đó thấy, và hai bot cùng khai báo một từ thì người gõ bị từ chối. Không khai
- * báo mã nào thì `!vic` là chữ của phòng, bot nghe được vì đã tắt chế độ riêng tư, và trả lời cho
- * cả nhóm như trước. Đã hỏng đúng theo cách ấy: tài khoản cũ @bocobot còn ngồi trong nhóm với 98
- * mã khai báo, nên `!vic` bị đưa riêng cho một bot không còn ai chạy.
+ * Từ 15/09/2026 máy chủ chỉ giao `!từ` và `/từ` trơn cho bot đã khai báo `từ`, nên mọi lệnh phải
+ * khai báo trước. Không khai báo được 1.522 mã (tối đa 100 lệnh), nên giá đi sau một chữ riêng:
+ * `!view vic` thay cho `!vic`, `!view gex 3m` thay cho `!gex 3m`. Khai báo rồi thì `!lệnh` là hỏi riêng
+ * — chỉ người gõ thấy câu trả lời — còn `/lệnh` là hỏi trước cả nhóm; máy chủ lo phần đó.
  *
- * Từ khai báo là tên người dùng của bot (`topbot`, `bocobot`…) chứ không viết cứng: tên ấy không
- * trùng bot nào, và `!topbot` mở hướng dẫn.
+ * Chữ cuối là tên của chính bot (`topbot`, `bocobot`…), không viết cứng: `!topbot` mở hướng dẫn.
  */
 export function commandsFor(me) {
   const name = String(me?.username ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32) || 'bocobot';
-  return [{ command: name, description: 'Hướng dẫn: !vic, !ptkt vic, !tin vic, !vboa' }];
+  const commands = [
+    { command: PRICE_COMMAND, description: 'Giá kèm chart: !view vic · nhiều mã: !view vic hpg fpt · chart dài: !view gex 3m' },
+    { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
+    { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
+    { command: 'vboa', description: 'Bản đồ nhiệt: !vboa · theo ngành: !vboa bank, bds, oil, retail, cn' },
+    { command: name, description: 'Hướng dẫn. Gõ ! để hỏi riêng, / để cả nhóm cùng xem, ví dụ /view vic' },
+  ];
+  return commands.filter((one, index) => commands.findIndex((other) => other.command === one.command) === index);
 }
 
 export const SORRY = {
@@ -95,16 +100,16 @@ export const SORRY = {
 
 export const HELP = [
   'Cú pháp xem bảng giá:',
-  '!vic — giá VIC kèm chart trong phiên gần nhất',
-  '!vic hpg fpt — xem nhiều mã, không kèm chart',
+  '!view vic — giá VIC kèm chart trong phiên gần nhất',
+  '!view vic hpg fpt — xem nhiều mã, không kèm chart',
   '!tin vic — 5 tin gần nhất về VIC',
   '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
   '',
   'Chart theo thời gian:',
-  '!gex 1d — chart trong phiên gần nhất',
-  '!gex 2d — chart 2 ngày',
-  '!gex 3m — chart 3 tháng',
-  '!gex 4y hoặc !gex 4n — chart 4 năm',
+  '!view gex 1d — chart trong phiên gần nhất',
+  '!view gex 2d — chart 2 ngày',
+  '!view gex 3m — chart 3 tháng',
+  '!view gex 4y hoặc !view gex 4n — chart 4 năm',
   '',
   'Bản đồ nhiệt:',
   '!vboa — toàn thị trường',
@@ -114,7 +119,7 @@ export const HELP = [
   '!vboa retail — bán lẻ',
   '!vboa cn — công nghiệp',
   '',
-  'Thêm -v ở cuối lệnh để chỉ gửi cho riêng bạn, ví dụ: !gex 3m -v hoặc !vboa bank -v',
+  'Gõ ! thì chỉ bạn thấy câu trả lời; gõ / thì cả nhóm cùng xem, ví dụ /view vic hoặc /vboa bank',
 ].join('\n');
 
 export function askedHelpFor(message, me) {
@@ -156,6 +161,18 @@ function withoutPrivateFlag(text) {
 /// Ký tự vô hình mà máy chủ bỏ qua khi đọc lệnh: khoảng trắng độ rộng 0, nối chữ, BOM.
 const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF]/g;
 
+/// Lệnh giá: `!view vic` là giá VIC.
+export const PRICE_COMMAND = 'view';
+
+/**
+ * `!view vic` viết lại thành `!vic` — đúng dạng mọi bộ đọc giá bên dưới vẫn hiểu — và đánh dấu
+ * `priceOnly`, để `!view tin` là giá mã TIN chứ không bị lệnh tin tức nhận nhầm.
+ */
+function priced(message) {
+  const matched = /^!view(?:\s+|$)([\s\S]*)$/i.exec(message.text);
+  return matched ? { ...message, text: `${CALL}${matched[1]}`, priceOnly: true } : message;
+}
+
 /// Những lệnh gọi ra hướng dẫn. `help` trơn chỉ tính khi máy chủ đã giao nó cho bot này — một
 /// `!help` nói giữa phòng rất có thể là của bot bên cạnh.
 const HELP_WORDS = new Set(['help', 'boco', 'bocobot']);
@@ -179,7 +196,7 @@ export function canonicalMessage(message, me) {
 
   if (message.commandPrefix && message.command) {
     const args = message.commandArgs ? ` ${message.commandArgs}` : '';
-    return { ...message, text: `${CALL}${message.command}${args}`, command: null, commandArgs: null, delivered: true };
+    return priced({ ...message, text: `${CALL}${message.command}${args}`, command: null, commandArgs: null, delivered: true });
   }
 
   const text = String(message.text ?? '').replace(INVISIBLE, '');
@@ -192,7 +209,7 @@ export function canonicalMessage(message, me) {
     if (named[2].toLowerCase() !== String(me?.username ?? '').toLowerCase()) return null;
     body = `${named[1]}${named[3]}`;
   }
-  return { ...message, text: `${CALL}${body}` };
+  return priced({ ...message, text: `${CALL}${body}` });
 }
 
 /**
@@ -293,7 +310,7 @@ export function askedNewsFor(message) {
 
   const asked = text.slice(CALL.length).trim();
   if (!/^tin(\s|$)/i.test(asked)) return null;
-  if (/^tin$/i.test(asked)) return null;
+  if (/^tin$/i.test(asked)) return { addressed: true, error: 'Gõ !tin kèm một mã, ví dụ: !tin vic.' };
 
   const symbols = tokensIn(asked.replace(/^tin\b/i, ''));
   if (symbols.length !== 1) {
@@ -446,13 +463,13 @@ export async function run(token, {
     if (!message) return;
     const onlyForUserId = privateRecipientFor(message);
 
-    const helpAsked = askedHelpFor(message, me);
+    const helpAsked = !message.priceOnly && askedHelpFor(message, me);
     if (helpAsked) {
       await say(message.conversationId, HELP, message.messageId, onlyForUserId);
       return;
     }
 
-    const heatmapAsked = askedHeatmapFor(message);
+    const heatmapAsked = !message.priceOnly && askedHeatmapFor(message);
     if (heatmapAsked) {
       if (heatmapAsked.error) {
         await say(message.conversationId, heatmapAsked.error, message.messageId, onlyForUserId);
@@ -474,7 +491,7 @@ export async function run(token, {
       return;
     }
 
-    const newsAsked = askedNewsFor(message);
+    const newsAsked = !message.priceOnly && askedNewsFor(message);
     if (newsAsked) {
       if (newsAsked.error) {
         await say(message.conversationId, newsAsked.error, message.messageId, onlyForUserId);
@@ -491,7 +508,7 @@ export async function run(token, {
       return;
     }
 
-    const technicalAsked = askedTechnicalFor(message);
+    const technicalAsked = !message.priceOnly && askedTechnicalFor(message);
     if (technicalAsked) {
       if (technicalAsked.error) {
         await say(message.conversationId, technicalAsked.error, message.messageId, onlyForUserId);

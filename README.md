@@ -15,12 +15,12 @@ dài đúng một dòng.
 
 | Gõ | Được gì |
 | --- | --- |
-| `!vic` | Một mã, kèm chart biến động giá trong phiên gần nhất và trục giá |
-| `!gex 1d`, `!gex 2d`, `!gex 3m`, `!gex 4y` | Một mã, kèm chart theo số ngày/tháng/năm tuỳ gõ |
-| `!vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
+| `!view vic` | Một mã, kèm chart biến động giá trong phiên gần nhất và trục giá |
+| `!view gex 1d`, `!view gex 2d`, `!view gex 3m`, `!view gex 4y` | Một mã, kèm chart theo số ngày/tháng/năm tuỳ gõ |
+| `!view vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!ptkt vic` | Phân tích kỹ thuật một mã: hình chart kèm chỉ báo, đánh giá, độ tin cậy, điểm mua bán |
-| `!vnindex`, `!vn30f1m`, `!fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
+| `!view vnindex`, `!view vn30f1m`, `!view fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
 
 Nhắn riêng với bot cũng theo đúng những lệnh trên: `vic` gõ trần trụi không được trả lời, phải
@@ -31,8 +31,8 @@ tảng cho mỗi phòng một tin mỗi giây; ba mã thành ba tin là hai lầ
 đẩy trôi vì một câu hỏi.
 
 Riêng `!tin <mã>` là lệnh đọc tin. Mỗi lần chỉ nhận một mã, để `!tin vic gex` không bị hiểu lẫn
-thành hỏi giá ba mã `TIN`, `VIC`, `GEX`. `!tin` đứng một mình vẫn là hỏi giá mã `TIN`. Chart
-dài hạn cũng chỉ nhận một mã mỗi lần: `!gex 1y` được, còn hỏi nhiều mã thì bot chỉ trả giá,
+thành hỏi giá ba mã `TIN`, `VIC`, `GEX`. `!tin` đứng một mình được nhắc cú pháp; giá mã `TIN` là `!view tin`. Chart
+dài hạn cũng chỉ nhận một mã mỗi lần: `!view gex 1y` được, còn hỏi nhiều mã thì bot chỉ trả giá,
 không gắn chart riêng.
 
 `!ptkt <mã>` là phân tích kỹ thuật, cũng mỗi lần một mã. Câu trả lời là **một hình kèm vài dòng
@@ -82,15 +82,14 @@ Bot **không đăng ký lệnh nào**, và lúc khởi động nó gửi lên m�
 tảng giao thẳng, biết chữ ấy hay không.
 
 
-### Lệnh riêng với `!` (từ 15/09/2026)
+### Khai báo lệnh trước (từ 15/09/2026)
 
-Nền tảng giờ đọc `!từ` như một lệnh: nếu một bot trong phòng đã khai báo `từ` bằng `setCommands`,
-tin ấy thành **lệnh riêng** — biến khỏi phòng, chỉ người gõ và bot thấy — và hai bot cùng khai báo
-một từ thì người gõ bị từ chối. Bot này vì vậy chỉ khai báo đúng một lệnh là tên của chính nó (ví dụ `topbot`, mở hướng dẫn) và
-**không khai báo mã nào**: `!vic`, `!ptkt vic`, `!tin vic`, `!vboa` là chữ bình thường của phòng,
-bot nghe được vì đã tắt chế độ riêng tư, và trả lời cho cả nhóm — lệnh gõ y như trước. Bot đọc
-lệnh máy chủ đã tách qua `command`, `commandArgs`, `commandPrefix`, nên `!vic@bocobot` cũng chạy
-nếu có ai gõ, nhưng không ai phải gõ như vậy.
+Nền tảng giờ chỉ giao `!từ` và `/từ` cho bot **đã khai báo** `từ` bằng `setCommands`. Bot khai báo
+đúng năm lệnh: `v` (giá), `ptkt`, `tin`, `vboa`, và tên của chính nó (hướng dẫn, ví dụ `!topbot`).
+Mã không khai báo được — 1.522 mã mà chỉ có 100 ô — nên giá đi sau chữ `view`: `!view vic`, `!view vic hpg
+fpt`, `!view gex 3m`. Gõ bằng `!` là hỏi riêng: tin và câu trả lời chỉ người gõ thấy. Gõ bằng `/`
+(`/view vic`, `/vboa bank`) là hỏi trước cả nhóm. Bot đọc lệnh máy chủ đã tách qua `command`,
+`commandArgs`, `commandPrefix`, và vẫn hiểu lối cũ `!vic` nếu nghe được nó.
 
 ## Giá lấy ở đâu
 
