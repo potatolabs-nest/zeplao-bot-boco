@@ -635,6 +635,7 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIX']);
   assert.equal(sent.length, 2);
   assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
+  assert.equal(sent[0].text, '📈 VIX');
   assert.equal(sent[0].replyToMessageId, 'm1');
   assert.match(sent[0].image.svg, /<line x1="86" y1="64" x2="86"/);
   assert.match(sent[0].image.svg, />13,45</);
@@ -666,6 +667,7 @@ test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async 
 
   assert.deepEqual(chart.calls.map((call) => [call.symbol, call.period]), [['GEX', '1n']]);
   assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
+  assert.equal(sent[0].text, '📈 GEX 1n');
   assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
   assert.match(sent[1].rich.blocks[1].text, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
 });
@@ -1124,7 +1126,7 @@ test('bài phân tích kèm hình đi thành hai tin: hình, rồi chữ có thu
   );
   assert.equal(sent.length, 2);
   assert.ok(sent[0].image);
-  assert.equal(sent[0].text, undefined);
+  assert.equal(sent[0].text, '📈 PTKT VIC');   // web không vẽ được tin hình không có chữ
   assert.equal(sent[0].keyboard, undefined);
   assert.equal(sent[1].image, undefined);
   const views = [...(sent[1].entities ?? []), ...(sent[1].rich?.blocks ?? []).flatMap((block) => block.entities ?? [])];

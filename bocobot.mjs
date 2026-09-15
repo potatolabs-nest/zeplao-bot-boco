@@ -688,7 +688,7 @@ export async function run(token, {
     // bấm được. Web vẽ tin có hình bằng khung ảnh, và khung ấy không cho bấm vào chữ — chú thích
     // gắn trên đó được lưu mà không ai mở được. Hình không gửi được thì chữ vẫn đi, kèm một dòng
     // nói ra, và câu trả lời reply vào câu hỏi thay cho hình.
-    const picture = await send(conversationId, { image }, replyToMessageId, onlyForUserId);
+    const picture = await send(conversationId, { text: captionFor(image), image }, replyToMessageId, onlyForUserId);
     const rest = picture.sent ? words : withoutPicture(words);
     return (await sayWithTerms(conversationId, rest, picture.sent ? undefined : replyToMessageId, onlyForUserId)).sent;
   }
@@ -705,6 +705,23 @@ export async function run(token, {
     if (first.sent || marked === content || !refusedForViews(first.problem)) return first;
     widgetTrouble = refusalCode(first.problem) ?? 'view_refused';
     return send(conversationId, content, replyToMessageId, onlyForUserId);
+  }
+
+  /**
+   * Một dòng ngắn đi cùng hình, lấy từ tên file: `bsr-2026-09-15.svg` → `📈 BSR`,
+   * `ptkt-vic-2026-09-14.svg` → `📈 PTKT VIC`, `gex-1n-2026-09-08.svg` → `📈 GEX 1n`.
+   *
+   * Tin hình không có chữ thì máy chủ vẫn lưu, nhưng web không vẽ được nó. Chú thích ngắn chứ
+   * không phải dòng giá, vì chữ đầy đủ đi ngay tin sau.
+   */
+  function captionFor(image) {
+    const words = String(image?.fileName ?? '')
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/-\d{4}-\d{2}-\d{2}$/, '')
+      .split('-')
+      .filter(Boolean)
+      .map((word) => (/^[a-z]+$/i.test(word) ? word.toUpperCase() : word));
+    return `📈 ${words.join(' ') || 'Biểu đồ'}`;
   }
 
   /**
