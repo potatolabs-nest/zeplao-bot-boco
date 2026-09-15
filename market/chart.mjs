@@ -13,6 +13,8 @@ const DAILY_RESOLUTION = '1D';
 const MAX_INTRADAY_POINTS = 64;
 const MAX_RANGE_POINTS = 96;
 const MAX_RANGE_DAYS = 365 * 20;
+/// SVG được khai kích thước gấp đôi viewBox, để hiện nét và đủ lớn trong khung chat.
+const OUTPUT_SCALE = 2;
 
 export function parseChartPeriod(value) {
   const matched = /^([1-9]\d{0,3})([dmy]|n)$/i.exec(String(value ?? '').trim());
@@ -229,7 +231,10 @@ function chartSvg(session, quote, title) {
   const ticks = priceTicks(session);
   const timeLabels = axisLabels(session.labels);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">
+  // Kích thước thật, không chỉ viewBox: một SVG không có width/height được trình duyệt vẽ ở cỡ mặc
+  // định 300×150, và chart thành một cái tem trong khung chat. Gấp đôi viewBox cho màn hình nét,
+  // như bản đồ nhiệt và hình PTKT.
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width * OUTPUT_SCALE}" height="${height * OUTPUT_SCALE}" viewBox="0 0 ${width} ${height}">
   <rect width="${width}" height="${height}" rx="22" fill="#f6fbf8"/>
   <text x="${plot.left}" y="34" fill="#0f172a" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="20" font-weight="700">${escapeXml(title)}</text>
   <line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${height - plot.bottom}" stroke="#94a3b8" stroke-width="2"/>

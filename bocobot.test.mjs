@@ -637,6 +637,7 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
   assert.equal(sent[0].text, '📈 VIX');
   assert.equal(sent[0].replyToMessageId, 'm1');
+  assert.match(sent[0].image.svg, /<svg [^>]*width="1440" height="840" viewBox="0 0 720 420"/);   // không bé tí
   assert.match(sent[0].image.svg, /<line x1="86" y1="64" x2="86"/);
   assert.match(sent[0].image.svg, />13,45</);
   assert.match(sent[0].image.svg, />13,2</);
