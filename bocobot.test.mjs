@@ -109,7 +109,8 @@ const VIC = {
 /// Một nền tảng bot đủ dùng: nói tên mình, nhận danh sách lệnh, phát ra một xấp cập nhật đúng
 /// một lần, và ghi lại mọi thứ được gửi vào phòng.
 const hasViewEntity = (body) => [...(body.entities ?? []), ...(body.rich?.blocks ?? []).flatMap((block) => block.entities ?? [])]
-  .some((entity) => entity?.type === 'view');
+  .some((entity) => entity?.type === 'view')
+  || (body.keyboard?.rows ?? []).flat().some((button) => button?.view);
 
 async function stubApi(updates, { refuseImages = false, refuseViews = false, widgetAnswers = [] } = {}) {
   const sent = [];
@@ -1059,7 +1060,7 @@ test('thuật ngữ được đánh dấu đúng chỗ, lần đầu, không dí
   assert.deepEqual(termEntities('RSI và MACD. RSI', [{ ...link, length: 3 }]).map((entity) => entity.offset), [7, 13]);
 });
 
-test('chú thích vào entities của tin chữ, vào khối rich khi có rich, và không đụng tin chỉ có hình', () => {
+test('chú thích vào entities của tin chữ, vào khối rich khi có rich, và thành nút dưới tin có hình', () => {
   const plain = withTerms({ text: 'VIC 256,1 ▲ +4,74% · KL 7.518.600' });
   assert.equal(plain.entities[0].data, GLOSSARY.KL);
 
@@ -1067,8 +1068,14 @@ test('chú thích vào entities của tin chữ, vào khối rich khi có rich, 
   assert.equal(rich.entities, undefined);
   assert.equal(rich.rich.blocks[0].entities[0].view, TERM_VIEW);
 
-  const picture = { text: 'KL', image: { fileName: 'a.svg', svg: '<svg/>' } };
-  assert.equal(withTerms(picture), picture);
+  const text = 'PTKT VIC · MA200 · RSI 60';
+  const picture = withTerms({ text, image: { fileName: 'a.svg', svg: '<svg/>' }, rich: { blocks: [{ type: 'paragraph', text }] } });
+  assert.equal(picture.entities, undefined);
+  assert.equal(picture.rich.blocks[0].entities, undefined);   // web không cho bấm chữ trên tin có hình
+  assert.deepEqual(picture.keyboard.rows.flat().map((button) => button.text), ['PTKT', 'MA200', 'RSI']);
+  assert.ok(picture.keyboard.rows.flat().every((button) => button.view === TERM_VIEW && button.data.title));
+  const bare = { text: 'không có thuật ngữ', image: { fileName: 'a.svg', svg: '<svg/>' } };
+  assert.equal(withTerms(bare), bare);
   const nothing = { text: 'không có gì' };
   assert.equal(withTerms(nothing), nothing);
   assert.ok(Object.values(GLOSSARY).every((entry) => entry.title && entry.body));
@@ -1108,6 +1115,16 @@ test('khởi động là tải widget lên, dạng application/zip', async () =>
   assert.equal(answer.unchanged, true);
   assert.equal(calls[0].url, 'https://bot.example/setWidget');
   assert.equal(calls[0].options.headers['Content-Type'], 'application/zip');
+});
+
+test('bài phân tích kèm hình mang hàng nút thuật ngữ bấm được', async () => {
+  const { sent } = await withBot(
+    [update({ text: '!ptkt vic', command: 'ptkt', commandArgs: 'vic', commandPrefix: '!', private: true })],
+  );
+  const buttons = sent[0].keyboard.rows.flat();
+  assert.equal(buttons[0].text, 'PTKT');
+  assert.equal(buttons[0].view, TERM_VIEW);
+  assert.ok(sent[0].image);
 });
 
 test('widget cũ có view khác thì tải lại với allowViewRemoval', async () => {

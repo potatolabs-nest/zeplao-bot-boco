@@ -90,7 +90,8 @@ một thẻ nhỏ giải thích nó, kèm công thức và ví dụ khi có. Th�
 `widget/`; chữ trên thẻ đi trong chính tin nhắn (`market/glossary.mjs`), nên trang không cần biết
 thuật ngữ nào. Bot tự gói `widget/` và tải lên (`setWidget`) mỗi lần khởi động — gói không đổi thì
 máy chủ trả `unchanged`. Máy chủ từ chối chú thích (chưa có widget, view đổi tên) thì bot gửi lại
-câu trả lời không kèm chú thích, không bao giờ im.
+câu trả lời không kèm chú thích, không bao giờ im. Tin có hình (chart, PTKT) thì web không cho
+bấm vào chữ, nên ở đó các thuật ngữ thành một hàng nút mang đúng tên chúng dưới tin.
 
 ### Khai báo lệnh trước (từ 15/09/2026)
 

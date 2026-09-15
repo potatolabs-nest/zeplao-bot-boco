@@ -10,6 +10,10 @@ export const TERM_VIEW = 'term';
 /// Tối đa 50 view mỗi tin nhắn, theo giới hạn của nền tảng.
 const MOST_VIEWS = 50;
 
+/// Nút thuật ngữ dưới một tin có hình: nhiều nhất chừng này nút, mỗi hàng chừng này nút.
+const MOST_BUTTONS = 12;
+const BUTTONS_PER_ROW = 4;
+
 /// Những khối rich mang được entity, theo tài liệu.
 const TEXT_BLOCKS = new Set(['paragraph', 'text', 'heading', 'quote']);
 
@@ -131,11 +135,33 @@ export function termEntities(text, taken = [], glossary = GLOSSARY) {
  * Nội dung một tin nhắn, kèm chú thích thuật ngữ ở đúng chỗ nền tảng nhận.
  *
  * Tin chữ thường: vào `entities`. Tin có `rich`: vào từng khối văn bản, vì nền tảng không nhận
- * `entities` bên cạnh `rich`. Tin chỉ có hình, sticker, hay không có gì để chú thích: trả lại
- * đúng như cũ — cùng một object, để nơi gọi biết không có gì được thêm.
+ * `entities` bên cạnh `rich`. Tin có hình: thành hàng nút dưới tin. Sticker, hay không có gì để
+ * chú thích: trả lại đúng như cũ — cùng một object, để nơi gọi biết không có gì được thêm.
  */
 export function withTerms(content, glossary = GLOSSARY) {
   if (!content || typeof content !== 'object' || content.stickerId) return content;
+
+  // Tin có hình: web vẽ nó bằng khung ảnh, và khung ấy không cho bấm vào chữ — chú thích trên chữ
+  // được lưu mà không ai mở được. Hàng nút dưới tin thì bấm được trên mọi loại tin, nên thuật ngữ
+  // thành nút mang đúng tên nó.
+  if (content.image) {
+    const texts = [content.text, ...(content.rich?.blocks ?? [])
+      .filter((block) => TEXT_BLOCKS.has(block?.type))
+      .map((block) => block.text)]
+      .filter((text) => typeof text === 'string');
+    const terms = [];
+    for (const text of texts) {
+      for (const entity of termEntities(text, [], glossary)) {
+        const word = text.slice(entity.offset, entity.offset + entity.length);
+        if (!terms.includes(word)) terms.push(word);
+      }
+    }
+    if (!terms.length) return content;
+    const buttons = terms.slice(0, MOST_BUTTONS).map((word) => ({ text: word, view: TERM_VIEW, data: glossary[word] }));
+    const rows = [];
+    for (let at = 0; at < buttons.length; at += BUTTONS_PER_ROW) rows.push(buttons.slice(at, at + BUTTONS_PER_ROW));
+    return { ...content, keyboard: { rows: [...(content.keyboard?.rows ?? []), ...rows] } };
+  }
 
   if (Array.isArray(content.rich?.blocks)) {
     let budget = MOST_VIEWS;
@@ -161,7 +187,7 @@ const VIEW_REFUSALS = [
   'bot_has_no_widget', 'views_need_uploaded_widget', 'view_not_found', 'view_name_invalid',
   'view_data_too_large', 'message_view_data_too_large', 'too_many_views', 'too_many_entities',
   'entities_overlap', 'entities_with_rich', 'entities_need_text', 'entities_need_plain_text',
-  'entity_', 'rich_entit', 'widget_store_unavailable',
+  'entity_', 'rich_entit', 'widget_store_unavailable', 'button_', 'keyboard_',
 ];
 
 export function refusedForViews(problem) {
