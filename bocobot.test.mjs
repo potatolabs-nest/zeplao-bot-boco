@@ -17,7 +17,7 @@ import {
   SORRY,
 } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
-import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
+import { chartRich, intradayChart, parseChartPeriod, rangeSession, withSessionData } from './market/chart.mjs';
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 import { GLOSSARY, TERM_VIEW, termEntities, withTerms } from './market/glossary.mjs';
@@ -735,6 +735,27 @@ test('chart 1d dùng nến trong phiên, còn kỳ hạn dài dùng nến ngày'
   assert.match(urls[1], /resolution=1D/);
   assert.equal(ranged.image.fileName, 'gex-2d-2026-09-09.svg');
   assert.match(ranged.blocks[0].text, /Đầu kỳ 19/);
+});
+
+test('chart dài hạn giữa phiên lấy cây nến cuối từ nến 5 phút của hôm nay', () => {
+  const daily = {
+    t: [Date.parse('2026-09-11T02:00:00Z') / 1000, Date.parse('2026-09-14T02:00:00Z') / 1000],
+    o: [240, 243], h: [245, 244], l: [239, 240], c: [243.3, 241.4], v: [4000, 4100],
+  };
+  const minutes = {
+    t: [Date.parse('2026-09-14T07:55:00Z') / 1000, Date.parse('2026-09-15T02:15:00Z') / 1000, Date.parse('2026-09-15T07:20:00Z') / 1000],
+    o: [241, 242, 241.5], h: [241.6, 243.2, 241.8], l: [240.9, 241.9, 240.8], c: [241.4, 242.1, 240.9], v: [50, 700, 300],
+  };
+  const merged = withSessionData(daily, minutes);
+  assert.equal(merged.t.length, 3);
+  assert.deepEqual(
+    [merged.o.at(-1), merged.h.at(-1), merged.l.at(-1), merged.c.at(-1), merged.v.at(-1)],
+    [242, 243.2, 240.8, 240.9, 1000],
+  );
+
+  // Nến ngày đã có hôm nay thì giữ nguyên.
+  assert.equal(withSessionData(merged, minutes), merged);
+  assert.equal(withSessionData(daily, null), daily);
 });
 
 test('chart nhiều điểm thì nhãn trục X trải tới cuối phiên', () => {

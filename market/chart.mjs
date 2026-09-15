@@ -13,6 +13,8 @@ const DAILY_RESOLUTION = '1D';
 const MAX_INTRADAY_POINTS = 64;
 const MAX_RANGE_POINTS = 96;
 const MAX_RANGE_DAYS = 365 * 20;
+/// Nến 5 phút của mấy ngày gần nhất, chỉ để dựng cây nến của phiên đang chạy cho chart dài hạn.
+const SESSION_LOOKBACK_DAYS = 4;
 /// SVG được khai kích thước gấp đôi viewBox, để hiện nét và đủ lớn trong khung chat.
 const OUTPUT_SCALE = 2;
 
@@ -54,9 +56,14 @@ export function intradayChart({ base = CHART, fetchImpl = fetch, timeout = TIMEO
 
     const data = await response.json();
     if (!Array.isArray(data?.t) || !Array.isArray(data?.c) || data.t.length !== data.c.length) return null;
-    return period && !period.intraday
-      ? rangeSession(normalized, data, { ...period, from: to - period.spanDays * 24 * 60 * 60 })
-      : latestSession(normalized, data);
+    if (!period || period.intraday) return latestSession(normalized, data);
+
+    // Nến ngày chỉ có hôm nay sau giờ đóng cửa một lúc; giữa phiên, cây cuối được dựng từ nến 5 phút.
+    const minutes = await fetchImpl(
+      `${base}/${kindOf(normalized)}?from=${to - SESSION_LOOKBACK_DAYS * 24 * 60 * 60}&to=${to}&symbol=${normalized}&resolution=${INTRADAY_RESOLUTION}`,
+      { signal: AbortSignal.timeout(timeout) },
+    ).then((answer) => (answer.ok ? answer.json() : null)).catch(() => null);
+    return rangeSession(normalized, withSessionData(data, minutes), { ...period, from: to - period.spanDays * 24 * 60 * 60 });
   }
 
   return {
@@ -64,6 +71,33 @@ export function intradayChart({ base = CHART, fetchImpl = fetch, timeout = TIMEO
       const session = await candles(symbol, period);
       return session ? chartRich(session, quote) : null;
     },
+  };
+}
+
+/**
+ * Nến ngày dạng mảng (`t o h l c v`), thêm cây nến của phiên đang chạy khi nó còn thiếu.
+ *
+ * Gộp các cây 5 phút của ngày gần nhất: mở cửa cây đầu, cao thấp là cực trị, đóng cửa cây cuối,
+ * khối lượng cộng lại. Ngày ấy đã có trong nến ngày thì nến ngày thắng.
+ */
+export function withSessionData(data, minutes) {
+  if (!Array.isArray(data?.t) || !data.t.length || !Array.isArray(minutes?.t) || !minutes.t.length) return data;
+  const day = tradingDay(Number(minutes.t.at(-1)));
+  if (tradingDay(Number(data.t.at(-1))) >= day) return data;
+
+  const picked = minutes.t.map((_, index) => index).filter((index) => tradingDay(Number(minutes.t[index])) === day);
+  if (!picked.length) return data;
+  const value = (list, index) => Number(list?.[index] ?? minutes.c[index]);
+  const first = picked[0];
+  const last = picked.at(-1);
+  return {
+    ...data,
+    t: [...data.t, minutes.t[first]],
+    o: [...(data.o ?? data.c), value(minutes.o, first)],
+    h: [...(data.h ?? data.c), Math.max(...picked.map((index) => value(minutes.h, index)))],
+    l: [...(data.l ?? data.c), Math.min(...picked.map((index) => value(minutes.l, index)))],
+    c: [...data.c, Number(minutes.c[last])],
+    v: [...(data.v ?? data.c.map(() => 0)), picked.reduce((sum, index) => sum + Number(minutes.v?.[index] ?? 0), 0)],
   };
 }
 
