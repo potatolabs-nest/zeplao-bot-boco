@@ -19,6 +19,7 @@ dài đúng một dòng.
 | `/gex 1d`, `/gex 2d`, `/gex 3m`, `/gex 4y` | Một mã, kèm chart theo số ngày/tháng/năm tuỳ gõ |
 | `/vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
+| `!kq vic`, `!kq vic q2`, `!kq vic 2025` | Cơ cấu doanh thu (doanh nghiệp: bán hàng / dịch vụ / xây dựng; ngân hàng: nguồn thu nhập; chứng khoán: nghiệp vụ; bảo hiểm: phí, tài chính…) kèm % đóng góp, so cùng kỳ, DT · LNG · LNST — số liệu BCTC từ Vietcap IQ, mọi mã |
 | `!ptkt vic` | Phân tích kỹ thuật một mã: hình chart kèm chỉ báo, đánh giá, độ tin cậy, điểm mua bán |
 | `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |

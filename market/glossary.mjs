@@ -59,6 +59,24 @@ export const GLOSSARY = {
     body: 'Khối lượng khớp trung bình của 20 phiên trước đó. So 5 phiên gần nhất với TB20 để đọc dòng tiền: trên 1,3 lần khi giá tăng là tiền vào xác nhận, khi giá giảm là áp lực bán.',
     example: '0,8 lần TB20 → thanh khoản thấp hơn bình thường',
   },
+  DT: {
+    title: 'DT — doanh thu',
+    body: 'Tiền bán hàng và cung cấp dịch vụ trong kỳ, trước khi trừ chi phí. Tỷ lệ trong ngoặc là phần của mảng đó trong tổng doanh thu.',
+  },
+  LNG: {
+    title: 'LNG — lợi nhuận gộp',
+    body: 'Doanh thu trừ giá vốn hàng bán. Biên lợi nhuận gộp cho biết mỗi 100 đồng doanh thu còn lại bao nhiêu sau giá vốn — biên cao là mảng có lợi thế về giá hoặc chi phí.',
+    formula: 'LNG = Doanh thu − Giá vốn · Biên = LNG ÷ Doanh thu',
+  },
+  LNTT: {
+    title: 'LNTT — lợi nhuận trước thuế',
+    body: 'Lợi nhuận sau khi trừ mọi chi phí hoạt động, tài chính và dự phòng, trước thuế thu nhập doanh nghiệp. Biên LNTT so với tổng thu nhập cho biết hiệu quả chung của doanh nghiệp.',
+  },
+  LNST: {
+    title: 'LNST — lợi nhuận sau thuế',
+    body: 'Phần lợi nhuận còn lại sau khi trừ thuế thu nhập doanh nghiệp, là con số cuối cùng của báo cáo kết quả kinh doanh. Biên LNST là mỗi 100 đồng doanh thu còn lại bao nhiêu đồng lãi ròng.',
+    formula: 'Biên LNST = LNST ÷ Doanh thu',
+  },
   KL: {
     title: 'KL — khối lượng khớp lệnh',
     body: 'Số cổ phiếu đã khớp trong phiên. Khối lượng xác nhận chuyển động giá: giá tăng mạnh kèm khối lượng lớn đáng tin hơn giá tăng khi ít người giao dịch.',

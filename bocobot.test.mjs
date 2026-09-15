@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedTechnicalFor, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
   privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
@@ -21,6 +21,8 @@ import { chartRich, intradayChart, parseChartPeriod, rangeSession, withSessionDa
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 import { GLOSSARY, TERM_VIEW, termEntities, withTerms } from './market/glossary.mjs';
+import { MOST_SEGMENTS, parseResultsPeriod, resultsMessage } from './market/results.mjs';
+import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResults } from './market/vietcap.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
@@ -308,6 +310,7 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
+    results = null,
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [],
   } = {},
 ) {
@@ -323,6 +326,7 @@ async function withBot(
     chart,
     heatmap,
     technical,
+    results,
     statePath,
     at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
   });
@@ -995,8 +999,8 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'topbot']);
-  assert.deepEqual(commandsFor(ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'bocobot']);
+  assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'topbot']);
+  assert.deepEqual(commandsFor(ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
 });
 
@@ -1038,7 +1042,7 @@ test('máy chủ không nhận hình thì vẫn gửi chữ cho người hỏi, 
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'tin', 'vboa', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: 300 }, (_, i) => `M${String(i).padStart(3, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -1176,6 +1180,141 @@ test('chú thích bị từ chối thì hướng dẫn nói ra mã lỗi', async
   );
   assert.equal(sent.length, 2);
   assert.match(sent[1].text, /Chú thích thuật ngữ chưa bật được: bot_has_no_widget/);
+});
+
+// ---- kết quả kinh doanh theo mảng -------------------------------------------------------------
+
+const SEGMENTS = {
+  symbol: 'VIC',
+  period: { year: 2025, quarter: 2 },
+  unit: 'tỷ đồng',
+  measure: 'doanh thu',
+  source: 'Vietcap IQ',
+  segments: [
+    { name: 'Bất động sản', value: 25300, previous: 22600 },
+    { name: 'Công nghiệp', value: 18400, previous: 15000 },
+    { name: 'Thương mại, dịch vụ', value: 9000, previous: null },
+  ],
+  totals: [
+    { label: 'DT thuần', value: 52700, previous: 47000, margin: false },
+    { label: 'LNG', value: 13000, previous: null, margin: true },
+    { label: 'LNST', value: 6500, previous: null, margin: true },
+  ],
+};
+
+const vcRow = (year, quarter, values) => ({ yearReport: year, lengthReport: quarter, publicDate: '2026-08-29T00:00:00', ...values });
+
+test('!kq đọc mã và kỳ báo cáo', () => {
+  assert.deepEqual(askedResultsFor(message({ text: '!kq vic' })), { addressed: true, symbol: 'VIC', period: { year: null, quarter: null, annual: false } });
+  assert.deepEqual(askedResultsFor(message({ text: '!kq vic q2' })).period, { year: null, quarter: 2, annual: false });
+  assert.deepEqual(askedResultsFor(message({ text: '!kq hpg q3 2025 -v' })).period, { year: 2025, quarter: 3, annual: false });
+  assert.deepEqual(parseResultsPeriod(['2024']), { year: 2024, quarter: null, annual: true });
+  assert.deepEqual(parseResultsPeriod(['năm']), { year: null, quarter: null, annual: true });
+  assert.equal(parseResultsPeriod(['q5']), null);
+  assert.match(askedResultsFor(message({ text: '!kq' })).error, /!kq vic/);
+  assert.match(askedResultsFor(message({ text: '!kq vic q9' })).error, /kỳ báo cáo/);
+  assert.equal(askedResultsFor(message({ text: '!ptkt vic' })), null);
+});
+
+test('kết quả: dòng lớn trước, % đóng góp, so cùng kỳ, dòng tổng có biên lợi nhuận', () => {
+  const lines = resultsMessage(SEGMENTS).split('\n');
+  assert.equal(lines[0], 'KQKD VIC · Q2/2025 · cơ cấu doanh thu (tỷ đồng)');
+  assert.equal(lines[1], '1. Bất động sản — 25.300 (48%) · +11,9% cùng kỳ');
+  assert.equal(lines[3], '3. Thương mại, dịch vụ — 9.000 (17,1%)');
+  assert.equal(lines[4], 'DT thuần 52.700 (+12,1% cùng kỳ) · LNG 13.000, biên 24,7% · LNST 6.500, biên 12,3%');
+  assert.equal(lines[5], 'Nguồn: Vietcap IQ');
+  assert.ok(termEntities(lines.join('\n')).some((entity) => entity.data === GLOSSARY.LNST));
+
+  const many = { ...SEGMENTS, segments: Array.from({ length: 14 }, (_, i) => ({ name: `Dòng ${i + 1}`, value: 100 - i, previous: null })) };
+  const manyLines = resultsMessage(many).split('\n');
+  assert.equal(manyLines.filter((line) => /^\d+\. /.test(line)).length, MOST_SEGMENTS + 1);
+  assert.match(manyLines[MOST_SEGMENTS + 1], /^11\. Khác \(4 dòng\)/);
+
+  const totalsOnly = resultsMessage({ ...SEGMENTS, segments: [] });
+  assert.match(totalsOnly, /Kỳ này chưa có thuyết minh cơ cấu doanh thu/);
+  assert.match(resultsMessage({ symbol: 'ABC', period: { year: 2025, quarter: 1 } }), /chưa có số liệu báo cáo tài chính cho Q1\/2025/);
+});
+
+test('Vietcap: nhận ra loại công ty và chọn đúng kỳ, kèm cùng kỳ năm trước', () => {
+  assert.equal(profileOf({ INCOME_STATEMENT: [{ field: 'isa1' }, { field: 'isa5' }] }), 'normal');
+  assert.equal(profileOf({ INCOME_STATEMENT: [{ field: 'isb27' }] }), 'bank');
+  assert.equal(profileOf({ INCOME_STATEMENT: [{ field: 'isa1' }, { field: 'iss42' }] }), 'securities');
+  assert.equal(profileOf({ INCOME_STATEMENT: [{ field: 'isi103' }, { field: 'isb36' }] }), 'insurance');
+
+  const data = {
+    quarters: [vcRow(2026, 2, { v: 1 }), vcRow(2026, 1, { v: 2 }), vcRow(2025, 2, { v: 3 }), vcRow(2025, 4, { v: 4 })],
+    years: [{ ...vcRow(2025, 5, { v: 5 }) }, { ...vcRow(2024, 5, { v: 6 }) }],
+  };
+  assert.equal(pickReportPeriod(data, {}).row.v, 1);
+  assert.equal(pickReportPeriod(data, {}).previous.v, 3);
+  assert.equal(pickReportPeriod(data, { quarter: 4 }).row.v, 4);
+  assert.equal(pickReportPeriod(data, { annual: true }).row.v, 5);
+  assert.equal(pickReportPeriod(data, { annual: true }).previous.v, 6);
+  assert.equal(pickReportPeriod(data, { quarter: 3 }), null);
+});
+
+test('Vietcap: doanh nghiệp tách doanh thu theo thuyết minh, ngân hàng theo nguồn thu nhập', () => {
+  const normal = vietcapReport('vic', { year: null, quarter: null, annual: false }, {
+    metrics: {
+      INCOME_STATEMENT: [{ field: 'isa1' }, { field: 'isa3' }, { field: 'isa5' }, { field: 'isa20' }],
+      NOTE: [
+        { field: 'noc102', level: 1, parent: null, titleVi: 'Doanh thu' },
+        { field: 'noc103', level: 2, parent: 'NOC102', titleVi: 'Doanh thu bán hàng' },
+        { field: 'noc104', level: 2, parent: 'NOC102', titleVi: 'Doanh thu cung cấp dịch vụ' },
+        { field: 'noc105', level: 2, parent: 'NOC102', titleVi: 'Doanh thu hợp đồng xây dựng' },
+      ],
+    },
+    income: { quarters: [
+      vcRow(2026, 2, { isa3: 117568392e6, isa5: 29496057e6, isa20: 15294192e6 }),
+      vcRow(2025, 2, { isa3: 100000000e6, isa5: 20000000e6, isa20: 5000000e6 }),
+    ], years: [] },
+    note: { quarters: [
+      vcRow(2026, 2, { noc103: 100201601e6, noc104: 17395635e6, noc105: 0 }),
+      vcRow(2025, 2, { noc103: 80000000e6, noc104: 20000000e6 }),
+    ], years: [] },
+  });
+  assert.equal(normal.kind, 'normal');
+  assert.deepEqual(normal.period, { year: 2026, quarter: 2 });
+  assert.deepEqual(normal.segments.map((segment) => segment.name), ['Doanh thu bán hàng', 'Doanh thu cung cấp dịch vụ']);
+  const text = resultsMessage(normal);
+  assert.match(text, /^KQKD VIC · Q2\/2026 · cơ cấu doanh thu \(tỷ đồng\)/);
+  assert.match(text, /1\. Doanh thu bán hàng — 100\.202 \(85,2%\) · \+25,3% cùng kỳ/);
+  assert.match(text, /DT thuần 117\.568 \(\+17,6% cùng kỳ\) · LNG 29\.496, biên 25,1% · LNST 15\.294, biên 13%/);
+  assert.match(text, /Nguồn: Vietcap IQ · BCTC công bố 29\/08\/2026/);
+
+  const bank = vietcapReport('vcb', {}, {
+    metrics: { INCOME_STATEMENT: [
+      { field: 'isb27', titleVi: 'Thu nhập lãi thuần' }, { field: 'isb30', titleVi: 'Lãi/Lỗ thuần từ hoạt động dịch vụ' },
+      { field: 'isb36', titleVi: 'Lãi/(lỗ) thuần từ hoạt động khác' }, { field: 'isb38', titleVi: 'Tổng thu nhập hoạt động' },
+    ] },
+    income: { quarters: [vcRow(2026, 2, { isb27: 19142e9, isb30: 860e9, isb36: 4059e9, isb38: 26372e9, isa16: 17420e9, isa20: 14551e9 })], years: [] },
+    note: null,
+  });
+  assert.equal(bank.kind, 'bank');
+  const bankText = resultsMessage(bank);
+  assert.match(bankText, /cơ cấu thu nhập hoạt động/);
+  assert.match(bankText, /1\. Thu nhập lãi thuần — 19\.142/);
+  assert.match(bankText, /Tổng thu nhập HĐ 26\.372 · LNTT 17\.420, biên 66,1% · LNST 14\.551, biên 55,2%/);
+});
+
+test('Vietcap: mã không có thì không có dữ liệu, nguồn chết thì ném', async () => {
+  const missing = vietcapResults({ fetchImpl: async () => new Response('{}', { status: 404 }) });
+  assert.equal(await missing.segments('ZZZZ', {}), null);
+  const down = vietcapResults({ fetchImpl: async () => new Response('lỗi', { status: 502 }) });
+  await assert.rejects(down.segments('VIC', {}));
+});
+
+test('!kq vic hỏi đúng nguồn và trả lời; nguồn chết thì nói ra', async () => {
+  const calls = [];
+  const results = { async segments(symbol, period) { calls.push([symbol, period]); return SEGMENTS; } };
+  const { sent } = await withBot([update({ text: '!kq vic q2', command: 'kq', commandArgs: 'vic q2', commandPrefix: '!', private: true })], { results });
+  assert.deepEqual(calls, [['VIC', { year: null, quarter: 2, annual: false }]]);
+  assert.match(sent[0].text, /^KQKD VIC · Q2\/2025/);
+  assert.equal(sent[0].onlyForUserId, 'u1');
+
+  const broken = { async segments() { throw new Error('nguồn chết'); } };
+  const failed = await withBot([update({ text: '!kq vic' })], { results: broken });
+  assert.match(failed.sent[0].text, /Nguồn báo cáo tài chính đang không trả lời/);
 });
 
 // ---- phân tích kỹ thuật ---------------------------------------------------------------------
@@ -1324,6 +1463,6 @@ test('nguồn tin chết thì nói ra', async () => {
 test('khởi động là thay danh sách lệnh cũ bằng đúng một lệnh bocobot, không khai báo mã nào', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 });

@@ -43,6 +43,8 @@ import { googleNews, newsMessage } from './market/news.mjs';
 import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
+import { parseResultsPeriod, resultsMessage } from './market/results.mjs';
+import { vietcapResults } from './market/vietcap.mjs';
 import { refusalCode, refusedForViews, withTerms } from './market/glossary.mjs';
 import { publishWidget } from './widget.mjs';
 
@@ -90,6 +92,7 @@ export function commandsFor(me, symbols = []) {
     { command: PRICE_COMMAND, description: 'Giá mọi mã: /view vic cho cả nhóm, !view vic chỉ bạn thấy' },
     { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
+    { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
     { command: 'vboa', description: 'Bản đồ nhiệt: !vboa · theo ngành: !vboa bank, bds, oil, retail, cn' },
     { command: name, description: 'Hướng dẫn dùng bot' },
   ];
@@ -142,6 +145,7 @@ export const HELP = [
   '/view xyz hoặc !view xyz — dùng được cho mọi mã, kể cả mã không có sẵn lệnh riêng',
   '!tin vic — 5 tin gần nhất về VIC',
   '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
+  '!kq vic — cơ cấu doanh thu, lợi nhuận quý gần nhất; !kq vic q2, !kq vic 2025',
   '',
   'Chart theo thời gian:',
   '/gex 1d — chart trong phiên gần nhất',
@@ -372,6 +376,22 @@ export function askedNewsFor(message) {
  * `VIC`. `PTKT` không phải mã nào, nên `!ptkt` đứng một mình được nhắc cú pháp chứ không rơi
  * xuống tra giá.
  */
+export function askedResultsFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+
+  const words = text.slice(CALL.length).trim().split(/\s+/).filter(Boolean);
+  if (words[0]?.toLowerCase() !== 'kq') return null;
+
+  const symbol = words[1]?.toUpperCase();
+  if (!symbol || !looksLikeCode(symbol)) {
+    return { addressed: true, error: 'Gõ !kq kèm một mã, ví dụ: !kq vic, !kq vic q2, !kq vic 2025.' };
+  }
+  const period = parseResultsPeriod(words.slice(2));
+  if (!period) return { addressed: true, error: 'Không đọc được kỳ báo cáo. Ví dụ: !kq vic q2, !kq vic q2 2025, !kq vic 2025.' };
+  return { addressed: true, symbol, period };
+}
+
 export function askedTechnicalFor(message) {
   const text = withoutPrivateFlag(message?.text ?? '').trimStart();
   if (!text.startsWith(CALL)) return null;
@@ -430,6 +450,7 @@ export async function run(token, {
   at = () => new Date(),
   heatmap = marketHeatmap({ at }),
   technical = technicalAnalysis(),
+  results = vietcapResults(),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -582,6 +603,22 @@ export async function run(token, {
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.news, replyTo, onlyForUserId);
+      }
+      return;
+    }
+
+    const resultsAsked = !message.priceOnly && askedResultsFor(message);
+    if (resultsAsked) {
+      if (resultsAsked.error || !results) {
+        await say(message.conversationId, resultsAsked.error ?? 'Chưa có nguồn số liệu báo cáo tài chính. Thử lại sau.', replyTo, onlyForUserId);
+        return;
+      }
+      try {
+        const report = await results.segments(resultsAsked.symbol, resultsAsked.period);
+        await say(message.conversationId, resultsMessage(report ?? { symbol: resultsAsked.symbol, period: resultsAsked.period }), replyTo, onlyForUserId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, 'Nguồn báo cáo tài chính đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
       }
       return;
     }
