@@ -43,7 +43,7 @@ import { googleNews, newsMessage } from './market/news.mjs';
 import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
-import { parseResultsPeriod, resultsMessage } from './market/results.mjs';
+import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
 import { refusalCode, refusedForViews, withTerms } from './market/glossary.mjs';
 import { publishWidget } from './widget.mjs';
@@ -615,7 +615,7 @@ export async function run(token, {
       }
       try {
         const report = await results.segments(resultsAsked.symbol, resultsAsked.period);
-        await say(message.conversationId, resultsMessage(report ?? { symbol: resultsAsked.symbol, period: resultsAsked.period }), replyTo, onlyForUserId);
+        await say(message.conversationId, resultsRich(report ?? { symbol: resultsAsked.symbol, period: resultsAsked.period }), replyTo, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, 'Nguồn báo cáo tài chính đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);

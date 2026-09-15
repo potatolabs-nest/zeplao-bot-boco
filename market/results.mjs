@@ -105,3 +105,134 @@ export function resultsMessage(report) {
   if (report.source) lines.push(`Nguồn: ${report.source}`);
   return lines.join('\n');
 }
+
+// ---- hình ----------------------------------------------------------------------------------------
+//
+// Thanh ngang, lớn trên cùng: so được các dòng sát nhau, điều mà một cái bánh tròn không làm được.
+// Sau mỗi thanh là một thanh xám mờ của cùng kỳ năm trước, để tăng hay giảm nhìn là thấy, và ba ô
+// số tổng ở trên. Một màu cho kỳ này — một chuỗi số, không phải tám thứ cần phân biệt.
+
+const W = 1000;
+const PAD = 40;
+const SCALE = 2;
+const FONT = 'system-ui, -apple-system, Segoe UI, sans-serif';
+const INK = '#0b0b0b';
+const SECONDARY = '#52514e';
+const MUTED = '#898781';
+const LINE = '#e1e0d9';
+const SURFACE = '#fcfcfb';
+const TILE = '#f4f4f1';
+const BAR = '#2a78d6';
+const GHOST = '#d9d7cf';
+const UP = '#0b6b2f';
+const DOWN = '#f0605d';
+
+const escapeXml = (value) => String(value)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const clip = (text, most) => (text.length > most ? `${text.slice(0, most - 1).trimEnd()}…` : text);
+
+function moved(value, previous) {
+  if (!Number.isFinite(value) || !Number.isFinite(previous) || previous <= 0) return null;
+  return ((value - previous) / previous) * 100;
+}
+
+function delta(x, y, value, anchor = 'start') {
+  if (!Number.isFinite(value)) return '';
+  const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '▬';
+  const color = value > 0 ? UP : value < 0 ? DOWN : MUTED;
+  const sign = value > 0 ? '+' : value < 0 ? '−' : '';
+  return `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="18" fill="${SECONDARY}"><tspan fill="${color}">${arrow}</tspan> ${sign}${one.format(Math.abs(value))}% cùng kỳ</text>`;
+}
+
+/** Hình cho một báo cáo, hoặc `null` khi không có dòng nào để vẽ. */
+export function resultsSvg(report) {
+  const segments = (report?.segments ?? []).filter((segment) => Number.isFinite(segment?.value) && segment.value !== 0);
+  const totals = (report?.totals ?? []).filter((total) => Number.isFinite(total?.value)).slice(0, 3);
+  if (!segments.length && !totals.length) return null;
+
+  const sorted = [...segments].sort((a, b) => b.value - a.value);
+  const rows = sorted.slice(0, MOST_SEGMENTS);
+  const rest = sorted.slice(MOST_SEGMENTS);
+  if (rest.length) {
+    const previous = rest.every((segment) => Number.isFinite(segment.previous)) ? rest.reduce((sum, segment) => sum + segment.previous, 0) : null;
+    rows.push({ name: `Khác (${rest.length} dòng)`, value: rest.reduce((sum, segment) => sum + segment.value, 0), previous });
+  }
+  const base = segments.filter((segment) => segment.value > 0).reduce((sum, segment) => sum + segment.value, 0);
+
+  const tilesTop = 132;
+  const tilesHeight = totals.length ? 132 : 0;
+  const legendY = tilesTop + tilesHeight + (totals.length ? 44 : 20);
+  const rowsTop = legendY + 26;
+  const rowHeight = 76;
+  const footer = 56;
+  const H = rowsTop + Math.max(rows.length, 1) * rowHeight + footer;
+
+  const header = `<text x="${PAD}" y="66" font-size="38" font-weight="800" fill="${INK}">KQKD ${escapeXml(report.symbol)} · ${escapeXml(periodLabel(report.period))}</text>
+  <text x="${PAD}" y="104" font-size="22" fill="${SECONDARY}">Cơ cấu ${escapeXml(report.measure ?? 'doanh thu')}${report.unit ? ` · ${escapeXml(report.unit)}` : ''}</text>`;
+
+  const gap = 16;
+  const tileWidth = totals.length ? (W - PAD * 2 - gap * (totals.length - 1)) / totals.length : 0;
+  const head = totals[0];
+  const tiles = totals.map((total, index) => {
+    const x = PAD + index * (tileWidth + gap);
+    const note = total.margin && head?.value > 0
+      ? `<text x="${x + 20}" y="${tilesTop + 110}" font-size="18" fill="${SECONDARY}">biên ${one.format((total.value / head.value) * 100)}%</text>`
+      : delta(x + 20, tilesTop + 110, moved(total.value, total.previous));
+    return `<rect x="${x}" y="${tilesTop}" width="${tileWidth}" height="${tilesHeight}" rx="14" fill="${TILE}"/>
+    <text x="${x + 20}" y="${tilesTop + 36}" font-size="20" fill="${SECONDARY}">${escapeXml(total.label)}</text>
+    <text x="${x + 20}" y="${tilesTop + 78}" font-size="34" font-weight="700" fill="${INK}">${escapeXml(amount(total.value))}</text>
+    ${note}`;
+  }).join('');
+
+  const hasPrevious = rows.some((row) => Number.isFinite(row.previous) && row.previous > 0);
+  const legend = rows.length ? `<rect x="${PAD}" y="${legendY - 14}" width="18" height="14" rx="3" fill="${BAR}"/>
+  <text x="${PAD + 26}" y="${legendY}" font-size="18" fill="${SECONDARY}">${escapeXml(periodLabel(report.period))}</text>
+  ${hasPrevious ? `<rect x="${PAD + 150}" y="${legendY - 14}" width="18" height="14" rx="3" fill="${GHOST}"/>
+  <text x="${PAD + 176}" y="${legendY}" font-size="18" fill="${SECONDARY}">Cùng kỳ năm trước</text>` : ''}` : '';
+
+  // Chỗ bên phải thanh dài nhất cho con số, tỷ lệ và mũi tên cùng kỳ — thiếu thì chữ bị cắt ở mép hình.
+  const labelSpace = 420;
+  const plotWidth = W - PAD * 2 - labelSpace;
+  const highest = Math.max(1, ...rows.flatMap((row) => [row.value, Number.isFinite(row.previous) ? row.previous : 0]));
+  const width = (value) => (value > 0 ? Math.max(3, (value / highest) * plotWidth) : 0);
+
+  const bars = rows.length ? rows.map((row, index) => {
+    const y = rowsTop + index * rowHeight;
+    const current = width(row.value);
+    const ghost = Number.isFinite(row.previous) ? width(row.previous) : 0;
+    const end = PAD + Math.max(current, ghost) + 12;
+    const share = base > 0 && row.value > 0 ? ` (${one.format((row.value / base) * 100)}%)` : '';
+    return `<text x="${PAD}" y="${y + 22}" font-size="21" fill="${INK}">${escapeXml(clip(row.name, 70))}</text>
+    ${ghost ? `<rect x="${PAD}" y="${y + 34}" width="${ghost.toFixed(1)}" height="26" rx="4" fill="${GHOST}"/>` : ''}
+    ${current ? `<rect x="${PAD}" y="${y + 38}" width="${current.toFixed(1)}" height="18" rx="4" fill="${BAR}"/>` : ''}
+    <text x="${end.toFixed(1)}" y="${y + 54}" font-size="20" font-weight="600" fill="${INK}">${escapeXml(amount(row.value))}${escapeXml(share)}</text>
+    ${delta((end + 12 + (amount(row.value).length + share.length) * 11).toFixed(1), y + 54, moved(row.value, row.previous))}`;
+  }).join('') : `<text x="${PAD}" y="${rowsTop + 30}" font-size="20" fill="${SECONDARY}">Kỳ này chưa có thuyết minh cơ cấu ${escapeXml(report.measure ?? 'doanh thu')}.</text>`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W * SCALE}" height="${H * SCALE}" viewBox="0 0 ${W} ${H}" font-family="${FONT}">
+  <rect width="${W}" height="${H}" fill="${SURFACE}"/>
+  ${header}
+  ${tiles}
+  ${legend}
+  ${bars}
+  <line x1="${PAD}" y1="${H - footer + 8}" x2="${W - PAD}" y2="${H - footer + 8}" stroke="${LINE}" stroke-width="1"/>
+  <text x="${PAD}" y="${H - 20}" font-size="17" fill="${MUTED}">${escapeXml(report.source ? `Nguồn: ${report.source}` : '')}</text>
+</svg>`;
+}
+
+/**
+ * Tin nhắn cho `!kq`: hình, và vài dòng chữ đi kèm — tiêu đề, dòng tổng, nguồn. Danh sách từng dòng
+ * đã nằm trên hình nên không nhắc lại bằng chữ. Không vẽ được thì là cả câu trả lời bằng chữ.
+ */
+export function resultsRich(report) {
+  const svg = resultsSvg(report);
+  if (!svg) return resultsMessage(report);
+  const lines = resultsMessage(report).split('\n');
+  const text = [lines[0], ...lines.filter((line) => !/^\d+\. /.test(line)).slice(1)].join('\n');
+  const period = report.period?.quarter ? `q${report.period.quarter}-${report.period.year}` : `${report.period?.year ?? ''}`;
+  return {
+    text,
+    image: { fileName: `kq-${String(report.symbol).toLowerCase()}-${period}.svg`, svg },
+  };
+}

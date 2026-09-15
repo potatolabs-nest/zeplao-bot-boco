@@ -21,7 +21,7 @@ import { chartRich, intradayChart, parseChartPeriod, rangeSession, withSessionDa
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 import { GLOSSARY, TERM_VIEW, termEntities, withTerms } from './market/glossary.mjs';
-import { MOST_SEGMENTS, parseResultsPeriod, resultsMessage } from './market/results.mjs';
+import { MOST_SEGMENTS, parseResultsPeriod, resultsMessage, resultsRich, resultsSvg } from './market/results.mjs';
 import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResults } from './market/vietcap.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import {
@@ -1235,6 +1235,24 @@ test('kết quả: dòng lớn trước, % đóng góp, so cùng kỳ, dòng t�
   assert.match(resultsMessage({ symbol: 'ABC', period: { year: 2025, quarter: 1 } }), /chưa có số liệu báo cáo tài chính cho Q1\/2025/);
 });
 
+test('!kq vẽ hình: ô số tổng, thanh ngang lớn trước, cùng kỳ mờ phía sau; chữ đi kèm chỉ còn dòng tổng', () => {
+  const svg = resultsSvg(SEGMENTS);
+  assert.match(svg, /<svg [^>]*width="2000" height="\d+" viewBox="0 0 1000 \d+"/);
+  assert.match(svg, /KQKD VIC · Q2\/2025/);
+  assert.ok(svg.indexOf('Bất động sản') < svg.indexOf('Công nghiệp'));
+  assert.match(svg, /Cùng kỳ năm trước/);
+  assert.match(svg, /DT thuần/);
+  assert.doesNotMatch(svg, /NaN|undefined|Infinity/);
+
+  const reply = resultsRich(SEGMENTS);
+  assert.equal(reply.image.fileName, 'kq-vic-q2-2025.svg');
+  assert.doesNotMatch(reply.text, /Bất động sản/);
+  assert.match(reply.text, /^KQKD VIC · Q2\/2025[^\n]*\nDT thuần 52\.700/);
+
+  assert.equal(resultsSvg({ symbol: 'ABC', period: { year: 2025, quarter: 1 } }), null);
+  assert.match(resultsRich({ symbol: 'ABC', period: { year: 2025, quarter: 1 } }), /chưa có số liệu/);
+});
+
 test('Vietcap: nhận ra loại công ty và chọn đúng kỳ, kèm cùng kỳ năm trước', () => {
   assert.equal(profileOf({ INCOME_STATEMENT: [{ field: 'isa1' }, { field: 'isa5' }] }), 'normal');
   assert.equal(profileOf({ INCOME_STATEMENT: [{ field: 'isb27' }] }), 'bank');
@@ -1307,10 +1325,14 @@ test('Vietcap: mã không có thì không có dữ liệu, nguồn chết thì n
 test('!kq vic hỏi đúng nguồn và trả lời; nguồn chết thì nói ra', async () => {
   const calls = [];
   const results = { async segments(symbol, period) { calls.push([symbol, period]); return SEGMENTS; } };
-  const { sent } = await withBot([update({ text: '!kq vic q2', command: 'kq', commandArgs: 'vic q2', commandPrefix: '!', private: true })], { results });
+  const { sent } = await withBot(
+    [update({ text: '!kq vic q2', command: 'kq', commandArgs: 'vic q2', commandPrefix: '!', private: true })],
+    { results, expect: 2 },
+  );
   assert.deepEqual(calls, [['VIC', { year: null, quarter: 2, annual: false }]]);
-  assert.match(sent[0].text, /^KQKD VIC · Q2\/2025/);
-  assert.equal(sent[0].onlyForUserId, 'u1');
+  assert.equal(sent[0].image.fileName, 'kq-vic-q2-2025.svg');   // hình trước
+  assert.match(sent[1].text, /^KQKD VIC · Q2\/2025/);          // rồi chữ, thuật ngữ bấm được
+  assert.ok(sent.every((one) => one.onlyForUserId === 'u1'));
 
   const broken = { async segments() { throw new Error('nguồn chết'); } };
   const failed = await withBot([update({ text: '!kq vic' })], { results: broken });
