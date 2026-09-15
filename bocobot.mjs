@@ -80,16 +80,50 @@ const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
  *
  * Chữ cuối là tên của chính bot (`topbot`, `bocobot`…), không viết cứng: `!topbot` mở hướng dẫn.
  */
-export function commandsFor(me) {
+export const MOST_COMMANDS = 100;
+
+export function commandsFor(me, symbols = []) {
   const name = String(me?.username ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32) || 'bocobot';
-  const commands = [
-    { command: PRICE_COMMAND, description: 'Giá kèm chart: !view vic · nhiều mã: !view vic hpg fpt · chart dài: !view gex 3m' },
+  const base = [
+    { command: PRICE_COMMAND, description: 'Giá mọi mã: /view vic cho cả nhóm, !view vic chỉ bạn thấy' },
     { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'vboa', description: 'Bản đồ nhiệt: !vboa · theo ngành: !vboa bank, bds, oil, retail, cn' },
-    { command: name, description: 'Hướng dẫn. Gõ ! để hỏi riêng, / để cả nhóm cùng xem, ví dụ /view vic' },
+    { command: name, description: 'Hướng dẫn dùng bot' },
   ];
-  return commands.filter((one, index) => commands.findIndex((other) => other.command === one.command) === index);
+  const commands = [];
+  const words = new Set();
+  for (const one of base) {
+    if (words.has(one.command)) continue;
+    words.add(one.command);
+    commands.push(one);
+  }
+  // Mã thanh khoản cao nhất, mỗi mã một lệnh, cho tới khi hết 100 ô: `/vic` gửi cho cả nhóm, `!vic`
+  // chỉ người gõ thấy. Mã ngoài danh sách vẫn đi bằng `/view` và `!view`.
+  for (const symbol of symbols) {
+    if (commands.length >= MOST_COMMANDS) break;
+    const word = String(symbol ?? '').toLowerCase();
+    if (!/^[a-z0-9_]{1,32}$/.test(word) || words.has(word)) continue;
+    words.add(word);
+    commands.push({ command: word, description: `Giá ${word.toUpperCase()}: /${word} cho cả nhóm, !${word} chỉ bạn thấy` });
+  }
+  return commands;
+}
+
+/**
+ * Những mã giao dịch nhiều tiền nhất phiên gần nhất, nhiều nhất trước.
+ *
+ * Xếp theo giá × khối lượng như bản đồ nhiệt, không viết tay: danh sách được khai báo làm lệnh nên
+ * nó phải đổi theo thị trường, không theo trí nhớ của ai.
+ */
+export async function liquidSymbols(market, count = MOST_COMMANDS) {
+  const universe = await market.universe();
+  const quotes = await market.quotes(universe);
+  return quotes
+    .filter((quote) => quote && quote.price > 0 && quote.volume > 0 && looksLikeCode(quote.symbol))
+    .sort((a, b) => b.price * b.volume - a.price * a.volume)
+    .slice(0, count)
+    .map((quote) => quote.symbol);
 }
 
 export const SORRY = {
@@ -100,16 +134,18 @@ export const SORRY = {
 
 export const HELP = [
   'Cú pháp xem bảng giá:',
-  '!view vic — giá VIC kèm chart trong phiên gần nhất',
-  '!view vic hpg fpt — xem nhiều mã, không kèm chart',
+  '/vic — giá VIC kèm chart, gửi cho cả nhóm',
+  '!vic — như trên, nhưng chỉ bạn thấy',
+  '/vic hpg fpt — xem nhiều mã, không kèm chart',
+  '/view xyz hoặc !view xyz — dùng được cho mọi mã, kể cả mã không có sẵn lệnh riêng',
   '!tin vic — 5 tin gần nhất về VIC',
   '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
   '',
   'Chart theo thời gian:',
-  '!view gex 1d — chart trong phiên gần nhất',
-  '!view gex 2d — chart 2 ngày',
-  '!view gex 3m — chart 3 tháng',
-  '!view gex 4y hoặc !view gex 4n — chart 4 năm',
+  '/gex 1d — chart trong phiên gần nhất',
+  '/gex 2d — chart 2 ngày',
+  '/gex 3m — chart 3 tháng',
+  '/gex 4y hoặc /gex 4n — chart 4 năm',
   '',
   'Bản đồ nhiệt:',
   '!vboa — toàn thị trường',
@@ -119,7 +155,7 @@ export const HELP = [
   '!vboa retail — bán lẻ',
   '!vboa cn — công nghiệp',
   '',
-  'Gõ ! thì chỉ bạn thấy câu trả lời; gõ / thì cả nhóm cùng xem, ví dụ /view vic hoặc /vboa bank',
+  'Gõ / thì cả nhóm cùng xem, gõ ! thì chỉ bạn thấy — ví dụ /vboa bank hoặc !ptkt vic',
 ].join('\n');
 
 export function askedHelpFor(message, me) {
@@ -415,7 +451,14 @@ export async function run(token, {
 
   // Khai báo đúng `commandsFor(me)`, thay nguyên si danh sách cũ — xem ghi chú ở đó vì sao không
   // khai báo mã nào nữa.
-  await call('setCommands', { commands: commandsFor(me) }).catch((problem) => console.error(String(problem)));
+  const declare = (symbols) => call('setCommands', { commands: commandsFor(me, symbols) })
+    .catch((problem) => console.error(String(problem)));
+  await declare([]);
+  // Rồi thêm các mã thanh khoản cao nhất, không đợi: xếp hạng cần giá cả sàn, và các lệnh chính
+  // không nên phải chờ việc đó.
+  liquidSymbols(market)
+    .then((symbols) => declare(symbols))
+    .catch((problem) => console.error(`không xếp hạng được mã để khai báo lệnh: ${problem}`));
 
   // Danh sách niêm yết tải ngay nhưng không đợi: câu hỏi đầu tiên có thể tới trước khi ba sàn
   // trả lời xong, và lúc ấy cái sàng vẫn làm việc được — bằng cách dò thay vì tra.

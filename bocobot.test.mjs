@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, canonicalMessage, commandsFor, HELP,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedTechnicalFor, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
   privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
@@ -123,7 +123,7 @@ async function stubApi(updates, { refuseImages = false } = {}) {
 
       if (path === '/getMe') return answer(ME);
       if (path === '/setCommands') {
-        registered.push(...JSON.parse(body).commands);
+        registered.splice(0, registered.length, ...JSON.parse(body).commands);
         return answer({ ok: true });
       }
       if (path === '/sendMessage') {
@@ -367,8 +367,8 @@ test('gọi bot trống thì trả hướng dẫn', async () => {
 
   assert.equal(sent[0].text, HELP);
   assert.match(sent[0].text, /!vboa bds — bất động sản/);
-  assert.match(sent[0].text, /!view gex 3m — chart 3 tháng/);
-  assert.match(sent[0].text, /gõ \/ thì cả nhóm cùng xem, ví dụ \/view vic/);
+  assert.match(sent[0].text, /\/gex 3m — chart 3 tháng/);
+  assert.match(sent[0].text, /Gõ \/ thì cả nhóm cùng xem, gõ ! thì chỉ bạn thấy/);
   assert.equal(sent[0].replyToMessageId, 'm1');
 });
 
@@ -986,6 +986,27 @@ test('máy chủ không nhận hình thì vẫn gửi chữ cho người hỏi, 
   assert.equal(sent[0].onlyForUserId, 'u1');
 });
 
+test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
+  assert.deepEqual(
+    commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
+    ['view', 'ptkt', 'tin', 'vboa', 'bocobot', 'vic', 'hpg'],
+  );
+  const many = Array.from({ length: 300 }, (_, i) => `M${String(i).padStart(3, '0')}`);
+  assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
+});
+
+test('/vic gửi cho cả nhóm, !vic chỉ người gõ thấy', async () => {
+  const group = await withBot([update({ text: '/vic', command: 'vic', commandArgs: null, commandPrefix: '/' })]);
+  assert.match(group.sent[0].text, /^VIC 256,1/);
+  assert.equal(group.sent[0].onlyForUserId, undefined);
+  assert.equal(group.sent[0].replyToMessageId, 'm1');
+
+  const alone = await withBot([update({ text: '!vic', command: 'vic', commandArgs: null, commandPrefix: '!', private: true })]);
+  assert.match(alone.sent[0].text, /^VIC 256,1/);
+  assert.equal(alone.sent[0].onlyForUserId, 'u1');
+  assert.equal(alone.sent[0].replyToMessageId, undefined);
+});
+
 // ---- phân tích kỹ thuật ---------------------------------------------------------------------
 
 const candles = (length, price, { volume = 2e6 } = {}) => Array.from({ length }, (_, i) => {
@@ -1098,6 +1119,6 @@ test('nguồn tin chết thì nói ra', async () => {
 test('khởi động là thay danh sách lệnh cũ bằng đúng một lệnh bocobot, không khai báo mã nào', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'bocobot']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'vboa', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 });

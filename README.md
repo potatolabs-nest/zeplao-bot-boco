@@ -15,12 +15,12 @@ dài đúng một dòng.
 
 | Gõ | Được gì |
 | --- | --- |
-| `!view vic` | Một mã, kèm chart biến động giá trong phiên gần nhất và trục giá |
-| `!view gex 1d`, `!view gex 2d`, `!view gex 3m`, `!view gex 4y` | Một mã, kèm chart theo số ngày/tháng/năm tuỳ gõ |
-| `!view vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
+| `/vic` (cả nhóm), `!vic` (chỉ bạn) | Một mã, kèm chart biến động giá trong phiên gần nhất và trục giá |
+| `/gex 1d`, `/gex 2d`, `/gex 3m`, `/gex 4y` | Một mã, kèm chart theo số ngày/tháng/năm tuỳ gõ |
+| `/vic hpg fpt` | Nhiều mã, một tin nhắn, không kèm chart |
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!ptkt vic` | Phân tích kỹ thuật một mã: hình chart kèm chỉ báo, đánh giá, độ tin cậy, điểm mua bán |
-| `!view vnindex`, `!view vn30f1m`, `!view fuevfvnd` | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
+| `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
 
 Nhắn riêng với bot cũng theo đúng những lệnh trên: `vic` gõ trần trụi không được trả lời, phải
@@ -84,12 +84,13 @@ tảng giao thẳng, biết chữ ấy hay không.
 
 ### Khai báo lệnh trước (từ 15/09/2026)
 
-Nền tảng giờ chỉ giao `!từ` và `/từ` cho bot **đã khai báo** `từ` bằng `setCommands`. Bot khai báo
-đúng năm lệnh: `v` (giá), `ptkt`, `tin`, `vboa`, và tên của chính nó (hướng dẫn, ví dụ `!topbot`).
-Mã không khai báo được — 1.522 mã mà chỉ có 100 ô — nên giá đi sau chữ `view`: `!view vic`, `!view vic hpg
-fpt`, `!view gex 3m`. Gõ bằng `!` là hỏi riêng: tin và câu trả lời chỉ người gõ thấy. Gõ bằng `/`
-(`/view vic`, `/vboa bank`) là hỏi trước cả nhóm. Bot đọc lệnh máy chủ đã tách qua `command`,
-`commandArgs`, `commandPrefix`, và vẫn hiểu lối cũ `!vic` nếu nghe được nó.
+Nền tảng giờ chỉ giao `/từ` và `!từ` cho bot **đã khai báo** `từ` bằng `setCommands`, tối đa 100
+lệnh. Bot khai báo năm lệnh chính — `view` (giá mọi mã), `ptkt`, `tin`, `vboa`, và tên của chính
+nó (hướng dẫn) — rồi lấp phần còn lại bằng các mã giao dịch nhiều tiền nhất phiên gần nhất, xếp
+theo giá × khối lượng lúc khởi động. Gõ `/` là gửi cho cả nhóm (`/vic`, `/ptkt vic`, `/vboa bank`),
+gõ `!` là chỉ người gõ thấy (`!vic`, `!ptkt vic`). Mã không nằm trong danh sách lệnh vẫn hỏi được
+bằng `/view xyz` hoặc `!view xyz`. Câu trả lời cho `!` là tin cho một người (`onlyForUserId`); bot đọc
+lệnh máy chủ đã tách qua `command`, `commandArgs`, `commandPrefix`.
 
 ## Giá lấy ở đâu
 
