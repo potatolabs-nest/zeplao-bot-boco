@@ -91,7 +91,7 @@ một thẻ nhỏ giải thích nó, kèm công thức và ví dụ khi có. Th�
 thuật ngữ nào. Bot tự gói `widget/` và tải lên (`setWidget`) mỗi lần khởi động — gói không đổi thì
 máy chủ trả `unchanged`. Máy chủ từ chối chú thích (chưa có widget, view đổi tên) thì bot gửi lại
 câu trả lời không kèm chú thích, không bao giờ im. Tin có hình (chart, PTKT) thì web không cho
-bấm vào chữ, nên ở đó các thuật ngữ thành một hàng nút mang đúng tên chúng dưới tin.
+bấm vào chữ, nên bot gửi hình thành một tin riêng rồi chữ ngay sau, thuật ngữ bấm được như mọi tin chữ.
 
 ### Khai báo lệnh trước (từ 15/09/2026)
 

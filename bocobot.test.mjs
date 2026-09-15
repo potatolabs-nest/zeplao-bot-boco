@@ -628,18 +628,22 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!vix' })],
-    { market: stubMarket({ listed: ['VIX'] }), chart },
+    { market: stubMarket({ listed: ['VIX'] }), chart, expect: 2 },
   );
 
+  // Hình một tin, chữ ngay sau: web không cho bấm thuật ngữ trên tin có hình.
   assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIX']);
-  assert.match(sent[0].text, /^VIX 256,1/);
+  assert.equal(sent.length, 2);
   assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
+  assert.equal(sent[0].replyToMessageId, 'm1');
   assert.match(sent[0].image.svg, /<line x1="86" y1="64" x2="86"/);
   assert.match(sent[0].image.svg, />13,45</);
   assert.match(sent[0].image.svg, />13,2</);
   assert.match(sent[0].image.svg, />13,15</);
-  assert.equal(sent[0].rich.blocks[0].type, 'paragraph');
-  assert.match(sent[0].rich.blocks[1].text, /Cao 13,45 \(\+250đ\)/);
+  assert.match(sent[1].text, /^VIX 256,1/);
+  assert.equal(sent[1].image, undefined);
+  assert.equal(sent[1].rich.blocks[0].type, 'paragraph');
+  assert.match(sent[1].rich.blocks[1].text, /Cao 13,45 \(\+250đ\)/);
 });
 
 test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async () => {
@@ -657,13 +661,13 @@ test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async 
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!gex 1n' })],
-    { market: stubMarket({ listed: ['GEX'] }), chart },
+    { market: stubMarket({ listed: ['GEX'] }), chart, expect: 2 },
   );
 
   assert.deepEqual(chart.calls.map((call) => [call.symbol, call.period]), [['GEX', '1n']]);
   assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
   assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
-  assert.match(sent[0].rich.blocks[1].text, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
+  assert.match(sent[1].rich.blocks[1].text, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
 });
 
 test('hỏi chart với -v thì chỉ gửi cho người gõ', async () => {
@@ -897,14 +901,15 @@ test('!ptkt đọc đúng một mã, và không bị đọc thành giá PTKT', (
   assert.equal(askedTechnicalFor(message({ text: '!tin vic' })), null);
 });
 
-test('!ptkt vic gửi bài phân tích của đúng mã ấy, một tin nhắn', async () => {
+test('!ptkt vic gửi bài phân tích của đúng mã ấy: hình, rồi chữ ngay sau', async () => {
   const technical = stubTechnical();
-  const { sent } = await withBot([update({ text: '!ptkt vic' })], { technical });
+  const { sent } = await withBot([update({ text: '!ptkt vic' })], { technical, expect: 2 });
   assert.deepEqual(technical.calls, ['VIC']);
-  assert.equal(sent.length, 1);
-  assert.match(sent[0].text, /^PTKT VIC · /);
-  assert.equal(sent[0].image.fileName, 'ptkt-vic-2026-09-11.svg');   // hình đi cùng chữ, một tin nhắn
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].image.fileName, 'ptkt-vic-2026-09-11.svg');
   assert.equal(sent[0].replyToMessageId, 'm1');
+  assert.match(sent[1].text, /^PTKT VIC · /);
+  assert.equal(sent[1].replyToMessageId, undefined);
 });
 
 test('!ptkt nhiều mã thì nhắc cú pháp, không phân tích mã nào', async () => {
@@ -1060,7 +1065,7 @@ test('thuật ngữ được đánh dấu đúng chỗ, lần đầu, không dí
   assert.deepEqual(termEntities('RSI và MACD. RSI', [{ ...link, length: 3 }]).map((entity) => entity.offset), [7, 13]);
 });
 
-test('chú thích vào entities của tin chữ, vào khối rich khi có rich, và thành nút dưới tin có hình', () => {
+test('chú thích vào entities của tin chữ, vào khối rich khi có rich, và không đụng tin có hình', () => {
   const plain = withTerms({ text: 'VIC 256,1 ▲ +4,74% · KL 7.518.600' });
   assert.equal(plain.entities[0].data, GLOSSARY.KL);
 
@@ -1068,14 +1073,9 @@ test('chú thích vào entities của tin chữ, vào khối rich khi có rich, 
   assert.equal(rich.entities, undefined);
   assert.equal(rich.rich.blocks[0].entities[0].view, TERM_VIEW);
 
-  const text = 'PTKT VIC · MA200 · RSI 60';
-  const picture = withTerms({ text, image: { fileName: 'a.svg', svg: '<svg/>' }, rich: { blocks: [{ type: 'paragraph', text }] } });
-  assert.equal(picture.entities, undefined);
-  assert.equal(picture.rich.blocks[0].entities, undefined);   // web không cho bấm chữ trên tin có hình
-  assert.deepEqual(picture.keyboard.rows.flat().map((button) => button.text), ['PTKT', 'MA200', 'RSI']);
-  assert.ok(picture.keyboard.rows.flat().every((button) => button.view === TERM_VIEW && button.data.title));
-  const bare = { text: 'không có thuật ngữ', image: { fileName: 'a.svg', svg: '<svg/>' } };
-  assert.equal(withTerms(bare), bare);
+  // Web không cho bấm chữ trên tin có hình: bot gửi hình và chữ thành hai tin thay vì chú thích trên hình.
+  const picture = { text: 'PTKT VIC · MA200 · RSI 60', image: { fileName: 'a.svg', svg: '<svg/>' } };
+  assert.equal(withTerms(picture), picture);
   const nothing = { text: 'không có gì' };
   assert.equal(withTerms(nothing), nothing);
   assert.ok(Object.values(GLOSSARY).every((entry) => entry.title && entry.body));
@@ -1117,14 +1117,19 @@ test('khởi động là tải widget lên, dạng application/zip', async () =>
   assert.equal(calls[0].options.headers['Content-Type'], 'application/zip');
 });
 
-test('bài phân tích kèm hình mang hàng nút thuật ngữ bấm được', async () => {
+test('bài phân tích kèm hình đi thành hai tin: hình, rồi chữ có thuật ngữ bấm được', async () => {
   const { sent } = await withBot(
     [update({ text: '!ptkt vic', command: 'ptkt', commandArgs: 'vic', commandPrefix: '!', private: true })],
+    { expect: 2 },
   );
-  const buttons = sent[0].keyboard.rows.flat();
-  assert.equal(buttons[0].text, 'PTKT');
-  assert.equal(buttons[0].view, TERM_VIEW);
+  assert.equal(sent.length, 2);
   assert.ok(sent[0].image);
+  assert.equal(sent[0].text, undefined);
+  assert.equal(sent[0].keyboard, undefined);
+  assert.equal(sent[1].image, undefined);
+  const views = [...(sent[1].entities ?? []), ...(sent[1].rich?.blocks ?? []).flatMap((block) => block.entities ?? [])];
+  assert.ok(views.some((entity) => entity.view === TERM_VIEW && entity.data.title.startsWith('PTKT')));
+  assert.ok(sent.every((one) => one.onlyForUserId === 'u1'));
 });
 
 test('widget cũ có view khác thì tải lại với allowViewRemoval', async () => {

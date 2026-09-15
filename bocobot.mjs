@@ -674,14 +674,23 @@ export async function run(token, {
    */
   async function say(conversationId, text, replyToMessageId, onlyForUserId) {
     const content = typeof text === 'string' ? { text } : text;
-    const first = await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId);
-    if (first.sent || !content.image) return first.sent;
+    if (!content.image) return (await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId)).sent;
 
-    // Hình không gửi được thì vẫn gửi chữ. Từ 15/09/2026 máy chủ trả `503 write_not_carried_out`
-    // cho tin bot kèm hình trong khi tin chữ vẫn đi — và một câu trả lời thiếu hình vẫn hơn im
-    // lặng, vì từ phía người hỏi im lặng trông y như bot chết.
-    const words = { text: `${content.text}\n(Chưa gửi được hình lúc này.)` };
-    return (await sayWithTerms(conversationId, words, replyToMessageId, onlyForUserId)).sent;
+    const { image, ...words } = content;
+    if (withTerms(words) === words) {
+      // Không có thuật ngữ nào để bấm: hình và chữ vẫn là một tin, như trước.
+      const whole = await send(conversationId, content, replyToMessageId, onlyForUserId);
+      if (whole.sent) return whole.sent;
+      return (await sayWithTerms(conversationId, withoutPicture(words), replyToMessageId, onlyForUserId)).sent;
+    }
+
+    // Có thuật ngữ: hình đi một tin riêng, không chữ, rồi chữ đi ngay sau thành tin chữ, thuật ngữ
+    // bấm được. Web vẽ tin có hình bằng khung ảnh, và khung ấy không cho bấm vào chữ — chú thích
+    // gắn trên đó được lưu mà không ai mở được. Hình không gửi được thì chữ vẫn đi, kèm một dòng
+    // nói ra, và câu trả lời reply vào câu hỏi thay cho hình.
+    const picture = await send(conversationId, { image }, replyToMessageId, onlyForUserId);
+    const rest = picture.sent ? words : withoutPicture(words);
+    return (await sayWithTerms(conversationId, rest, picture.sent ? undefined : replyToMessageId, onlyForUserId)).sent;
   }
 
   /**
@@ -696,6 +705,20 @@ export async function run(token, {
     if (first.sent || marked === content || !refusedForViews(first.problem)) return first;
     widgetTrouble = refusalCode(first.problem) ?? 'view_refused';
     return send(conversationId, content, replyToMessageId, onlyForUserId);
+  }
+
+  /**
+   * Chữ của một câu trả lời mà hình không gửi được, kèm một dòng nói ra điều đó.
+   *
+   * Hình không gửi được thì vẫn gửi chữ: từ 15/09/2026 có lúc máy chủ trả `503` cho tin bot kèm
+   * hình trong khi tin chữ vẫn đi, và một câu trả lời thiếu hình vẫn hơn im lặng.
+   */
+  function withoutPicture(words) {
+    const note = '(Chưa gửi được hình lúc này.)';
+    const text = `${words.text}\n${note}`;
+    return Array.isArray(words.rich?.blocks)
+      ? { ...words, text, rich: { ...words.rich, blocks: [...words.rich.blocks, { type: 'paragraph', text: note }] } }
+      : { ...words, text };
   }
 
   async function send(conversationId, content, replyToMessageId, onlyForUserId) {
