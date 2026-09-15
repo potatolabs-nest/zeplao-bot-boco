@@ -23,7 +23,7 @@ import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs
 import { GLOSSARY, TERM_VIEW, termEntities, withTerms } from './market/glossary.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import {
-  analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich,
+  analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
 } from './market/technical.mjs';
 
 const ME = { username: 'bocobot', displayName: 'Bảng giá' };
@@ -1254,6 +1254,40 @@ test('nguồn nến: mã không có thật là không có dữ liệu, VN-Index 
   assert.doesNotMatch(reply.text, /VN-Index/);
   assert.match(reply.image.svg, /^<svg /);
   assert.ok(fetched.some((url) => url.includes('/stock?') && url.includes('resolution=1D')));
+});
+
+test('giữa phiên, nến 5 phút của hôm nay thành cây nến cuối để phân tích theo giá hiện tại', () => {
+  const lastDay = RISING.at(-1);
+  const today = lastDay.time + 86400;
+  const minutes = [
+    { time: today, open: 50, high: 51, low: 49.5, close: 50.5, volume: 1000 },
+    { time: today + 300, open: 50.5, high: 52, low: 50, close: 51.8, volume: 2000 },
+  ];
+  const rows = withSession(RISING, [lastDay, ...minutes]);
+  assert.equal(rows.length, RISING.length + 1);
+  assert.deepEqual(rows.at(-1), { time: today, open: 50, high: 52, low: 49.5, close: 51.8, volume: 3000 });
+
+  // Nguồn nến ngày đã có ngày ấy thì nến ngày thắng.
+  assert.equal(withSession(RISING, [lastDay]), RISING);
+  assert.equal(withSession(RISING, []), RISING);
+});
+
+test('bài phân tích lấy phiên đang chạy từ nến 5 phút khi nến ngày chưa có hôm nay', async () => {
+  const today = RISING.at(-1).time + 86400;
+  const technical = technicalAnalysis({
+    now: () => (today + 3600) * 1000,
+    async fetchImpl(url) {
+      if (/resolution=5/.test(url)) {
+        return Response.json(asRaw([{ time: today, open: 60, high: 61, low: 59, close: 60.5, volume: 5000 }]));
+      }
+      return Response.json(asRaw(/symbol=VNINDEX/.test(url) ? INDEX_ROWS : RISING));
+    },
+  });
+  const reply = await technical.report('abc');
+  const day = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' })
+    .format(new Date(today * 1000));
+  assert.match(reply.text, new RegExp(`^PTKT ABC · phiên ${day.replace(/\//g, '\\/')}`));
+  assert.match(reply.text, /· 60,5 \(/);
 });
 
 test('nguồn nến chết hẳn thì ném, để bot nói nguồn đang không trả lời', async () => {

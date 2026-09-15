@@ -18,6 +18,9 @@ const TIMEOUT_MS = 8000;
 /// Khoảng 300 phiên: đủ cho MA200 và cho vùng giá một năm, kể cả khi có kỳ nghỉ lễ dài.
 const LOOKBACK_DAYS = 450;
 
+/// Nến 5 phút của mấy ngày gần nhất: đủ để có phiên đang chạy, kể cả sau một kỳ nghỉ cuối tuần.
+const INTRADAY_LOOKBACK_DAYS = 4;
+
 /// MACD(12, 26, 9) cần chừng này cây nến mới có đường tín hiệu. Ít hơn thì không có gì để đọc.
 export const MIN_SESSIONS = 35;
 
@@ -49,23 +52,63 @@ export function technicalAnalysis({ base = CHART, fetchImpl = fetch, timeout = T
     return rowsFrom(await response.json());
   }
 
+  /// Nến 5 phút gần nhất. Chỉ để dựng cây nến của phiên đang chạy, nên hỏng thì coi như không có.
+  async function intraday(symbol) {
+    const to = Math.floor(now() / 1000);
+    const from = to - INTRADAY_LOOKBACK_DAYS * 24 * 60 * 60;
+    const url = `${base}/${kindOf(symbol)}?from=${from}&to=${to}&symbol=${symbol}&resolution=5`;
+    try {
+      const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeout) });
+      return response.ok ? rowsFrom(await response.json()) : [];
+    } catch {
+      return [];
+    }
+  }
+
   return {
     /// Một tin nhắn có hình khi phân tích được; một dòng chữ khi không có gì để phân tích.
     async report(symbol) {
       const code = String(symbol ?? '').toUpperCase();
       // VN-Index chỉ là bối cảnh: hỏng thì bỏ hai bước so với thị trường, không bỏ cả bài.
-      const [rows, index] = await Promise.all([
+      const [rows, index, minutes, indexMinutes] = await Promise.all([
         daily(code),
         code === INDEX ? null : daily(INDEX).catch(() => null),
+        intraday(code),
+        code === INDEX ? [] : intraday(INDEX),
       ]);
       if (!rows.length) return `${code} — không có dữ liệu`;
 
-      const analysis = analyze(code, rows, index, { at: new Date(now()) });
+      const analysis = analyze(code, withSession(rows, minutes), index && withSession(index, indexMinutes), { at: new Date(now()) });
       return analysis
         ? technicalRich(analysis)
         : `${code} chưa đủ ${MIN_SESSIONS} phiên giao dịch để phân tích kỹ thuật.`;
     },
   };
+}
+
+/**
+ * Nến ngày, thêm cây nến của phiên đang chạy khi nguồn nến ngày chưa có nó.
+ *
+ * Nến ngày của DNSE thường chỉ có phiên hôm nay sau khi sàn đóng cửa một lúc, nên giữa phiên một
+ * bài phân tích dựng trên nó là bài của hôm qua. Nến 5 phút thì có ngay: gộp những cây của ngày
+ * gần nhất thành một cây — mở cửa cây đầu, cao thấp là cực trị, đóng cửa cây cuối, khối lượng
+ * cộng lại — và nối vào cuối. Ngày ấy đã có trong nến ngày thì nến ngày thắng, không đụng gì.
+ */
+export function withSession(dailyRows, minuteRows) {
+  if (!dailyRows?.length || !minuteRows?.length) return dailyRows;
+  const day = tradingDay(minuteRows.at(-1).time);
+  if (tradingDay(dailyRows.at(-1).time) >= day) return dailyRows;
+
+  const session = minuteRows.filter((row) => tradingDay(row.time) === day);
+  if (!session.length) return dailyRows;
+  return [...dailyRows, {
+    time: session[0].time,
+    open: session[0].open,
+    high: Math.max(...session.map((row) => row.high)),
+    low: Math.min(...session.map((row) => row.low)),
+    close: session.at(-1).close,
+    volume: session.reduce((sum, row) => sum + row.volume, 0),
+  }];
 }
 
 export function rowsFrom(data) {
