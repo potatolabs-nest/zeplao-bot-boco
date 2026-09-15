@@ -82,6 +82,16 @@ Bot **không đăng ký lệnh nào**, và lúc khởi động nó gửi lên m�
 tảng giao thẳng, biết chữ ấy hay không.
 
 
+### Chú thích thuật ngữ
+
+Những từ chuyên môn trong câu trả lời — `MA20`, `MA50`, `MA200`, `RSI`, `MACD`, `Bollinger`, `TB20`,
+`KL`, `TC`, `TRẦN`, `SÀN`, `R:R`, `Chốt lời`, `Cắt lỗ`, `VN-Index`, `PTKT` — bấm vào được: mỗi từ mở
+một thẻ nhỏ giải thích nó, kèm công thức và ví dụ khi có. Thẻ là view `term` của widget trong
+`widget/`; chữ trên thẻ đi trong chính tin nhắn (`market/glossary.mjs`), nên trang không cần biết
+thuật ngữ nào. Bot tự gói `widget/` và tải lên (`setWidget`) mỗi lần khởi động — gói không đổi thì
+máy chủ trả `unchanged`. Máy chủ từ chối chú thích (chưa có widget, view đổi tên) thì bot gửi lại
+câu trả lời không kèm chú thích, không bao giờ im.
+
 ### Khai báo lệnh trước (từ 15/09/2026)
 
 Nền tảng giờ chỉ giao `/từ` và `!từ` cho bot **đã khai báo** `từ` bằng `setCommands`, tối đa 100

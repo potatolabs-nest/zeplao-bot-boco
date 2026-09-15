@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thuật ngữ</title>
+<link rel="stylesheet" href="view.css">
+
+<body class="term">
+<article id="card" class="card waiting" aria-live="polite">
+  <p class="eyebrow">Thuật ngữ</p>
+  <h1 id="title"></h1>
+  <p id="body" class="body">Đang mở…</p>
+  <div id="formula" class="formula" hidden></div>
+  <p id="example" class="example" hidden><span class="label">Ví dụ</span><span id="example-text"></span></p>
+</article>
+
+<!-- zeplao.js is written into the bundle by the platform at upload. The card is drawn when the
+     app hands over its data through Zeplao.onData — on the web that is after this page has
+     loaded. Opened from this folder, with nobody to hand anything over, view.js draws the
+     sample instead. -->
+<script src="zeplao.js"></script>
+<script src="view.js"></script>
+<script src="term.js"></script>
+</body>
+</html>

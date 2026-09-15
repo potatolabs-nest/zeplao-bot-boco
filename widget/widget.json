@@ -1,0 +1,5 @@
+{
+  "views": {
+    "term": { "entry": "term.html", "as": "popover", "width": 320, "height": 240 }
+  }
+}

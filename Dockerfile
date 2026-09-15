@@ -16,8 +16,9 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Chỉ những thứ chạy. Bộ test không lên image — nó chạy ở CI, nơi hỏng thì người ta đọc được.
-COPY package.json bocobot.mjs ./
+COPY package.json bocobot.mjs widget.mjs ./
 COPY market ./market
+COPY widget ./widget
 
 # Chỗ ghi trạng thái, và là **thứ duy nhất** bot ghi. Tạo sẵn và trao cho `node` ở đây, vì một
 # tiến trình không phải root thì không tự tạo được thư mục dưới `/app` do root sở hữu — và cái

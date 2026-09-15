@@ -43,6 +43,8 @@ import { googleNews, newsMessage } from './market/news.mjs';
 import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
+import { refusedForViews, withTerms } from './market/glossary.mjs';
+import { publishWidget } from './widget.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
 /// khỏi cái tên người ta đang dùng là thứ cho phép chặn, đo và dời nó mà không ai phải sửa gì.
@@ -454,6 +456,13 @@ export async function run(token, {
   const declare = (symbols) => call('setCommands', { commands: commandsFor(me, symbols) })
     .catch((problem) => console.error(String(problem)));
   await declare([]);
+
+  // Widget của bot — thẻ giải thích thuật ngữ — tải lên lúc khởi động, không đợi. Gói không đổi thì
+  // máy chủ trả `unchanged` và không tốn lượt. Tin gửi trước lúc nó xong mà có chú thích sẽ bị từ
+  // chối vì view, và `say` gửi lại không kèm chú thích.
+  publishWidget({ api, token })
+    .then((widget) => console.log(`widget phiên bản ${widget.version}${widget.unchanged ? ' (không đổi)' : ''}`))
+    .catch((problem) => console.error(`không tải được widget: ${problem}`));
   // Rồi thêm các mã thanh khoản cao nhất, không đợi: xếp hạng cần giá cả sàn, và các lệnh chính
   // không nên phải chờ việc đó.
   liquidSymbols(market)
@@ -648,16 +657,31 @@ export async function run(token, {
    */
   async function say(conversationId, text, replyToMessageId, onlyForUserId) {
     const content = typeof text === 'string' ? { text } : text;
-    const posted = await send(conversationId, content, replyToMessageId, onlyForUserId);
-    if (posted || !content.image) return posted;
+    const first = await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId);
+    if (first.sent || !content.image) return first.sent;
 
     // Hình không gửi được thì vẫn gửi chữ. Từ 15/09/2026 máy chủ trả `503 write_not_carried_out`
     // cho tin bot kèm hình trong khi tin chữ vẫn đi — và một câu trả lời thiếu hình vẫn hơn im
     // lặng, vì từ phía người hỏi im lặng trông y như bot chết.
-    return send(conversationId, { text: `${content.text}\n(Chưa gửi được hình lúc này.)` }, replyToMessageId, onlyForUserId);
+    const words = { text: `${content.text}\n(Chưa gửi được hình lúc này.)` };
+    return (await sayWithTerms(conversationId, words, replyToMessageId, onlyForUserId)).sent;
+  }
+
+  /**
+   * Gửi kèm chú thích thuật ngữ; máy chủ từ chối vì chú thích thì gửi lại không kèm.
+   *
+   * Chú thích là phần thêm. Widget chưa tải lên xong, một view bị đổi tên, kho widget chớp tắt —
+   * không cái nào đáng để người hỏi không nhận được câu trả lời.
+   */
+  async function sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId) {
+    const marked = withTerms(content);
+    const first = await send(conversationId, marked, replyToMessageId, onlyForUserId);
+    if (first.sent || marked === content || !refusedForViews(first.problem)) return first;
+    return send(conversationId, content, replyToMessageId, onlyForUserId);
   }
 
   async function send(conversationId, content, replyToMessageId, onlyForUserId) {
+    let problem = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const posted = await call('sendMessage', {
@@ -671,16 +695,17 @@ export async function run(token, {
           mine.add(id);
           if (mine.size > REMEMBERED) mine.delete(mine.values().next().value);
         }
-        return posted;
-      } catch (problem) {
-        if (!String(problem).includes('429') || attempt === 2) {
-          console.error(String(problem));
-          return null;
+        return { sent: posted, problem: null };
+      } catch (caught) {
+        problem = caught;
+        if (!String(caught).includes('429') || attempt === 2) {
+          console.error(String(caught));
+          return { sent: null, problem };
         }
         await wait(1100 * (attempt + 1));
       }
     }
-    return null;
+    return { sent: null, problem };
   }
 }
 

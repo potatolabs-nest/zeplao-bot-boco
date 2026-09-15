@@ -20,6 +20,8 @@ import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession } from './market/chart.mjs';
 import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
+import { GLOSSARY, TERM_VIEW, termEntities, withTerms } from './market/glossary.mjs';
+import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich,
 } from './market/technical.mjs';
@@ -106,9 +108,13 @@ const VIC = {
 
 /// Một nền tảng bot đủ dùng: nói tên mình, nhận danh sách lệnh, phát ra một xấp cập nhật đúng
 /// một lần, và ghi lại mọi thứ được gửi vào phòng.
-async function stubApi(updates, { refuseImages = false } = {}) {
+const hasViewEntity = (body) => [...(body.entities ?? []), ...(body.rich?.blocks ?? []).flatMap((block) => block.entities ?? [])]
+  .some((entity) => entity?.type === 'view');
+
+async function stubApi(updates, { refuseImages = false, refuseViews = false } = {}) {
   const sent = [];
   const registered = [];
+  const widgets = [];
   let queue = [...updates];
 
   const server = createServer((request, response) => {
@@ -131,8 +137,16 @@ async function stubApi(updates, { refuseImages = false } = {}) {
           response.writeHead(503, { 'Content-Type': 'application/json' });
           return response.end('{"error":"write_not_carried_out","message":"write not carried out.","details":{}}');
         }
+        if (refuseViews && hasViewEntity(JSON.parse(body))) {
+          response.writeHead(400, { 'Content-Type': 'application/json' });
+          return response.end('{"error":"bot_has_no_widget","message":"This bot has no widget.","details":{}}');
+        }
         sent.push(JSON.parse(body));
         return answer({ messageId: `m${sent.length}` });
+      }
+      if (path === '/setWidget') {
+        widgets.push({ contentType: request.headers['content-type'], bytes: Buffer.byteLength(body) });
+        return answer({ version: 1, unchanged: false, views: { term: { entry: 'term.html', as: 'popover' } } });
       }
       if (path === '/getUpdates') {
         if (queue.length) {
@@ -151,7 +165,7 @@ async function stubApi(updates, { refuseImages = false } = {}) {
   });
 
   await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
-  return { sent, registered, api: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
+  return { sent, registered, widgets, api: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
 }
 
 /// Nguồn giá giả: biết đúng những mã được kể tên, và đếm số lần bị hỏi.
@@ -288,10 +302,10 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
-    expect = 1, settle = 200, refuseImages = false,
+    expect = 1, settle = 200, refuseImages = false, refuseViews = false,
   } = {},
 ) {
-  const platform = await stubApi(updates, { refuseImages });
+  const platform = await stubApi(updates, { refuseImages, refuseViews });
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
 
@@ -1005,6 +1019,90 @@ test('/vic gửi cho cả nhóm, !vic chỉ người gõ thấy', async () => {
   assert.match(alone.sent[0].text, /^VIC 256,1/);
   assert.equal(alone.sent[0].onlyForUserId, 'u1');
   assert.equal(alone.sent[0].replyToMessageId, undefined);
+});
+
+// ---- chú thích thuật ngữ ----------------------------------------------------------------------
+
+const readZip = (buffer) => {
+  const end = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  const count = buffer.readUInt16LE(end + 10);
+  let at = buffer.readUInt32LE(end + 16);
+  const entries = new Map();
+  for (let i = 0; i < count; i++) {
+    assert.equal(buffer.readUInt32LE(at), 0x02014b50);
+    const size = buffer.readUInt32LE(at + 24);
+    const nameLength = buffer.readUInt16LE(at + 28);
+    const local = buffer.readUInt32LE(at + 42);
+    assert.equal(buffer.readUInt32LE(local), 0x04034b50);
+    const name = buffer.toString('utf8', at + 46, at + 46 + nameLength);
+    const start = local + 30 + buffer.readUInt16LE(local + 26) + buffer.readUInt16LE(local + 28);
+    entries.set(name, buffer.subarray(start, start + size));
+    at += 46 + nameLength + buffer.readUInt16LE(at + 30) + buffer.readUInt16LE(at + 32);
+  }
+  return entries;
+};
+
+test('thuật ngữ được đánh dấu đúng chỗ, lần đầu, không dính vào chữ khác', () => {
+  const text = 'PTKT VIC · giá trên MA20, MA50, MA200 · TCB 24 · TC 23 · KL 1.000 · R:R 2';
+  const marked = termEntities(text).map((entity) => text.slice(entity.offset, entity.offset + entity.length));
+  assert.deepEqual(marked, ['PTKT', 'MA20', 'MA50', 'MA200', 'TC', 'KL', 'R:R']);
+  assert.ok(termEntities(text).every((entity) => entity.type === 'view' && entity.view === TERM_VIEW && entity.data.title));
+
+  // Không đè lên link sẵn có: một view không được chung ký tự với entity khác.
+  const link = { type: 'link', offset: 0, length: 12, url: 'https://example.test' };
+  assert.deepEqual(termEntities('RSI và MACD rồi RSI', [link]).map((entity) => entity.offset), [16]);
+  assert.deepEqual(termEntities('RSI và MACD. RSI', [{ ...link, length: 3 }]).map((entity) => entity.offset), [7, 13]);
+});
+
+test('chú thích vào entities của tin chữ, vào khối rich khi có rich, và không đụng tin chỉ có hình', () => {
+  const plain = withTerms({ text: 'VIC 256,1 ▲ +4,74% · KL 7.518.600' });
+  assert.equal(plain.entities[0].data, GLOSSARY.KL);
+
+  const rich = withTerms({ text: 'x', rich: { blocks: [{ type: 'paragraph', text: 'RSI 60' }, { type: 'divider' }] } });
+  assert.equal(rich.entities, undefined);
+  assert.equal(rich.rich.blocks[0].entities[0].view, TERM_VIEW);
+
+  const picture = { text: 'KL', image: { fileName: 'a.svg', svg: '<svg/>' } };
+  assert.equal(withTerms(picture), picture);
+  const nothing = { text: 'không có gì' };
+  assert.equal(withTerms(nothing), nothing);
+  assert.ok(Object.values(GLOSSARY).every((entry) => entry.title && entry.body));
+});
+
+test('câu trả lời mang chú thích, và máy chủ từ chối chú thích thì vẫn nhận được câu trả lời', async () => {
+  const marked = await withBot([update({ text: '/gia vic', command: 'gia', commandArgs: 'vic' })]);
+  assert.deepEqual(marked.sent[0].entities.find((entity) => entity.view === TERM_VIEW).data, GLOSSARY.KL);
+
+  const refused = await withBot([update({ text: '/gia vic', command: 'gia', commandArgs: 'vic' })], { refuseViews: true });
+  assert.equal(refused.sent.length, 1);
+  assert.match(refused.sent[0].text, /^VIC 256,1/);
+  assert.equal(refused.sent[0].entities, undefined);
+});
+
+test('widget là một gói zip đọc lại được, widget.json trỏ tới trang có trong gói', () => {
+  const files = widgetFiles();
+  const entries = readZip(zip(files));
+  assert.deepEqual([...entries.keys()], files.map((file) => file.path));
+  const manifest = JSON.parse(entries.get('widget.json').toString('utf8'));
+  assert.equal(manifest.views[TERM_VIEW].entry, 'term.html');
+  assert.ok(entries.has('term.html') && entries.has('term.js') && entries.has('view.js') && entries.has('view.css'));
+  assert.ok(!entries.has('zeplao.js'));
+  assert.deepEqual(zip(files), zip(files));   // cùng thư mục, cùng byte: máy chủ nhận ra gói không đổi
+});
+
+test('khởi động là tải widget lên, dạng application/zip', async () => {
+  const { widgets } = await withBot([], { expect: 0 });
+  assert.equal(widgets.length, 1);
+  assert.equal(widgets[0].contentType, 'application/zip');
+
+  const calls = [];
+  const answer = await publishWidget({
+    api: 'https://bot.example', token: 't',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return Response.json({ version: 3, unchanged: true }); },
+  });
+  assert.equal(answer.unchanged, true);
+  assert.equal(calls[0].url, 'https://bot.example/setWidget');
+  assert.equal(calls[0].options.headers['Content-Type'], 'application/zip');
 });
 
 // ---- phân tích kỹ thuật ---------------------------------------------------------------------
