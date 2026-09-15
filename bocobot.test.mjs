@@ -111,7 +111,7 @@ const VIC = {
 const hasViewEntity = (body) => [...(body.entities ?? []), ...(body.rich?.blocks ?? []).flatMap((block) => block.entities ?? [])]
   .some((entity) => entity?.type === 'view');
 
-async function stubApi(updates, { refuseImages = false, refuseViews = false } = {}) {
+async function stubApi(updates, { refuseImages = false, refuseViews = false, widgetAnswers = [] } = {}) {
   const sent = [];
   const registered = [];
   const widgets = [];
@@ -145,7 +145,12 @@ async function stubApi(updates, { refuseImages = false, refuseViews = false } = 
         return answer({ messageId: `m${sent.length}` });
       }
       if (path === '/setWidget') {
-        widgets.push({ contentType: request.headers['content-type'], bytes: Buffer.byteLength(body) });
+        widgets.push({ contentType: request.headers['content-type'], bytes: Buffer.byteLength(body), url: request.url });
+        const scripted = widgetAnswers.shift();
+        if (scripted) {
+          response.writeHead(scripted[0], { 'Content-Type': 'application/json' });
+          return response.end(scripted[1]);
+        }
         return answer({ version: 1, unchanged: false, views: { term: { entry: 'term.html', as: 'popover' } } });
       }
       if (path === '/getUpdates') {
@@ -302,10 +307,10 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
-    expect = 1, settle = 200, refuseImages = false, refuseViews = false,
+    expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [],
   } = {},
 ) {
-  const platform = await stubApi(updates, { refuseImages, refuseViews });
+  const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers });
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
 
@@ -1103,6 +1108,28 @@ test('khởi động là tải widget lên, dạng application/zip', async () =>
   assert.equal(answer.unchanged, true);
   assert.equal(calls[0].url, 'https://bot.example/setWidget');
   assert.equal(calls[0].options.headers['Content-Type'], 'application/zip');
+});
+
+test('widget cũ có view khác thì tải lại với allowViewRemoval', async () => {
+  const { widgets } = await withBot([], {
+    expect: 0,
+    widgetAnswers: [[400, '{"error":"views_removed","message":"views removed","details":{"views":["graph"]}}']],
+  });
+  assert.equal(widgets.length, 2);
+  assert.doesNotMatch(widgets[0].url, /allowViewRemoval/);
+  assert.match(widgets[1].url, /allowViewRemoval=true/);
+});
+
+test('chú thích bị từ chối thì hướng dẫn nói ra mã lỗi', async () => {
+  const { sent } = await withBot(
+    [
+      update({ text: '/gia vic', command: 'gia', commandArgs: 'vic' }, 1),
+      update({ text: '@bocobot' }, 2),
+    ],
+    { refuseViews: true, expect: 2 },
+  );
+  assert.equal(sent.length, 2);
+  assert.match(sent[1].text, /Chú thích thuật ngữ chưa bật được: bot_has_no_widget/);
 });
 
 // ---- phân tích kỹ thuật ---------------------------------------------------------------------

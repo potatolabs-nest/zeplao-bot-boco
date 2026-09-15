@@ -43,7 +43,7 @@ import { googleNews, newsMessage } from './market/news.mjs';
 import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
-import { refusedForViews, withTerms } from './market/glossary.mjs';
+import { refusalCode, refusedForViews, withTerms } from './market/glossary.mjs';
 import { publishWidget } from './widget.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
@@ -460,9 +460,25 @@ export async function run(token, {
   // Widget của bot — thẻ giải thích thuật ngữ — tải lên lúc khởi động, không đợi. Gói không đổi thì
   // máy chủ trả `unchanged` và không tốn lượt. Tin gửi trước lúc nó xong mà có chú thích sẽ bị từ
   // chối vì view, và `say` gửi lại không kèm chú thích.
+  //
+  // Một widget cũ có view mà gói này bỏ đi thì bị từ chối `views_removed`: bot giờ chỉ gửi view
+  // `term`, nên bỏ các view kia là đúng ý, và tải lại với `allowViewRemoval`.
+  //
+  // Hỏng thì mã lỗi được nhớ lại và hiện ở cuối hướng dẫn: không đọc được log của pod thì đó là
+  // chỗ duy nhất người dùng nhìn thấy vì sao thuật ngữ không bấm được.
+  let widgetTrouble = null;
   publishWidget({ api, token })
-    .then((widget) => console.log(`widget phiên bản ${widget.version}${widget.unchanged ? ' (không đổi)' : ''}`))
-    .catch((problem) => console.error(`không tải được widget: ${problem}`));
+    .catch((problem) => (refusalCode(problem) === 'views_removed'
+      ? publishWidget({ api, token, allowViewRemoval: true })
+      : Promise.reject(problem)))
+    .then((widget) => {
+      widgetTrouble = null;
+      console.log(`widget phiên bản ${widget.version}${widget.unchanged ? ' (không đổi)' : ''}`);
+    })
+    .catch((problem) => {
+      widgetTrouble = refusalCode(problem) ?? 'widget_upload_failed';
+      console.error(`không tải được widget: ${problem}`);
+    });
   // Rồi thêm các mã thanh khoản cao nhất, không đợi: xếp hạng cần giá cả sàn, và các lệnh chính
   // không nên phải chờ việc đó.
   liquidSymbols(market)
@@ -526,7 +542,8 @@ export async function run(token, {
 
     const helpAsked = !message.priceOnly && askedHelpFor(message, me);
     if (helpAsked) {
-      await say(message.conversationId, HELP, replyTo, onlyForUserId);
+      const help = widgetTrouble ? `${HELP}\n\n(Chú thích thuật ngữ chưa bật được: ${widgetTrouble})` : HELP;
+      await say(message.conversationId, help, replyTo, onlyForUserId);
       return;
     }
 
@@ -677,6 +694,7 @@ export async function run(token, {
     const marked = withTerms(content);
     const first = await send(conversationId, marked, replyToMessageId, onlyForUserId);
     if (first.sent || marked === content || !refusedForViews(first.problem)) return first;
+    widgetTrouble = refusalCode(first.problem) ?? 'view_refused';
     return send(conversationId, content, replyToMessageId, onlyForUserId);
   }
 

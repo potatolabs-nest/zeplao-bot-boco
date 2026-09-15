@@ -105,9 +105,11 @@ export function zip(files) {
 }
 
 /** Tải `widget/` lên làm widget của bot. Trả về câu trả lời của máy chủ, hoặc ném khi bị từ chối. */
-export async function publishWidget({ api, token, dir = WIDGET_DIR, fetchImpl = fetch, timeout = TIMEOUT_MS }) {
+export async function publishWidget({
+  api, token, dir = WIDGET_DIR, fetchImpl = fetch, timeout = TIMEOUT_MS, allowViewRemoval = false,
+}) {
   const body = zip(widgetFiles(dir));
-  const response = await fetchImpl(`${api}/setWidget`, {
+  const response = await fetchImpl(`${api}/setWidget${allowViewRemoval ? '?allowViewRemoval=true' : ''}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/zip' },
     body,

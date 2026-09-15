@@ -168,3 +168,8 @@ export function refusedForViews(problem) {
   const said = String(problem ?? '');
   return VIEW_REFUSALS.some((code) => said.includes(code));
 }
+
+/// Mã lỗi máy chủ trả (`"error": "view_not_found"`) trong một lỗi đã ném, hoặc null.
+export function refusalCode(problem) {
+  return /"error"\s*:\s*"([A-Za-z0-9_]+)"/.exec(String(problem ?? ''))?.[1] ?? null;
+}
