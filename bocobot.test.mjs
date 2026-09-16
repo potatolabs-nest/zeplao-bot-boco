@@ -705,20 +705,19 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!vix' })],
-    { market: stubMarket({ listed: ['VIX'] }), chart, expect: 2 },
+    { market: stubMarket({ listed: ['VIX'] }), chart, expect: 1 },
   );
 
-  // Hình một tin, chữ ngay sau. Đổi lại một tin nữa trong phòng, người hỏi bấm được vào KL, TC —
-  // web không cho bấm chữ nằm trong khung ảnh. Đoạn số liệu rời thứ ba thì đã bỏ: nó nằm trong hình.
+  // Một tin: hình và dòng giá cùng nhau, thuật ngữ trên dòng giá vẫn bấm được. Hai thứ ấy từng
+  // loại trừ nhau — client vẽ chữ của tin có ảnh bằng một đường không mang entity — và hết loại
+  // trừ từ 16/09/2026.
   assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIX']);
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 1);
   assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
-  assert.equal(sent[0].text, '📈 VIX');
+  assert.match(sent[0].text, /^VIX 256,1/);
   assert.equal(sent[0].replyToMessageId, 'm1');
-  assert.match(sent[1].text, /^VIX 256,1/);
-  assert.equal(sent[1].image, undefined);
-  assert.ok(sent[1].entities?.length, 'chữ đi riêng thì thuật ngữ bấm được');
-  assert.equal(sent[1].rich, undefined);   // không còn đoạn số liệu rời ở dưới
+  assert.ok(sent[0].entities?.length, 'chú thích gắn ngay trên tin có hình');
+  assert.equal(sent[0].rich, undefined);   // không có đoạn số liệu rời: nó nằm trong hình
   assert.match(sent[0].image.svg, /<svg [^>]*width="1440" height="840" viewBox="0 0 720 420"/);   // không bé tí
   assert.match(sent[0].image.svg, /<line x1="86" y1="84" x2="86"/);
   // Mốc là tham chiếu 13,1, không phải cây nến đầu phiên 13,2: giá thấp nhất phiên vẫn nằm trên
@@ -768,14 +767,13 @@ test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async 
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!gex 1n' })],
-    { market: stubMarket({ listed: ['GEX'] }), chart, expect: 2 },
+    { market: stubMarket({ listed: ['GEX'] }), chart, expect: 1 },
   );
 
   assert.deepEqual(chart.calls.map((call) => [call.symbol, call.period]), [['GEX', '1n']]);
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 1);
   assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
-  assert.equal(sent[0].text, '📈 GEX 1n');
-  assert.match(sent[1].text, /^GEX /);
+  assert.match(sent[0].text, /^GEX /);
   assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
   assert.match(sent[0].image.svg, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
 });
@@ -1032,15 +1030,14 @@ test('!ptkt đọc đúng một mã, và không bị đọc thành giá PTKT', (
   assert.equal(askedTechnicalFor(message({ text: '!tin vic' })), null);
 });
 
-test('!ptkt vic gửi bài phân tích của đúng mã ấy: hình, rồi chữ ngay sau', async () => {
+test('!ptkt vic gửi bài phân tích của đúng mã ấy, hình và chữ trong một tin', async () => {
   const technical = stubTechnical();
-  const { sent } = await withBot([update({ text: '!ptkt vic' })], { technical, expect: 2 });
+  const { sent } = await withBot([update({ text: '!ptkt vic' })], { technical, expect: 1 });
   assert.deepEqual(technical.calls, ['VIC']);
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 1);
   assert.equal(sent[0].image.fileName, 'ptkt-vic-2026-09-11.svg');
   assert.equal(sent[0].replyToMessageId, 'm1');
-  assert.match(sent[1].text, /^PTKT VIC · /);
-  assert.equal(sent[1].replyToMessageId, undefined);
+  assert.match(sent[0].text, /^PTKT VIC · /);
 });
 
 test('!ptkt nhiều mã thì nhắc cú pháp, không phân tích mã nào', async () => {
@@ -1196,7 +1193,7 @@ test('thuật ngữ được đánh dấu đúng chỗ, lần đầu, không dí
   assert.deepEqual(termEntities('RSI và MACD. RSI', [{ ...link, length: 3 }]).map((entity) => entity.offset), [7, 13]);
 });
 
-test('chú thích vào entities của tin chữ, vào khối rich khi có rich, và không đụng tin có hình', () => {
+test('chú thích vào entities của tin chữ, vào khối rich khi có rich, và cả trên tin có hình', () => {
   const plain = withTerms({ text: 'VIC 256,1 ▲ +4,74% · KL 7.518.600' });
   assert.equal(plain.entities[0].data, GLOSSARY.KL);
 
@@ -1204,9 +1201,18 @@ test('chú thích vào entities của tin chữ, vào khối rich khi có rich, 
   assert.equal(rich.entities, undefined);
   assert.equal(rich.rich.blocks[0].entities[0].view, TERM_VIEW);
 
-  // Web không cho bấm chữ trên tin có hình: bot gửi hình và chữ thành hai tin thay vì chú thích trên hình.
+  // Tin có hình nay cũng được chú thích: từ 16/09/2026 client vẽ chữ của nó bằng đúng bộ đọc của
+  // tin chữ. Trước ngày ấy, chú thích gắn ở đây là chú thích không ai mở được — nên bot phải xé
+  // câu trả lời thành hai tin, và đó là thứ vừa bỏ đi.
   const picture = { text: 'PTKT VIC · MA200 · RSI 60', image: { fileName: 'a.svg', svg: '<svg/>' } };
-  assert.equal(withTerms(picture), picture);
+  const marked = withTerms(picture);
+  assert.ok(marked.entities.some((entity) => entity.data === GLOSSARY.MA200));
+  assert.equal(marked.image, picture.image);
+
+  // Sticker thì vẫn không: không có chữ nào để đánh dấu.
+  const sticker = { stickerId: 's1', text: 'MA200' };
+  assert.equal(withTerms(sticker), sticker);
+
   const nothing = { text: 'không có gì' };
   assert.equal(withTerms(nothing), nothing);
   assert.ok(Object.values(GLOSSARY).every((entry) => entry.title && entry.body));
@@ -1255,19 +1261,17 @@ test('khởi động là tải widget lên, dạng application/zip', async () =>
   assert.equal(calls[0].options.headers['Content-Type'], 'application/zip');
 });
 
-test('bài phân tích kèm hình đi thành hai tin: hình, rồi chữ có thuật ngữ bấm được', async () => {
+test('bài phân tích kèm hình đi một tin, thuật ngữ trên chữ vẫn bấm được', async () => {
   const { sent } = await withBot(
     [update({ text: '!ptkt vic', command: 'ptkt', commandArgs: 'vic', commandPrefix: '!', private: true })],
-    { expect: 2 },
+    { expect: 1 },
   );
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 1);
   assert.ok(sent[0].image);
-  assert.equal(sent[0].text, '📈 PTKT VIC');   // web không vẽ được tin hình không có chữ
-  assert.equal(sent[0].keyboard, undefined);
-  assert.equal(sent[1].image, undefined);
-  const views = [...(sent[1].entities ?? []), ...(sent[1].rich?.blocks ?? []).flatMap((block) => block.entities ?? [])];
+  assert.equal(sent[0].keyboard, undefined);   // nút thì không: xấu, và không phải thứ đã hỏi
+  const views = [...(sent[0].entities ?? []), ...(sent[0].rich?.blocks ?? []).flatMap((block) => block.entities ?? [])];
   assert.ok(views.some((entity) => entity.view === TERM_VIEW && entity.data.title.startsWith('PTKT')));
-  assert.ok(sent.every((one) => one.onlyForUserId === 'u1'));
+  assert.equal(sent[0].onlyForUserId, 'u1');
 });
 
 test('widget cũ có view khác thì tải lại với allowViewRemoval', async () => {
@@ -1437,12 +1441,13 @@ test('!kq vic hỏi đúng nguồn và trả lời; nguồn chết thì nói ra'
   const results = { async segments(symbol, period) { calls.push([symbol, period]); return SEGMENTS; } };
   const { sent } = await withBot(
     [update({ text: '!kq vic q2', command: 'kq', commandArgs: 'vic q2', commandPrefix: '!', private: true })],
-    { results, expect: 2 },
+    { results, expect: 1 },
   );
   assert.deepEqual(calls, [['VIC', { year: null, quarter: 2, annual: false }]]);
-  assert.equal(sent[0].image.fileName, 'kq-vic-q2-2025.svg');   // hình trước
-  assert.match(sent[1].text, /^KQKD VIC · Q2\/2025/);          // rồi chữ, thuật ngữ bấm được
-  assert.ok(sent.every((one) => one.onlyForUserId === 'u1'));
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].image.fileName, 'kq-vic-q2-2025.svg');
+  assert.match(sent[0].text, /^KQKD VIC · Q2\/2025/);
+  assert.equal(sent[0].onlyForUserId, 'u1');
 
   const broken = { async segments() { throw new Error('nguồn chết'); } };
   const failed = await withBot([update({ text: '!kq vic' })], { results: broken });

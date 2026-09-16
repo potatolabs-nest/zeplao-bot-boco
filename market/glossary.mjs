@@ -149,12 +149,15 @@ export function termEntities(text, taken = [], glossary = GLOSSARY) {
  * Nội dung một tin nhắn, kèm chú thích thuật ngữ ở đúng chỗ nền tảng nhận.
  *
  * Tin chữ thường: vào `entities`. Tin có `rich`: vào từng khối văn bản, vì nền tảng không nhận
- * `entities` bên cạnh `rich`. Tin có hình, sticker, hay không có gì để chú thích: trả lại đúng như
- * cũ — cùng một object, để nơi gọi biết không có gì được thêm. Web không cho bấm chữ trên tin có
- * hình, nên bot gửi hình và chữ thành hai tin (xem `say` trong bocobot.mjs).
+ * `entities` bên cạnh `rich`. Sticker hay không có gì để chú thích: trả lại đúng như cũ — cùng một
+ * object, để nơi gọi biết không có gì được thêm.
+ *
+ * Tin **có hình** cũng được chú thích, từ 16/09/2026. Trước đó không: cả web lẫn ứng dụng vẽ chữ
+ * của tin có ảnh bằng một đường riêng không mang entity, nên chú thích gắn vào đó được lưu mà
+ * không ai mở được — và bot phải xé câu trả lời thành hai tin để người ta còn bấm được.
  */
 export function withTerms(content, glossary = GLOSSARY) {
-  if (!content || typeof content !== 'object' || content.stickerId || content.image) return content;
+  if (!content || typeof content !== 'object' || content.stickerId) return content;
 
 
   if (Array.isArray(content.rich?.blocks)) {
@@ -171,7 +174,7 @@ export function withTerms(content, glossary = GLOSSARY) {
     return changed ? { ...content, rich: { ...content.rich, blocks } } : content;
   }
 
-  if (content.image || typeof content.text !== 'string') return content;
+  if (typeof content.text !== 'string') return content;
   const views = termEntities(content.text, content.entities ?? [], glossary);
   return views.length ? { ...content, entities: [...(content.entities ?? []), ...views] } : content;
 }
