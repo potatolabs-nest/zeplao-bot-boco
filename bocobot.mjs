@@ -256,15 +256,24 @@ export function canonicalMessage(message, me) {
 
   const text = String(message.text ?? '').replace(INVISIBLE, '');
   const leading = text.trimStart();
-  if (!/^[!！]/.test(leading)) return text === message.text ? message : { ...message, text };
+  const heard = leading[0] === '/' && !message.command;
+  if (!/^[!！]/.test(leading) && !heard) return text === message.text ? message : { ...message, text };
 
+  // Dấu gạch chéo **nghe được** — một `/từ` không ai khai báo, tới đây vì bot đã tắt chế độ riêng
+  // tư — cũng được đọc như dấu gọi. Máy chủ chỉ giao `/từ` cho bot đã khai đúng chữ ấy, và bảng
+  // lệnh có giới hạn, nên có những mã không bao giờ tới được bằng đường lệnh. Nghe được thì trả
+  // lời: người gõ `/vgc` đang hỏi giá VGC, không có cách đọc nào khác.
+  //
+  // Đổi lại phải im khi không tra được gì (`heard`): `/xyz` trong phòng có thể là lệnh của con bot
+  // bên cạnh, và một câu "không có dữ liệu" chen vào đó là bot này nói leo. Một dòng máy chủ **có**
+  // phân tích thành lệnh thì không phải nghe lỏm, và giữ nguyên đường cũ.
   let body = leading.slice(1).normalize('NFKC');
   const named = /^([A-Za-z0-9_]{1,32})@([A-Za-z0-9._-]+)(.*)$/s.exec(body);
   if (named) {
     if (named[2].toLowerCase() !== String(me?.username ?? '').toLowerCase()) return null;
     body = `${named[1]}${named[3]}`;
   }
-  return priced({ ...message, text: `${CALL}${body}` });
+  return priced({ ...message, text: `${CALL}${body}`, ...(heard ? { heard: true } : {}) });
 }
 
 /**
@@ -298,6 +307,8 @@ export function askedFor(message, me, mine = new Set()) {
       symbols: OWN.has(words[0]?.toLowerCase()) ? words.slice(1) : words,
       addressed: true,
       strict: true,
+      // Nghe lỏm được thì trả lời cái tra được và im phần còn lại — xem `canonicalMessage`.
+      quiet: Boolean(message.heard),
     };
   }
 
@@ -716,7 +727,7 @@ export async function run(token, {
       quotes = await market.quotes(candidates);
     } catch (problem) {
       console.error(String(problem));
-      if (asked.addressed) await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
+      if (asked.addressed && !asked.quiet) await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
       return;
     }
 
@@ -729,12 +740,12 @@ export async function run(token, {
     // thành một danh sách lỗi kê ra mọi chữ ba ký tự trong câu. Thiếu `addressed`: `/tienlen`
     // của con bot bên cạnh được đáp lại bằng "TIENLEN — không có dữ liệu", trong phòng, mỗi
     // lần có người gọi nó. Bộ test giữ đúng chỗ này, vì nó đã hỏng đúng theo cách thứ hai.
-    const listing = asked.strict && asked.addressed
+    const listing = asked.strict && asked.addressed && !asked.quiet
       ? candidates
       : candidates.filter((symbol) => found.has(symbol));
 
     if (!listing.length) {
-      if (asked.addressed) await say(message.conversationId, SORRY.nothing, replyTo, onlyForUserId);
+      if (asked.addressed && !asked.quiet) await say(message.conversationId, SORRY.nothing, replyTo, onlyForUserId);
       return;
     }
 

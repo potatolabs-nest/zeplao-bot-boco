@@ -405,6 +405,25 @@ test('hỏi ba mã thì vẫn là một tin nhắn', async () => {
   assert.equal(sent[0].text.split('\n').length, 2);
 });
 
+test('nghe được /vgc trong phòng thì vẫn trả giá, dù máy chủ không giao lệnh ấy', async () => {
+  // Máy chủ chỉ giao `/từ` cho bot đã khai đúng chữ ấy, và bảng lệnh có giới hạn — nên có những mã
+  // không bao giờ tới được bằng đường lệnh. Dòng chữ vẫn tới, vì chủ bot đã tắt chế độ riêng tư, và
+  // người gõ `/vgc` thì đang hỏi giá VGC: không có cách đọc nào khác cho ba chữ ấy.
+  const { sent } = await withBot([update({ text: '/vgc' })], { market: stubMarket({ listed: ['VGC'] }) });
+  assert.match(sent[0].text, /^VGC 256,1/);
+});
+
+test('nghe được /từ lạ thì im, không chen vào lệnh của bot bên cạnh', async () => {
+  // Nghe lỏm thì phải im phần không tra được: `/tienlen` là lệnh của con bot chơi bài, và một câu
+  // "không tra được gì" chen vào đó là bot này nói leo trong phòng của người khác.
+  const { sent } = await withBot([update({ text: '/tienlen' })], { expect: 0 });
+  assert.deepEqual(sent, []);
+
+  // Kể cả khi chữ ấy đúng hình một mã nhưng không có thật.
+  const unknown = await withBot([update({ text: '/zzz' })], { expect: 0 });
+  assert.deepEqual(unknown.sent, []);
+});
+
 test('lệnh của bot khác thì không nói gì cả', async () => {
   const { sent } = await withBot([update({ text: '/tienlen', command: 'tienlen' })], { expect: 0 });
   assert.deepEqual(sent, []);
