@@ -163,16 +163,19 @@ export async function companyCards(company, symbols, { waitMs = WAIT_MS } = {}) 
 
   // Có hạn chờ riêng, ngắn hơn hạn của chính lời gọi mạng: người ta hỏi giá, và một dòng giá tới
   // muộn tám giây vì đang đợi tên đầy đủ của công ty là một câu trả lời hỏng.
-  const cards = await Promise.race([all, wait(waitMs).then(() => null)]);
-  if (!cards) return new Map();
-  return new Map(asked.map((symbol, index) => [symbol, cards[index]]).filter(([, card]) => card));
-}
-
-function wait(ms) {
-  return new Promise((done) => {
-    const timer = setTimeout(done, ms);
-    timer.unref?.();
-  });
+  //
+  // Cái hẹn này **không** `unref`: `unref` nghĩa là nó không giữ tiến trình sống, nên khi không còn
+  // việc nào khác thì tiến trình kết thúc trước lúc chuông reo và lời hứa ở đây treo mãi. Dọn bằng
+  // `clearTimeout` khi đã có kết quả — như thế nó chỉ giữ vòng lặp đúng quãng nó thực sự đang đợi.
+  let timer;
+  const deadline = new Promise((done) => { timer = setTimeout(() => done(null), waitMs); });
+  try {
+    const cards = await Promise.race([all, deadline]);
+    if (!cards) return new Map();
+    return new Map(asked.map((symbol, index) => [symbol, cards[index]]).filter(([, card]) => card));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---- chữ nghĩa -------------------------------------------------------------------------------
