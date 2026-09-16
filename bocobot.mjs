@@ -59,10 +59,10 @@ export const STATE = process.env.BOCO_STATE
 
 /// Dấu gọi bot.
 ///
-/// Không phải gạch chéo, và đó là cả cách con bot này thoát khỏi hai cái trần cùng lúc. Nền
-/// tảng chỉ giao `/xyz` cho bot đã đăng ký đúng chữ ấy, mà chỗ đăng ký có 100 ô cho 1.522 mã —
-/// nên đường gạch chéo không bao giờ phủ hết được. Còn `!vic` chỉ là một câu chữ thường: bot
-/// nghe được nó vì chủ bot đã tắt chế độ riêng tư, và nó chạy với **mọi mã**, không trừ mã nào.
+/// Không phải gạch chéo, và đó là cả cách con bot này với tới mọi mã. Nền tảng chỉ giao `/xyz`
+/// cho bot đã đăng ký đúng chữ ấy; chỗ đăng ký từng có 100 ô cho 1.522 mã nên đường gạch chéo
+/// không bao giờ phủ hết được. Còn `!vic` thì chạy với **mọi mã** kể cả mã chưa đăng ký: chữ
+/// chưa khai báo vẫn là một câu chữ thường mà bot nghe được, vì chủ bot đã tắt chế độ riêng tư.
 ///
 /// Một dấu người ta phải cố ý gõ cũng là thứ giữ cho bot im. Nghe cả phòng rồi trả lời mỗi khi
 /// ai đó nhắc tên một mã thì hỏng: đo thử, 16 từ tiếng Việt thông dụng viết không dấu trùng mã
@@ -78,13 +78,20 @@ const OWN = new Set(['gia', 'giá', 'boco', 'bocobot', 'bangdien']);
  * Lệnh khai báo với máy chủ.
  *
  * Từ 15/09/2026 máy chủ chỉ giao `!từ` và `/từ` trơn cho bot đã khai báo `từ`, nên mọi lệnh phải
- * khai báo trước. Không khai báo được 1.522 mã (tối đa 100 lệnh), nên giá đi sau một chữ riêng:
- * `!view vic` thay cho `!vic`, `!view gex 3m` thay cho `!gex 3m`. Khai báo rồi thì `!lệnh` là hỏi riêng
- * — chỉ người gõ thấy câu trả lời — còn `/lệnh` là hỏi trước cả nhóm; máy chủ lo phần đó.
+ * khai báo trước. Lúc trần còn 100 ô cho 1.522 mã thì giá phải đi sau một chữ riêng — `!view vic`
+ * thay cho `!vic` — và chữ riêng ấy giữ nguyên vì người ta đã quen gõ. Khai báo rồi thì `!lệnh` là
+ * hỏi riêng — chỉ người gõ thấy câu trả lời — còn `/lệnh` là hỏi trước cả nhóm; máy chủ lo phần đó.
  *
  * Chữ cuối là tên của chính bot (`topbot`, `bocobot`…), không viết cứng: `!topbot` mở hướng dẫn.
  */
-export const MOST_COMMANDS = 100;
+/// Trần khai báo lệnh của nền tảng, nâng lên 2.000 ngày 16/09/2026 để `/vic` phủ hết bảng chứ
+/// không chỉ 95 mã đầu. Khai thừa cũng không hỏng: máy chủ chưa nâng thì giữ 100 lệnh đầu và kể
+/// phần bỏ lại trong `details.ignored` — đúng những gì bot vẫn chạy được từ trước.
+export const MOST_COMMANDS = 2000;
+
+/// Khai báo lại sau chừng này: danh sách mã thanh khoản đổi theo thị trường, và một trần mới ở máy
+/// chủ được dùng tới mà không phải đợi lần khởi động sau.
+const COMMANDS_REFRESH_MS = 6 * 60 * 60 * 1000;
 
 export function commandsFor(me, symbols = []) {
   const name = String(me?.username ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32) || 'bocobot';
@@ -472,10 +479,18 @@ export async function run(token, {
 
   const guard = makeGuard({ market });
 
-  // Khai báo đúng `commandsFor(me)`, thay nguyên si danh sách cũ — xem ghi chú ở đó vì sao không
-  // khai báo mã nào nữa.
-  const declare = (symbols) => call('setCommands', { commands: commandsFor(me, symbols) })
-    .catch((problem) => console.error(String(problem)));
+  // Khai báo đúng `commandsFor(me)`, thay nguyên si danh sách cũ. Lần đầu chỉ các lệnh chính, để
+  // bot nghe được ngay; các mã vào ngay sau khi xếp hạng xong, và lại vào mỗi vài tiếng sau đó.
+  const declare = async (symbols) => {
+    const commands = commandsFor(me, symbols);
+    try {
+      const answer = await call('setCommands', { commands });
+      const ignored = answer?.details?.ignored?.length ?? 0;
+      console.log(`khai báo ${commands.length} lệnh${ignored ? `, máy chủ bỏ ${ignored}` : ''}`);
+    } catch (problem) {
+      console.error(String(problem));
+    }
+  };
   await declare([]);
 
   // Widget của bot — thẻ giải thích thuật ngữ — tải lên lúc khởi động, không đợi. Gói không đổi thì
@@ -502,9 +517,16 @@ export async function run(token, {
     });
   // Rồi thêm các mã thanh khoản cao nhất, không đợi: xếp hạng cần giá cả sàn, và các lệnh chính
   // không nên phải chờ việc đó.
-  liquidSymbols(market)
+  const rank = () => liquidSymbols(market)
     .then((symbols) => declare(symbols))
     .catch((problem) => console.error(`không xếp hạng được mã để khai báo lệnh: ${problem}`));
+  rank();
+
+  // Và xếp lại mỗi vài tiếng, không phải chỉ lúc khởi động: một tiến trình chạy hàng tháng mà chỉ
+  // khai báo một lần là một danh sách mã của tháng trước.
+  const again = setInterval(rank, COMMANDS_REFRESH_MS);
+  again.unref?.();
+  signal?.addEventListener?.('abort', () => clearInterval(again));
 
   // Danh sách niêm yết tải ngay nhưng không đợi: câu hỏi đầu tiên có thể tới trước khi ba sàn
   // trả lời xong, và lúc ấy cái sàng vẫn làm việc được — bằng cách dò thay vì tra.

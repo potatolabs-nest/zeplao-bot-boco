@@ -1044,7 +1044,7 @@ test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
     ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot', 'vic', 'hpg'],
   );
-  const many = Array.from({ length: 300 }, (_, i) => `M${String(i).padStart(3, '0')}`);
+  const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
 });
 
@@ -1482,7 +1482,7 @@ test('nguồn tin chết thì nói ra', async () => {
   assert.equal(sent[0].text, SORRY.news);
 });
 
-test('khởi động là thay danh sách lệnh cũ bằng đúng một lệnh bocobot, không khai báo mã nào', async () => {
+test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered } = await withBot([], { expect: 0 });
   assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot', 'vic', 'hpg']);
