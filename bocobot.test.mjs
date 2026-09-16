@@ -632,17 +632,20 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!vix' })],
-    { market: stubMarket({ listed: ['VIX'] }), chart, expect: 1 },
+    { market: stubMarket({ listed: ['VIX'] }), chart, expect: 2 },
   );
 
-  // Một tin: dòng giá và hình cùng nhau. Hỏi một mã mà nhận ba mảnh — caption, chữ, rồi một đoạn
-  // số liệu nữa — là thứ đã phải bỏ; số của phiên nằm trong hình.
+  // Hình một tin, chữ ngay sau. Đổi lại một tin nữa trong phòng, người hỏi bấm được vào KL, TC —
+  // web không cho bấm chữ nằm trong khung ảnh. Đoạn số liệu rời thứ ba thì đã bỏ: nó nằm trong hình.
   assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIX']);
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 2);
   assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
-  assert.match(sent[0].text, /^VIX 256,1/);
+  assert.equal(sent[0].text, '📈 VIX');
   assert.equal(sent[0].replyToMessageId, 'm1');
-  assert.equal(sent[0].rich, undefined);
+  assert.match(sent[1].text, /^VIX 256,1/);
+  assert.equal(sent[1].image, undefined);
+  assert.ok(sent[1].entities?.length, 'chữ đi riêng thì thuật ngữ bấm được');
+  assert.equal(sent[1].rich, undefined);   // không còn đoạn số liệu rời ở dưới
   assert.match(sent[0].image.svg, /<svg [^>]*width="1440" height="840" viewBox="0 0 720 420"/);   // không bé tí
   assert.match(sent[0].image.svg, /<line x1="86" y1="84" x2="86"/);
   // Mốc là tham chiếu 13,1, không phải cây nến đầu phiên 13,2: giá thấp nhất phiên vẫn nằm trên
@@ -692,13 +695,14 @@ test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async 
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!gex 1n' })],
-    { market: stubMarket({ listed: ['GEX'] }), chart, expect: 1 },
+    { market: stubMarket({ listed: ['GEX'] }), chart, expect: 2 },
   );
 
   assert.deepEqual(chart.calls.map((call) => [call.symbol, call.period]), [['GEX', '1n']]);
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 2);
   assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
-  assert.match(sent[0].text, /^GEX /);
+  assert.equal(sent[0].text, '📈 GEX 1n');
+  assert.match(sent[1].text, /^GEX /);
   assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
   assert.match(sent[0].image.svg, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
 });
