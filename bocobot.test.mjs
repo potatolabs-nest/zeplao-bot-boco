@@ -23,6 +23,7 @@ import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs
 import { GLOSSARY, TERM_VIEW, termEntities, withTerms } from './market/glossary.mjs';
 import { MOST_SEGMENTS, parseResultsPeriod, resultsMessage, resultsRich, resultsSvg } from './market/results.mjs';
 import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResults } from './market/vietcap.mjs';
+import { COMPANY_VIEW } from './market/company.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
@@ -1227,7 +1228,14 @@ test('widget là một gói zip đọc lại được, widget.json trỏ tới t
   assert.deepEqual([...entries.keys()], files.map((file) => file.path));
   const manifest = JSON.parse(entries.get('widget.json').toString('utf8'));
   assert.equal(manifest.views[TERM_VIEW].entry, 'term.html');
-  assert.ok(entries.has('term.html') && entries.has('term.js') && entries.has('view.js') && entries.has('view.css'));
+  assert.equal(manifest.views[COMPANY_VIEW].entry, 'company.html');
+
+  // Mọi view đã khai phải có trang của nó trong gói. Một `entry` trỏ vào chỗ trống thì máy chủ chối
+  // **cả gói**, nên đổi tên một trang là mất luôn những thẻ chẳng liên quan gì tới nó.
+  for (const [name, view] of Object.entries(manifest.views)) {
+    assert.ok(entries.has(view.entry), `view ${name} trỏ tới ${view.entry} mà gói không có`);
+  }
+  assert.ok(entries.has('term.js') && entries.has('company.js') && entries.has('view.js') && entries.has('view.css'));
   assert.ok(!entries.has('zeplao.js'));
   assert.deepEqual(zip(files), zip(files));   // cùng thư mục, cùng byte: máy chủ nhận ra gói không đổi
 });
