@@ -118,6 +118,8 @@ const hasViewEntity = (body) => [...(body.entities ?? []), ...(body.rich?.blocks
 async function stubApi(updates, { refuseImages = false, refuseViews = false, widgetAnswers = [] } = {}) {
   const sent = [];
   const registered = [];
+  /// Mọi lần khai báo, theo thứ tự — `registered` chỉ giữ lần cuối, mà cái hỏng nằm ở lần đầu.
+  const declares = [];
   const widgets = [];
   let queue = [...updates];
 
@@ -133,7 +135,9 @@ async function stubApi(updates, { refuseImages = false, refuseViews = false, wid
 
       if (path === '/getMe') return answer(ME);
       if (path === '/setCommands') {
-        registered.splice(0, registered.length, ...JSON.parse(body).commands);
+        const { commands } = JSON.parse(body);
+        registered.splice(0, registered.length, ...commands);
+        declares.push(commands.map((one) => one.command));
         return answer({ ok: true });
       }
       if (path === '/sendMessage') {
@@ -174,7 +178,7 @@ async function stubApi(updates, { refuseImages = false, refuseViews = false, wid
   });
 
   await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
-  return { sent, registered, widgets, api: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
+  return { sent, registered, declares, widgets, api: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
 }
 
 /// Nguồn giá giả: biết đúng những mã được kể tên, và đếm số lần bị hỏi.
@@ -1619,7 +1623,15 @@ test('nguồn tin chết thì nói ra', async () => {
 
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
-  const { registered } = await withBot([], { expect: 0 });
+  const { registered, declares } = await withBot([], { expect: 0 });
   assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
+
+  // Đúng **một** lần khai báo, và lần ấy đã có mã.
+  //
+  // `setCommands` thay nguyên si danh sách cũ, nên khai lệnh chính trước rồi mới đi xếp hạng là tự
+  // tay xoá sạch mã khỏi bảng lệnh: mỗi lần khởi động là một quãng `/vgc` im lặng, và một lần xếp
+  // hạng hỏng là im cho tới lần sau. Danh sách của lần chạy trước vẫn phục vụ được trong lúc đợi.
+  assert.equal(declares.length, 1);
+  assert.ok(declares[0].includes('vic'), 'lần khai báo duy nhất phải có mã, không phải danh sách trống');
 });

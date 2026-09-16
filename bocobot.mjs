@@ -501,7 +501,12 @@ export async function run(token, {
       console.error(String(problem));
     }
   };
-  await declare([]);
+  // **Không** khai báo lệnh chính ngay ở đây, dù rất muốn.
+  //
+  // `setCommands` thay nguyên si danh sách cũ. Khai trước một danh sách chưa có mã nào là tự tay
+  // xoá sạch mã khỏi bảng lệnh, rồi vài giây sau mới khai lại — mỗi lần khởi động là một quãng
+  // `/vgc` im lặng, và một lần xếp hạng hỏng là im tới lần sau. Danh sách lần trước vẫn nằm trên
+  // máy chủ và vẫn phục vụ đúng trong lúc bot đi lấy giá cả sàn để xếp hạng, nên để yên nó.
 
   // Widget của bot — thẻ giải thích thuật ngữ — tải lên lúc khởi động, không đợi. Gói không đổi thì
   // máy chủ trả `unchanged` và không tốn lượt. Tin gửi trước lúc nó xong mà có chú thích sẽ bị từ
