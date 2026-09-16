@@ -717,8 +717,12 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
   assert.match(sent[0].text, /^VIX 256,1/);
   assert.equal(sent[0].replyToMessageId, 'm1');
-  assert.ok(sent[0].entities?.length, 'chú thích gắn ngay trên tin có hình');
-  assert.equal(sent[0].rich, undefined);   // không có đoạn số liệu rời: nó nằm trong hình
+  // Chú thích đi **trong khối rich**, không phải `entities` gắn thẳng trên tin: client vẽ tin có
+  // ảnh bằng markup, nên chú thích để ngoài markup là chú thích lưu xong không ai bấm được. Đúng
+  // lỗi đã gặp: `!ptkt` bấm được vì nó gửi rich, dòng giá thì không.
+  assert.equal(sent[0].entities, undefined);
+  assert.equal(sent[0].rich.blocks.length, 1);   // đúng một đoạn: số liệu phiên nằm trong hình
+  assert.ok(sent[0].rich.blocks[0].entities?.length, 'chú thích nằm trong khối rich');
   assert.match(sent[0].image.svg, /<svg [^>]*width="1440" height="840" viewBox="0 0 720 420"/);   // không bé tí
   assert.match(sent[0].image.svg, /<line x1="86" y1="84" x2="86"/);
   // Mốc là tham chiếu 13,1, không phải cây nến đầu phiên 13,2: giá thấp nhất phiên vẫn nằm trên
@@ -1272,6 +1276,13 @@ test('bài phân tích kèm hình đi một tin, thuật ngữ trên chữ vẫn
   assert.equal(sent[0].keyboard, undefined);   // nút thì không: xấu, và không phải thứ đã hỏi
   const views = [...(sent[0].entities ?? []), ...(sent[0].rich?.blocks ?? []).flatMap((block) => block.entities ?? [])];
   assert.ok(views.some((entity) => entity.view === TERM_VIEW && entity.data.title.startsWith('PTKT')));
+
+  // Và bấm được vào chính cái mã đang phân tích: hồ sơ doanh nghiệp không phải đặc quyền của dòng
+  // giá. Thiếu đúng chỗ này là thứ người dùng nhìn thấy — chữ nào cũng gạch chân, trừ tên mã.
+  assert.ok(
+    views.some((entity) => entity.view === COMPANY_VIEW && entity.data.title.startsWith('VIC —')),
+    'mã trong bài PTKT cũng mở được hồ sơ',
+  );
   assert.equal(sent[0].onlyForUserId, 'u1');
 });
 

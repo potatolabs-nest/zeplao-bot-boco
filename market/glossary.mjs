@@ -11,7 +11,7 @@ export const TERM_VIEW = 'term';
 const MOST_VIEWS = 50;
 
 /// Những khối rich mang được entity, theo tài liệu.
-const TEXT_BLOCKS = new Set(['paragraph', 'text', 'heading', 'quote']);
+export const TEXT_BLOCKS = new Set(['paragraph', 'text', 'heading', 'quote']);
 
 /**
  * Mỗi mục là đúng `data` mà thẻ `term` được mở cùng: `title`, `body`, và `formula`, `example` nếu

@@ -7,6 +7,7 @@
 // Nguồn là Vietcap IQ `/company/{mã}`, cùng host với `!kq`: một lời gọi, không cần khoá, có cho cả
 // mã UPCoM lẫn mã bé tí, và vốn hoá trả sẵn bằng đồng chứ không phải tự nhân. Nó **không gửi CORS**,
 // nên trang widget không tự gọi được — đó chính là lý do số liệu đi theo tin nhắn.
+import { TEXT_BLOCKS } from './glossary.mjs';
 import { count, money } from './quote.mjs';
 import { VIETCAP } from './vietcap.mjs';
 
@@ -116,6 +117,33 @@ export function companyEntities(text, cards, taken = []) {
     }
   }
   return found.sort((a, b) => a.offset - b.offset);
+}
+
+/**
+ * Nội dung một tin nhắn, kèm thẻ hồ sơ trên mã.
+ *
+ * Cùng hình dạng với `withTerms`: tin có `rich` thì gắn vào khối văn bản, tin chữ thì gắn vào
+ * `entities`. Dùng chung cho mọi câu trả lời có nhắc tên mã — dòng giá, bài PTKT, bảng kết quả
+ * kinh doanh — chứ không riêng dòng giá, vì người đọc thấy chữ `VIC` ở đâu cũng muốn bấm được.
+ */
+export function withCompany(content, cards) {
+  if (!content || typeof content !== 'object' || content.stickerId || !cards?.size) return content;
+
+  if (Array.isArray(content.rich?.blocks)) {
+    let changed = false;
+    const blocks = content.rich.blocks.map((block) => {
+      if (!TEXT_BLOCKS.has(block?.type) || typeof block.text !== 'string') return block;
+      const views = companyEntities(block.text, cards, block.entities ?? []);
+      if (!views.length) return block;
+      changed = true;
+      return { ...block, entities: [...(block.entities ?? []), ...views] };
+    });
+    return changed ? { ...content, rich: { ...content.rich, blocks } } : content;
+  }
+
+  if (typeof content.text !== 'string') return content;
+  const views = companyEntities(content.text, cards, content.entities ?? []);
+  return views.length ? { ...content, entities: [...(content.entities ?? []), ...views] } : content;
 }
 
 /**

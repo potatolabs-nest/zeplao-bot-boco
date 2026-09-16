@@ -45,7 +45,7 @@ import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
-import { companyCards, companyEntities, vietcapCompany } from './market/company.mjs';
+import { companyCards, vietcapCompany, withCompany } from './market/company.mjs';
 import { refusalCode, refusedForViews, withoutViews, withTerms } from './market/glossary.mjs';
 import { publishWidget } from './widget.mjs';
 
@@ -654,7 +654,14 @@ export async function run(token, {
       }
       try {
         const report = await results.segments(resultsAsked.symbol, resultsAsked.period);
-        await say(message.conversationId, resultsRich(report ?? { symbol: resultsAsked.symbol, period: resultsAsked.period }), replyTo, onlyForUserId);
+        const shown = resultsRich(report ?? { symbol: resultsAsked.symbol, period: resultsAsked.period });
+        const cards = await companyCards(company, [resultsAsked.symbol]);
+        await say(
+          message.conversationId,
+          withCompany(typeof shown === 'string' ? { text: shown } : shown, cards),
+          replyTo,
+          onlyForUserId,
+        );
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, 'Nguồn báo cáo tài chính đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
@@ -672,7 +679,13 @@ export async function run(token, {
       try {
         // Một tin nhắn có hình, hoặc một dòng chữ khi mã không có dữ liệu để phân tích.
         const reply = await technical.report(technicalAsked.symbol);
-        await say(message.conversationId, reply, replyTo, onlyForUserId);
+        const cards = await companyCards(company, [technicalAsked.symbol]);
+        await say(
+          message.conversationId,
+          withCompany(typeof reply === 'string' ? { text: reply } : reply, cards),
+          replyTo,
+          onlyForUserId,
+        );
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
@@ -726,8 +739,7 @@ export async function run(token, {
     // Bấm vào mã là mở hồ sơ doanh nghiệp — tên đầy đủ, sàn, ngành, vốn hoá. Chỉ những mã tra được
     // giá: dòng của một mã không có dữ liệu là một lời xin lỗi, không phải chỗ để mở hồ sơ ra.
     const cards = await companyCards(company, listing.filter((symbol) => found.has(symbol)));
-    const views = companyEntities(text, cards);
-    const said = views.length ? { text, entities: views } : { text };
+    const said = withCompany({ text }, cards);
 
     if (asked.strict && asked.addressed && listing.length === 1 && found.has(listing[0])) {
       try {
@@ -758,6 +770,13 @@ export async function run(token, {
     const content = typeof text === 'string' ? { text } : text;
     if (!content.image) return (await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId)).sent;
 
+    // Chữ đi kèm hình phải đi dưới dạng rich, không phải `entities` gắn thẳng trên tin.
+    //
+    // Client vẽ tin có ảnh bằng markup của nó; `entities` để ngoài markup thì không tới được bộ
+    // đọc, và chú thích được lưu mà không ai bấm được. `!ptkt` bấm được suốt vì nó vốn gửi rich,
+    // còn dòng giá thì không — đó là cả khác biệt, và là lỗi ở đây chứ không phải ở nền tảng.
+    const shaped = content.rich ? content : asRich(content);
+
     // Hình và chữ đi cùng một tin, chú thích gắn ngay trên chữ ấy.
     //
     // Từ 16/09/2026 cả web lẫn ứng dụng vẽ chữ của tin có ảnh bằng đúng bộ đọc của tin chữ, nên
@@ -767,12 +786,24 @@ export async function run(token, {
     // Ai đọc bằng ứng dụng bản cũ hơn thì dòng giá của họ là chữ thường, không bấm được. Không
     // tránh được: một tin nhắn được vẽ bằng phiên bản của người mở nó, và lúc gửi thì chưa có
     // người đọc nào để mà hỏi.
-    const whole = await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId);
+    const whole = await sayWithTerms(conversationId, shaped, replyToMessageId, onlyForUserId);
     if (whole.sent) return whole.sent;
 
     // Máy chủ không nhận hình thì chữ vẫn đi, kèm một dòng nói ra điều đó.
-    const { image, ...words } = content;
+    const { image, ...words } = shaped;
     return (await sayWithTerms(conversationId, withoutPicture(words), replyToMessageId, onlyForUserId)).sent;
+  }
+
+  /// Chữ trơn thành một khối rich, mang theo chú thích đã gắn sẵn. Tin không có ảnh thì không cần:
+  /// ở đó `entities` đi thẳng vào bộ đọc như thường.
+  function asRich(content) {
+    const { entities, ...rest } = content;
+    return {
+      ...rest,
+      rich: {
+        blocks: [{ type: 'paragraph', text: content.text, ...(entities?.length ? { entities } : {}) }],
+      },
+    };
   }
 
   /**
