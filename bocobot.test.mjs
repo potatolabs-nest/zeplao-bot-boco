@@ -288,6 +288,42 @@ function stubTechnical({ broken = false } = {}) {
   };
 }
 
+/**
+ * Nguồn hồ sơ doanh nghiệp giả.
+ *
+ * Mặc định của `run` là nguồn thật, nên khung test phải luôn truyền cái này vào: một bộ test gọi
+ * ra Vietcap là một bộ test đỏ khi mất mạng, và là một bộ test nện vào feed của người khác mỗi lần
+ * ai đó chạy `npm test`.
+ */
+function stubCompany({ broken = false, quiet = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async profile(symbol) {
+      calls.push(symbol);
+      if (broken) throw new Error('nguồn hồ sơ chết');
+      if (quiet) return null;
+      return {
+        symbol,
+        nameVi: `Công ty Cổ phần ${symbol}`,
+        nameEn: `${symbol} Joint Stock Company`,
+        exchange: 'HOSE',
+        sector: 'Bất động sản',
+        marketCap: 1873015585317700,
+        shares: 7762186429,
+        foreignRoom: 48,
+        foreignHeld: 3.2,
+        freeFloat: 30,
+        listed: '19/09/2007',
+        low52: 66.7,
+        high52: 265,
+        volume20: 6071050,
+        about: 'Một công ty có thật trong bài test này.',
+      };
+    },
+  };
+}
+
 function pickPeriod(period) {
   if (!period) return null;
   return {
@@ -310,7 +346,7 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
-    results = null,
+    results = null, company = stubCompany(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [],
   } = {},
 ) {
@@ -327,6 +363,7 @@ async function withBot(
     heatmap,
     technical,
     results,
+    company,
     statePath,
     at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
   });
@@ -614,6 +651,41 @@ test('kỳ hạn chart được đọc động từ số và đơn vị', () => 
     { key: '5n', count: 5, unit: 'y', label: '5 năm', intraday: false, limit: null },
   );
   assert.equal(parseChartPeriod('21y'), null);
+});
+
+test('bấm vào mã trong dòng giá là mở hồ sơ doanh nghiệp', async () => {
+  const company = stubCompany();
+  const { sent } = await withBot([update({ text: '/vic', command: 'vic' })], { company });
+
+  assert.deepEqual(company.calls, ['VIC']);
+  const view = (sent[0].entities ?? []).find((one) => one.view === 'company');
+  assert.ok(view, 'dòng giá phải mang một view hồ sơ');
+  assert.equal(view.type, 'view');
+  assert.equal(sent[0].text.slice(view.offset, view.offset + view.length), 'VIC');
+  assert.equal(view.data.title, 'VIC — Công ty Cổ phần VIC');
+  assert.deepEqual(view.data.rows[0], ['Sàn', 'HOSE']);
+  assert.ok(view.data.rows.some(([label, value]) => label === 'Vốn hoá' && value === '1.873.016 tỷ đồng'));
+});
+
+test('nguồn hồ sơ chết thì vẫn có giá, chỉ là không bấm vào mã được', async () => {
+  // Hồ sơ là phần thêm vào một dòng giá. Người ta hỏi giá.
+  const { sent } = await withBot(
+    [update({ text: '/vic', command: 'vic' })],
+    { company: stubCompany({ broken: true }) },
+  );
+  assert.match(sent[0].text, /^VIC 256,1/);
+  assert.equal((sent[0].entities ?? []).some((one) => one.view === 'company'), false);
+});
+
+test('mã không tra được giá thì không mở hồ sơ ra', async () => {
+  // Dòng của nó là một lời xin lỗi, không phải chỗ để bấm vào.
+  const company = stubCompany();
+  const { sent } = await withBot(
+    [update({ text: '/gia vic zzz', command: 'gia', commandArgs: 'vic zzz' })],
+    { market: stubMarket({ listed: ['VIC'] }), company },
+  );
+  assert.deepEqual(company.calls, ['VIC']);
+  assert.match(sent[0].text, /ZZZ — không có dữ liệu/);
 });
 
 test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', async () => {

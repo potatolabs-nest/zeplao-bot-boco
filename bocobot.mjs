@@ -45,7 +45,8 @@ import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
-import { refusalCode, refusedForViews, withTerms } from './market/glossary.mjs';
+import { companyCards, companyEntities, vietcapCompany } from './market/company.mjs';
+import { refusalCode, refusedForViews, withoutViews, withTerms } from './market/glossary.mjs';
 import { publishWidget } from './widget.mjs';
 
 /// Nơi nền tảng bot ở. Tên riêng, không phải `kuku.vn` — bot là mã của bên thứ ba, và giữ nó
@@ -458,6 +459,7 @@ export async function run(token, {
   heatmap = marketHeatmap({ at }),
   technical = technicalAnalysis(),
   results = vietcapResults(),
+  company = vietcapCompany(),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -706,19 +708,25 @@ export async function run(token, {
     const text = reply(quotes, listing, at());
     console.log(`${listing.join(' ')} -> ${found.size} mã`);
 
+    // Bấm vào mã là mở hồ sơ doanh nghiệp — tên đầy đủ, sàn, ngành, vốn hoá. Chỉ những mã tra được
+    // giá: dòng của một mã không có dữ liệu là một lời xin lỗi, không phải chỗ để mở hồ sơ ra.
+    const cards = await companyCards(company, listing.filter((symbol) => found.has(symbol)));
+    const views = companyEntities(text, cards);
+    const said = views.length ? { text, entities: views } : { text };
+
     if (asked.strict && asked.addressed && listing.length === 1 && found.has(listing[0])) {
       try {
         const chartAsked = askedChartFor(message);
         const period = chartAsked?.symbol === listing[0] ? chartAsked.period : undefined;
         const rich = await chart.rich(listing[0], quotes.find((quote) => quote.symbol === listing[0]), period);
-        await say(message.conversationId, withRich(text, rich), replyTo, onlyForUserId);
+        await say(message.conversationId, withRich(said, rich), replyTo, onlyForUserId);
         return;
       } catch (problem) {
         console.error(String(problem));
       }
     }
 
-    await say(message.conversationId, text, replyTo, onlyForUserId);
+    await say(message.conversationId, said, replyTo, onlyForUserId);
   }
 
   /**
@@ -760,10 +768,11 @@ export async function run(token, {
    */
   async function sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId) {
     const marked = withTerms(content);
+    const bare = withoutViews(content);
     const first = await send(conversationId, marked, replyToMessageId, onlyForUserId);
-    if (first.sent || marked === content || !refusedForViews(first.problem)) return first;
+    if (first.sent || (marked === content && bare === content) || !refusedForViews(first.problem)) return first;
     widgetTrouble = refusalCode(first.problem) ?? 'view_refused';
-    return send(conversationId, content, replyToMessageId, onlyForUserId);
+    return send(conversationId, bare, replyToMessageId, onlyForUserId);
   }
 
   /**

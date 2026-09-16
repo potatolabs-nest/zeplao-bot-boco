@@ -1,5 +1,6 @@
 {
   "views": {
-    "term": { "entry": "term.html", "as": "popover", "width": 320, "height": 240 }
+    "term": { "entry": "term.html", "as": "popover", "width": 320, "height": 240 },
+    "company": { "entry": "company.html", "as": "popover", "width": 340, "height": 320 }
   }
 }

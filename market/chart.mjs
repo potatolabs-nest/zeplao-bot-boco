@@ -243,15 +243,20 @@ function withQuote(session, quote) {
  * `say` đọc dấu ấy để biết tin này đi liền một mảnh. Có thân bài (PTKT, bản đồ nhiệt) thì chữ là
  * thứ để đọc và để bấm vào thuật ngữ, và chỗ ấy hình phải đi riêng.
  */
-export function withRich(text, rich) {
-  if (!rich?.blocks?.length && !rich?.image) return { text };
-  if (!rich.blocks?.length) return { text, image: rich.image };
+export function withRich(content, rich) {
+  const words = typeof content === 'string' ? { text: content } : { ...content };
+  if (!rich?.blocks?.length && !rich?.image) return words;
+  if (!rich.blocks?.length) return { ...words, image: rich.image };
+
+  // Nền tảng không nhận `entities` bên cạnh `rich`, nên chú thích đã gắn sẵn trên chữ phải theo
+  // chữ vào trong khối, không bị bỏ lại ở ngoài.
+  const { entities, ...rest } = words;
   return {
-    text,
+    ...rest,
     ...(rich.image ? { image: rich.image } : {}),
     rich: {
       blocks: [
-        { type: 'paragraph', text },
+        { type: 'paragraph', text: words.text, ...(entities?.length ? { entities } : {}) },
         ...rich.blocks,
       ],
     },

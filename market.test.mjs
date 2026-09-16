@@ -11,6 +11,9 @@ import {
 } from './market/quote.mjs';
 import { withCache } from './market/vps.mjs';
 import { looksLikeCode, tokensIn, makeGuard } from './market/symbols.mjs';
+import {
+  companyCard, companyCards, companyEntities, companyOf, plainText, vietcapCompany,
+} from './market/company.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -335,4 +338,86 @@ test('mọi nguồn cùng chết thì phải ném, vì im lặng lúc này là n
 
 test('mã không nguồn nào có thì không phải là lỗi', async () => {
   assert.deepEqual(await chain(source('a'), source('b')).quotes(['ZZZ']), []);
+});
+
+// ---- hồ sơ doanh nghiệp ----------------------------------------------------------------------
+
+const VIETCAP_VIC = {
+  ticker: 'VIC', organCode: 'VIC', comGroupCode: 'VNINDEX',
+  viOrganName: 'Tập đoàn Vingroup - Công ty CP',
+  enOrganName: 'VinGroup Joint Stock Company',
+  sectorVn: 'Bất động sản',
+  marketCap: 1873015585317700, issueShare: 7762186429,
+  maximumForeignPercentage: 0.48017596, foreignerPercentage: 0.03152865, freeFloatPercentage: 0.2999999999,
+  listingDate: '2007-09-19T00:00:00',
+  lowestPrice1Year: 66700, highestPrice1Year: 265000, averageMatchVolume1Month: 6071050,
+  profile: '<div style="FONT-FAMILY: Arial;">T&#7853;p đo&agrave;n Vingroup - C&ocirc;ng ty Cổ phần (VIC)&nbsp;th&agrave;nh lập năm 2002.</div>',
+};
+
+test('bản ghi Vietcap thành hồ sơ doanh nghiệp', () => {
+  const profile = companyOf(VIETCAP_VIC);
+  assert.equal(profile.symbol, 'VIC');
+  assert.equal(profile.exchange, 'HOSE');
+  assert.equal(profile.foreignRoom, 48);
+  assert.equal(profile.foreignHeld, 3.2);
+  assert.equal(profile.low52, 66.7);            // giá của nguồn tính bằng đồng, bot nói nghìn đồng
+  assert.equal(profile.listed, '19/09/2007');   // đọc thẳng từ chuỗi, không lùi một ngày vì múi giờ
+
+  // Mã tổ chức không phải ticker — ACV là `ACVN` — nên hồ sơ nhận nhau bằng `ticker`, không bằng nó.
+  assert.equal(companyOf({ organCode: 'ACVN', viOrganName: 'Cảng Hàng không' }), null);
+  assert.equal(companyOf(null), null);
+});
+
+test('mô tả HTML của nguồn thành chữ đọc được', () => {
+  assert.equal(plainText('<div>C&ocirc;ng ty&nbsp;Technocom</div>'), 'Công ty Technocom');
+  assert.equal(plainText('T&#7853;p đo&agrave;n'), 'Tập đoàn');      // dấu thanh đi bằng thực thể số
+  assert.equal(plainText('&Ocirc;ng &amp; b&agrave;'), 'Ông & bà');   // chữ hoa suy từ chữ thường
+  assert.equal(plainText('<script>alert(1)</script>xin chào'), 'xin chào');
+  assert.equal(plainText('<p>một</p><p>hai</p>'), 'một hai');
+});
+
+test('thẻ hồ sơ không kê dòng mà nguồn không có', () => {
+  // Một thẻ ghi "Vốn hoá: —" trông như số liệu hỏng, trong khi sự thật là nguồn không nói.
+  const card = companyCard(companyOf({ ...VIETCAP_VIC, marketCap: null, sectorVn: '' }));
+  const labels = card.rows.map(([label]) => label);
+  assert.equal(labels.includes('Vốn hoá'), false);
+  assert.equal(labels.includes('Ngành'), false);
+  assert.ok(labels.includes('Sàn'));
+  assert.equal(companyCard(null), null);
+
+  const full = companyCard(companyOf(VIETCAP_VIC));
+  assert.equal(full.title, 'VIC — Tập đoàn Vingroup - Công ty CP');
+  assert.ok(full.rows.some(([label, value]) => label === 'Vốn hoá' && value === '1.873.016 tỷ đồng'));
+  assert.ok(full.rows.some(([label, value]) => label === 'Room ngoại' && value === '48% · đang nắm 3,2%'));
+});
+
+test('entity hồ sơ không dính vào chữ bên cạnh và không đè entity khác', () => {
+  const cards = new Map([['VIC', companyCard(companyOf(VIETCAP_VIC))]]);
+  assert.deepEqual(companyEntities('VICEM chưa niêm yết', cards), []);
+  assert.deepEqual(companyEntities('VIC 241,3', cards, [{ offset: 0, length: 3 }]), []);
+
+  const [view] = companyEntities('Giá VIC hôm nay', cards);
+  assert.equal(view.view, 'company');
+  assert.deepEqual([view.offset, view.length], [4, 3]);
+});
+
+test('hồ sơ hỏi một lần rồi nhớ, và mã lạ trả về 200 kèm data rỗng chứ không phải 404', async () => {
+  let asked = 0;
+  const source = vietcapCompany({
+    async fetchImpl(url) {
+      asked++;
+      const known = String(url).endsWith('/VIC');
+      return new Response(JSON.stringify({ data: known ? VIETCAP_VIC : null }));
+    },
+  });
+
+  assert.equal((await source.profile('vic')).symbol, 'VIC');
+  await source.profile('VIC');
+  assert.equal(asked, 1, 'hỏi lại một mã vừa hỏi là nện vào feed của người khác');
+  assert.equal(await source.profile('ZZZ'), null);
+});
+
+test('nguồn hồ sơ chậm thì câu trả lời vẫn đi, không đợi', async () => {
+  const stuck = { profile: () => new Promise(() => {}) };
+  assert.equal((await companyCards(stuck, ['VIC'], { waitMs: 20 })).size, 0);
 });

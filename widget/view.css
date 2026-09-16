@@ -102,3 +102,49 @@ body {
 
 .card.waiting h1,
 .card.waiting .body { color: var(--muted); }
+
+
+/* ---- company: tên công ty, rồi các con số thành hai cột ------------------------------- */
+
+.subtitle {
+  margin: -2px 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Nhãn co theo chữ dài nhất, số chiếm phần còn lại: mỗi dòng là một cặp, và hai cột thẳng hàng
+   mà không phải đoán trước "Cổ phiếu lưu hành" rộng bao nhiêu. */
+/* `minmax(0, …)` ở cả hai cột, không phải `auto 1fr`: cột mặc định không chịu co xuống dưới bề
+   rộng nội dung, nên một con số dài — "7.762.186.429" — đẩy cả bảng rộng hơn thẻ và cột phải trôi
+   ra ngoài màn hình, đúng như thẻ đầu tiên dựng thử. */
+.rows {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.rows dt {
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.rows dd {
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.about {
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}

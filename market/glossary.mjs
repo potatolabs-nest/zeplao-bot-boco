@@ -176,6 +176,35 @@ export function withTerms(content, glossary = GLOSSARY) {
   return views.length ? { ...content, entities: [...(content.entities ?? []), ...views] } : content;
 }
 
+/**
+ * Cùng nội dung ấy, không còn view nào.
+ *
+ * Đường lui khi máy chủ chối tin vì chính phần chú thích. Phải bỏ **mọi** view chứ không chỉ mấy
+ * cái `withTerms` vừa gắn: dòng giá còn mang sẵn view hồ sơ doanh nghiệp từ trước, và gửi lại
+ * nguyên si thứ vừa bị chối thì người hỏi không nhận được gì cả.
+ */
+export function withoutViews(content) {
+  if (!content || typeof content !== 'object') return content;
+  const drop = (entities) => (entities ?? []).filter((entity) => entity?.type !== 'view');
+
+  if (Array.isArray(content.rich?.blocks)) {
+    const blocks = content.rich.blocks.map((block) => {
+      if (!block?.entities?.length) return block;
+      const kept = drop(block.entities);
+      if (kept.length === block.entities.length) return block;
+      const { entities, ...bare } = block;
+      return kept.length ? { ...bare, entities: kept } : bare;
+    });
+    return { ...content, rich: { ...content.rich, blocks } };
+  }
+
+  if (!content.entities?.length) return content;
+  const kept = drop(content.entities);
+  if (kept.length === content.entities.length) return content;
+  const { entities, ...bare } = content;
+  return kept.length ? { ...bare, entities: kept } : bare;
+}
+
 /// Lời từ chối nói rằng chính phần chú thích là thứ không gửi được — gửi lại không kèm nó thì có thể qua.
 const VIEW_REFUSALS = [
   'bot_has_no_widget', 'views_need_uploaded_widget', 'view_not_found', 'view_name_invalid',
