@@ -115,11 +115,13 @@ const hasViewEntity = (body) => [...(body.entities ?? []), ...(body.rich?.blocks
   .some((entity) => entity?.type === 'view')
   || (body.keyboard?.rows ?? []).flat().some((button) => button?.view);
 
-async function stubApi(updates, { refuseImages = false, refuseViews = false, widgetAnswers = [] } = {}) {
+async function stubApi(updates, { refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null } = {}) {
   const sent = [];
   const registered = [];
   /// Mọi lần khai báo, theo thứ tự — `registered` chỉ giữ lần cuối, mà cái hỏng nằm ở lần đầu.
   const declares = [];
+  /// Số lần bot đọc lại danh sách lệnh sau khi khai — mốc để biết nó đã biết kết quả.
+  let readBack = 0;
   const widgets = [];
   let queue = [...updates];
 
@@ -133,7 +135,12 @@ async function stubApi(updates, { refuseImages = false, refuseViews = false, wid
         response.end(JSON.stringify(value));
       };
 
-      if (path === '/getMe') return answer(ME);
+      // Kèm đúng danh sách lệnh đã khai: bot đọc lại chỗ này để biết máy chủ có giữ đủ không.
+      // `keepCommands` là máy chủ giữ thiếu — đúng thứ đang bị nghi ngoài đời thật.
+      if (path === '/getMe') {
+        if (declares.length) readBack += 1;
+        return answer({ ...ME, commands: keepCommands === null ? registered : registered.slice(0, keepCommands) });
+      }
       if (path === '/setCommands') {
         const { commands } = JSON.parse(body);
         registered.splice(0, registered.length, ...commands);
@@ -162,6 +169,12 @@ async function stubApi(updates, { refuseImages = false, refuseViews = false, wid
         return answer({ version: 1, unchanged: false, views: { term: { entry: 'term.html', as: 'popover' } } });
       }
       if (path === '/getUpdates') {
+        // Giữ tin lại tới khi bot khai báo xong, khi bài test đang kiểm chính kết quả khai báo:
+        // thật thì người ta gõ sau lúc bot khởi động, còn ở đây hai việc chạy đua nhau.
+        if (keepCommands !== null && !readBack) {
+          await wait(20);
+          return answer([]);
+        }
         if (queue.length) {
           const batch = queue;
           queue = [];
@@ -352,10 +365,10 @@ async function withBot(
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
     results = null, company = stubCompany(),
-    expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [],
+    expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
   } = {},
 ) {
-  const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers });
+  const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers, keepCommands });
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
 
@@ -1325,6 +1338,14 @@ test('hướng dẫn nói ra bot đã khai báo được bao nhiêu lệnh', asy
   // chỗ duy nhất nhìn được vì sao một lệnh không tới nơi.
   const { sent } = await withBot([update({ text: '@bocobot' })]);
   assert.match(sent[0].text, /\(Gọi thẳng được \d+ mã bằng \/mã\.?\)|\(Chưa /);
+});
+
+test('máy chủ giữ thiếu lệnh thì hướng dẫn nói ra, kèm lệnh đầu tiên bị mất', async () => {
+  // Nhận đủ mà giữ thiếu là hai chuyện khác nhau, và chúng cần hai người khác nhau đi sửa. Bot đọc
+  // lại danh sách từ `getMe` thay vì tin câu trả lời của chính lệnh ghi, nên nói được đúng chuyện
+  // thứ hai — thứ mà `/vgc` im lặng trong khi `/vcg` chạy đang ám chỉ.
+  const { sent } = await withBot([update({ text: '@bocobot' })], { keepCommands: 3, settle: 400 });
+  assert.match(sent[0].text, /máy chủ chỉ giữ 3 — mất \d+, từ "/);
 });
 
 test('chú thích bị từ chối thì hướng dẫn nói ra mã lỗi', async () => {

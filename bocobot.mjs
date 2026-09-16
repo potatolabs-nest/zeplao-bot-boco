@@ -506,6 +506,24 @@ export async function run(token, {
       const ignored = answer?.details?.ignored?.length ?? 0;
       const symbols = Math.max(0, kept - commandsFor(me, []).length);
       commandsNote = `Gọi thẳng được ${symbols} mã bằng /mã${ignored ? `, máy chủ bỏ ${ignored} lệnh` : ''}`;
+
+      // Rồi đọc lại danh sách từ máy chủ, chứ không tin câu trả lời của chính lệnh ghi.
+      //
+      // Hai thứ ấy khác nhau, và chỗ khác nhau là chỗ đang hỏng: máy chủ nhận đủ 882 lệnh, báo
+      // không bỏ lệnh nào, mà `/vgc` vẫn không tới bot trong khi `/vcg` — cách đó 33 lệnh trong
+      // cùng một lần khai — thì tới. Đọc lại là cách duy nhất phân biệt "máy chủ không lưu" với
+      // "máy chủ lưu rồi nhưng không giao", và hai cái đó cần hai người khác nhau đi sửa.
+      const stored = await call('getMe')
+        .then((mine) => (Array.isArray(mine?.commands) ? mine.commands.map((one) => one.command) : null))
+        .catch(() => null);
+      if (stored) {
+        const held = new Set(stored);
+        const lost = commands.map((one) => one.command).filter((name) => !held.has(name));
+        console.log(`máy chủ giữ ${stored.length} lệnh, thiếu ${lost.length}`);
+        if (lost.length) {
+          commandsNote = `Khai ${commands.length} lệnh, máy chủ chỉ giữ ${stored.length} — mất ${lost.length}, từ "${lost[0]}"`;
+        }
+      }
       console.log(`khai báo ${commands.length} lệnh, máy chủ giữ ${kept}${ignored ? `, bỏ ${ignored}` : ''}`);
     } catch (problem) {
       commandsNote = `Chưa khai báo được lệnh: ${String(problem).slice(0, 160)}`;
