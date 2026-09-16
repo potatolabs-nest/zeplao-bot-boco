@@ -427,7 +427,8 @@ test('gọi tên mà không có mã nào thì được nói cho biết', async (
 test('gọi bot trống thì trả hướng dẫn', async () => {
   const { sent } = await withBot([update({ text: '@bocobot' })]);
 
-  assert.equal(sent[0].text, HELP);
+  // Hướng dẫn đứng trước, dòng trạng thái khai báo lệnh đi sau — nên so bằng `startsWith`.
+  assert.ok(sent[0].text.startsWith(HELP));
   assert.match(sent[0].text, /!vboa bds — bất động sản/);
   assert.match(sent[0].text, /\/gex 3m — chart 3 tháng/);
   assert.match(sent[0].text, /Gõ \/ thì cả nhóm cùng xem, gõ ! thì chỉ bạn thấy/);
@@ -437,7 +438,7 @@ test('gọi bot trống thì trả hướng dẫn', async () => {
 test('gọi bot help thì trả hướng dẫn thay vì đọc HELP như mã', async () => {
   const { sent } = await withBot([update({ text: '@bocobot help -v' })]);
 
-  assert.equal(sent[0].text, HELP);
+  assert.ok(sent[0].text.startsWith(HELP));
   assert.equal(sent[0].onlyForUserId, 'u1');
   assert.doesNotMatch(sent[0].text, /HELP — không có dữ liệu/);
 });
@@ -1106,7 +1107,7 @@ test('lệnh khai báo là tên của chính bot, không viết cứng bocobot',
 
 test('!help@bocobot và !bocobot trả hướng dẫn, còn !help nói giữa phòng thì không', async () => {
   const { sent } = await withBot([update({ text: '!help@bocobot', command: 'help', commandArgs: null, commandPrefix: '!', private: true })]);
-  assert.equal(sent[0].text, HELP);
+  assert.ok(sent[0].text.startsWith(HELP));
   assert.deepEqual(askedHelpFor(message({ text: '!bocobot' }), ME), { addressed: true });
   assert.equal(askedHelpFor(message({ text: '!help' }), ME), null);
 });
@@ -1282,6 +1283,14 @@ test('widget cũ có view khác thì tải lại với allowViewRemoval', async 
   assert.equal(widgets.length, 2);
   assert.doesNotMatch(widgets[0].url, /allowViewRemoval/);
   assert.match(widgets[1].url, /allowViewRemoval=true/);
+});
+
+test('hướng dẫn nói ra bot đã khai báo được bao nhiêu lệnh', async () => {
+  // Khai báo lệnh là việc vô hình: nó xong hay hỏng lúc khởi động, còn người dùng chỉ thấy `/vgc`
+  // im lặng. Ai đang hỏi giá trong một phòng chat thì không có log của pod trong tay, nên đây là
+  // chỗ duy nhất nhìn được vì sao một lệnh không tới nơi.
+  const { sent } = await withBot([update({ text: '@bocobot' })]);
+  assert.match(sent[0].text, /\(Gọi thẳng được \d+ mã bằng \/mã\.?\)|\(Chưa /);
 });
 
 test('chú thích bị từ chối thì hướng dẫn nói ra mã lỗi', async () => {

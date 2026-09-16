@@ -483,13 +483,21 @@ export async function run(token, {
 
   // Khai báo đúng `commandsFor(me)`, thay nguyên si danh sách cũ. Lần đầu chỉ các lệnh chính, để
   // bot nghe được ngay; các mã vào ngay sau khi xếp hạng xong, và lại vào mỗi vài tiếng sau đó.
+  // Khai báo lệnh là việc vô hình: nó xảy ra lúc khởi động, và người dùng chỉ thấy hậu quả — `/vgc`
+  // im lặng — chứ không thấy nguyên nhân. Nên kết quả lần khai gần nhất được giữ lại và hiện ở cuối
+  // hướng dẫn, đúng như mã lỗi widget: không đọc được log của pod thì đó là chỗ duy nhất nhìn thấy.
+  let commandsNote = 'Chưa khai báo xong danh sách mã';
   const declare = async (symbols) => {
     const commands = commandsFor(me, symbols);
     try {
       const answer = await call('setCommands', { commands });
+      const kept = answer?.commands?.length ?? commands.length;
       const ignored = answer?.details?.ignored?.length ?? 0;
-      console.log(`khai báo ${commands.length} lệnh${ignored ? `, máy chủ bỏ ${ignored}` : ''}`);
+      const symbols = Math.max(0, kept - commandsFor(me, []).length);
+      commandsNote = `Gọi thẳng được ${symbols} mã bằng /mã${ignored ? `, máy chủ bỏ ${ignored} lệnh` : ''}`;
+      console.log(`khai báo ${commands.length} lệnh, máy chủ giữ ${kept}${ignored ? `, bỏ ${ignored}` : ''}`);
     } catch (problem) {
+      commandsNote = `Chưa khai báo được lệnh: ${String(problem).slice(0, 160)}`;
       console.error(String(problem));
     }
   };
@@ -521,7 +529,10 @@ export async function run(token, {
   // không nên phải chờ việc đó.
   const rank = () => liquidSymbols(market)
     .then((symbols) => declare(symbols))
-    .catch((problem) => console.error(`không xếp hạng được mã để khai báo lệnh: ${problem}`));
+    .catch((problem) => {
+      commandsNote = `Chưa xếp hạng được mã: ${String(problem).slice(0, 160)}`;
+      console.error(`không xếp hạng được mã để khai báo lệnh: ${problem}`);
+    });
   rank();
 
   // Và xếp lại mỗi vài tiếng, không phải chỉ lúc khởi động: một tiến trình chạy hàng tháng mà chỉ
@@ -587,7 +598,11 @@ export async function run(token, {
 
     const helpAsked = !message.priceOnly && askedHelpFor(message, me);
     if (helpAsked) {
-      const help = widgetTrouble ? `${HELP}\n\n(Chú thích thuật ngữ chưa bật được: ${widgetTrouble})` : HELP;
+      const help = [
+        HELP,
+        widgetTrouble ? `(Chú thích thuật ngữ chưa bật được: ${widgetTrouble})` : null,
+        `(${commandsNote})`,
+      ].filter(Boolean).join('\n\n');
       await say(message.conversationId, help, replyTo, onlyForUserId);
       return;
     }
