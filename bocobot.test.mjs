@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedTechnicalFor, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
   privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
@@ -1330,6 +1330,25 @@ test('widget cũ có view khác thì tải lại với allowViewRemoval', async 
   assert.equal(widgets.length, 2);
   assert.doesNotMatch(widgets[0].url, /allowViewRemoval/);
   assert.match(widgets[1].url, /allowViewRemoval=true/);
+});
+
+test('cả bảng niêm yết đều được khai, mã giao dịch nhiều tiền nhất đứng trước', async () => {
+  // Cái lọc "phải có khối lượng" cũ biến bảng lệnh thành thứ đổi theo phiên: một mã ít giao dịch
+  // hôm nay gọi được bằng `/`, hôm sau thì không, mà chẳng ai đổi gì cả. Nó có lý khi bảng lệnh
+  // chỉ có 100 ô và xếp hạng cũng là chọn lọc; giờ trần là 2.000 nên không phải bỏ ai lại.
+  const market = {
+    async universe() { return ['AAA', 'BBB', 'CCC', 'x']; },
+    async quotes() {
+      return [
+        { symbol: 'AAA', price: 10, volume: 100 },
+        { symbol: 'CCC', price: 10, volume: 900 },
+        { symbol: 'BBB', price: 12, volume: 0 },   // hôm nay không ai mua bán
+      ];
+    },
+  };
+
+  assert.deepEqual(await boardSymbols(market), ['CCC', 'AAA', 'BBB']);
+  assert.deepEqual(await boardSymbols(market, 2), ['CCC', 'AAA']);   // hết chỗ thì mã ế rơi trước
 });
 
 test('hướng dẫn nói ra bot đã khai báo được bao nhiêu lệnh', async () => {

@@ -111,8 +111,8 @@ export function commandsFor(me, symbols = []) {
     words.add(one.command);
     commands.push(one);
   }
-  // Mã thanh khoản cao nhất, mỗi mã một lệnh, cho tới khi hết 100 ô: `/vic` gửi cho cả nhóm, `!vic`
-  // chỉ người gõ thấy. Mã ngoài danh sách vẫn đi bằng `/view` và `!view`.
+  // Mỗi mã một lệnh, mã giao dịch nhiều tiền nhất trước, cho tới khi hết chỗ: `/vic` gửi cho cả
+  // nhóm, `!vic` chỉ người gõ thấy. Mã ngoài danh sách vẫn đi bằng `/view` và `!view`.
   for (const symbol of symbols) {
     if (commands.length >= MOST_COMMANDS) break;
     const word = String(symbol ?? '').toLowerCase();
@@ -124,19 +124,31 @@ export function commandsFor(me, symbols = []) {
 }
 
 /**
- * Những mã giao dịch nhiều tiền nhất phiên gần nhất, nhiều nhất trước.
+ * Cả bảng niêm yết, mã giao dịch nhiều tiền nhất đứng trước.
  *
- * Xếp theo giá × khối lượng như bản đồ nhiệt, không viết tay: danh sách được khai báo làm lệnh nên
- * nó phải đổi theo thị trường, không theo trí nhớ của ai.
+ * Thứ tự theo giá × khối lượng như bản đồ nhiệt, không viết tay: nó phải đổi theo thị trường chứ
+ * không theo trí nhớ của ai. Nhưng **không loại mã nào**.
+ *
+ * Hồi bảng lệnh chỉ có 100 ô thì xếp hạng cũng chính là chọn lọc, và một mã không khớp lệnh hôm ấy
+ * là một mã bị bỏ lại. Cái lọc ấy sống sót qua lần nâng trần và thành ra vô lý: 1.523 mã niêm yết
+ * mà chỉ 876 mã gọi được bằng `/`, phần rơi ra gần hết là UPCoM ít giao dịch — đúng những mã mà
+ * người ta cần bot tra hộ nhất, vì không ai nhớ giá của chúng. Trần giờ là 2.000, thừa chỗ cho cả
+ * bảng, nên mã không có khối lượng xuống cuối hàng thay vì biến mất.
  */
-export async function liquidSymbols(market, count = MOST_COMMANDS) {
-  const universe = await market.universe();
+export async function boardSymbols(market, count = MOST_COMMANDS) {
+  const universe = (await market.universe())
+    .map((symbol) => String(symbol ?? '').toUpperCase())
+    .filter((symbol) => looksLikeCode(symbol));
   const quotes = await market.quotes(universe);
-  return quotes
+
+  const ranked = quotes
     .filter((quote) => quote && quote.price > 0 && quote.volume > 0 && looksLikeCode(quote.symbol))
     .sort((a, b) => b.price * b.volume - a.price * a.volume)
-    .slice(0, count)
-    .map((quote) => quote.symbol);
+    .map((quote) => String(quote.symbol).toUpperCase());
+
+  const seen = new Set(ranked);
+  const quiet = universe.filter((symbol) => !seen.has(symbol)).sort();
+  return [...ranked, ...quiet].slice(0, count);
 }
 
 export const SORRY = {
@@ -561,7 +573,7 @@ export async function run(token, {
     });
   // Rồi thêm các mã thanh khoản cao nhất, không đợi: xếp hạng cần giá cả sàn, và các lệnh chính
   // không nên phải chờ việc đó.
-  const rank = () => liquidSymbols(market)
+  const rank = () => boardSymbols(market)
     .then((symbols) => declare(symbols))
     .catch((problem) => {
       commandsNote = `Chưa xếp hạng được mã: ${String(problem).slice(0, 160)}`;
