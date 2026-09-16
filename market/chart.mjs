@@ -4,7 +4,7 @@
 // giá mà thiếu thang giá thì khó đọc, phần này tự dựng một SVG an toàn rồi gửi qua field
 // `image.svg` của rich message.
 import { CHART, kindOf } from './dnse.mjs';
-import { count, money } from './quote.mjs';
+import { count, line, money } from './quote.mjs';
 
 const TIMEOUT_MS = 8000;
 const LOOKBACK_DAYS = 10;
@@ -171,35 +171,88 @@ export function rangeSession(symbol, data, period) {
   };
 }
 
+/**
+ * Chart của một mã, dựng sẵn để gửi kèm dòng giá.
+ *
+ * Trong phiên, tiêu đề hình **là chính dòng chữ** đi cùng tin nhắn — cùng `line(quote)` sinh ra cả
+ * hai — chứ không phải một phép tính riêng. Trước đây hình đo mức tăng giảm so với cây nến đầu
+ * phiên còn chữ đo so với giá tham chiếu, nên hôm nào mở cửa nhảy giá là hai con số cãi nhau
+ * ngay trong một tin, và người đọc không có cách nào biết bên nào đúng.
+ *
+ * Số của phiên — mở, cao, thấp, tham chiếu — xuống dòng phụ ngay trong hình, không còn là một
+ * đoạn chữ riêng ở dưới: hỏi một mã thì nhận một tin, không phải ba mảnh.
+ */
 export function chartRich(session, quote) {
-  const direction = session.change > 0 ? 'tăng' : session.change < 0 ? 'giảm' : 'đi ngang';
-  const ranged = session.mode === 'range';
+  const shown = withQuote(session, quote);
+  const ranged = shown.mode === 'range';
+  const moved = shown.change > 0 ? 'tăng' : shown.change < 0 ? 'giảm' : 'đi ngang';
   const title = ranged
-    ? `${session.symbol} ${session.periodLabel} đến ${formatDay(session.day)} · ${direction} ${signed(session.change)} (${signed(session.percent)}%)`
-    : `${session.symbol} trong phiên ${formatDay(session.day)} · ${direction} ${signedDong(dong(session.change))} (${signed(session.percent)}%)`;
+    ? `${shown.symbol} ${shown.periodLabel} đến ${formatDay(shown.day)} · ${moved} ${signed(shown.change)} (${signed(shown.percent)}%)`
+    : line(quote) ?? `${shown.symbol} trong phiên ${formatDay(shown.day)} · ${moved} ${signedDong(dong(shown.change))} (${signed(shown.percent)}%)`;
+  // Trong phiên, cao thấp kèm mức lệch tính bằng đồng, đo theo đúng đường mốc mà phần trăm trên
+  // tiêu đề đo theo. Một mã hai mươi bảy nghìn nhúc nhích vài trăm đồng mà chỉ hiện "28,2" thì
+  // không ai thấy nó đã đi bao xa.
+  const mark = shown.baseline ?? shown.open;
+  const caption = ranged
+    ? `Đầu kỳ ${money(shown.open)} · Cao ${money(shown.high)} · Thấp ${money(shown.low)} · Cuối kỳ ${money(shown.close)} · KL ${count(shown.volume)}`
+    : `${formatDay(shown.day)} · Mở ${money(shown.open)} · Cao ${money(shown.high)} (${signedDong(dong(shown.high - mark))}) · Thấp ${money(shown.low)} (${signedDong(dong(shown.low - mark))}) · TC ${money(mark)}`;
 
   return {
     image: {
       fileName: ranged
-        ? `${session.symbol.toLowerCase()}-${session.period}-${session.day}.svg`
-        : `${session.symbol.toLowerCase()}-${session.day}.svg`,
-      svg: chartSvg(session, quote, title),
+        ? `${shown.symbol.toLowerCase()}-${shown.period}-${shown.day}.svg`
+        : `${shown.symbol.toLowerCase()}-${shown.day}.svg`,
+      svg: chartSvg(shown, title, caption),
     },
-    blocks: [
-      ranged ? rangeStats(session) : intradayStats(session),
-    ],
   };
 }
 
+/**
+ * Phiên vẽ theo giá đang hỏi, không theo nến.
+ *
+ * Hai nguồn khác nhau: đường vẽ là nến của feed chart, còn dòng chữ là giá khớp của feed bảng
+ * giá. Điểm cuối được kéo về đúng giá ấy để đường kết thúc ở chỗ chữ nói nó kết thúc, và mốc
+ * tính tăng giảm trong phiên là giá tham chiếu — đúng cái mà `-1,03%` ở dòng chữ đo theo.
+ */
+function withQuote(session, quote) {
+  if (!quote?.traded) return session;
+
+  const ranged = session.mode === 'range';
+  const baseline = ranged ? session.open : (quote.reference > 0 ? quote.reference : session.open);
+  const close = quote.price;
+  const change = round(close - baseline);
+  const closes = [...session.closes];
+  closes[closes.length - 1] = round(close);
+
+  return {
+    ...session,
+    closes,
+    close,
+    baseline,
+    high: Math.max(session.high, close),
+    low: Math.min(session.low, close),
+    change,
+    percent: baseline > 0 ? round((change / baseline) * 100) : 0,
+  };
+}
+
+/**
+ * Chữ và hình thành một tin nhắn.
+ *
+ * Không có thân bài thì chữ chỉ là chú thích của hình — một dòng giá — nên gửi trần, không `rich`:
+ * `say` đọc dấu ấy để biết tin này đi liền một mảnh. Có thân bài (PTKT, bản đồ nhiệt) thì chữ là
+ * thứ để đọc và để bấm vào thuật ngữ, và chỗ ấy hình phải đi riêng.
+ */
 export function withRich(text, rich) {
   if (!rich?.blocks?.length && !rich?.image) return { text };
+  if (!rich.blocks?.length) return { text, image: rich.image };
   return {
     text,
     ...(rich.image ? { image: rich.image } : {}),
     rich: {
       blocks: [
         { type: 'paragraph', text },
-        ...(rich.blocks ?? []),
+        ...rich.blocks,
       ],
     },
   };
@@ -227,42 +280,31 @@ function rowsFrom(data) {
   })).filter((row) => Number.isFinite(row.time) && Number.isFinite(row.close) && row.close > 0);
 }
 
-function intradayStats(session) {
-  const baseline = session.open;
-  const highMove = dong(session.high - baseline);
-  const lowMove = dong(session.low - baseline);
-  return {
-    type: 'paragraph',
-    text: `Mở ${money(session.open)} · Cao ${money(session.high)} (${signedDong(highMove)}) · Thấp ${money(session.low)} (${signedDong(lowMove)}) · Đóng ${money(session.close)}`,
-  };
-}
-
-function rangeStats(session) {
-  return {
-    type: 'paragraph',
-    text: `Đầu kỳ ${money(session.open)} · Cao ${money(session.high)} · Thấp ${money(session.low)} · Cuối kỳ ${money(session.close)} · KL ${count(session.volume)}`,
-  };
-}
-
-function chartSvg(session, quote, title) {
+function chartSvg(session, title, caption) {
   const width = 720;
   const height = 420;
-  const plot = { left: 86, right: 26, top: 64, bottom: 58 };
+  const plot = { left: 86, right: 26, top: 84, bottom: 58 };
   const prices = session.closes.map(Number).filter(Number.isFinite);
-  const reference = session.mode !== 'range' && quote?.reference > 0 ? round(quote.reference) : null;
-  const floor = Math.min(session.low, ...prices, reference ?? session.low);
-  const ceiling = Math.max(session.high, ...prices, reference ?? session.high);
+  // Đường mốc là giá tham chiếu trong phiên, giá đầu kỳ với chart dài hạn — đúng con số mà mức
+  // tăng giảm trên tiêu đề đo theo. Nhờ vậy vùng tô nằm trên hay dưới đường mốc luôn cùng dấu với
+  // chữ; hồi mốc còn là cây nến đầu phiên thì một mã xanh vẫn vẽ ra vùng đỏ.
+  const baseline = round(session.baseline ?? session.open);
+  const floor = Math.min(session.low, ...prices, baseline);
+  const ceiling = Math.max(session.high, ...prices, baseline);
   const padding = Math.max((ceiling - floor) * 0.12, 0.05);
   const min = floor - padding;
   const max = ceiling + padding;
   const y = (price) => plot.top + ((max - price) / (max - min)) * (height - plot.top - plot.bottom);
   const x = (index) => plot.left + (index / Math.max(1, prices.length - 1)) * (width - plot.left - plot.right);
   const points = prices.map((price, index) => `${round(x(index))},${round(y(price))}`).join(' ');
-  const baselineY = y(session.open);
+  const baselineY = y(baseline);
   const area = `${plot.left},${baselineY} ${points} ${width - plot.right},${baselineY}`;
   const stroke = session.change > 0 ? '#16a34a' : session.change < 0 ? '#dc2626' : '#475569';
   const fill = session.change > 0 ? '#dcfce7' : session.change < 0 ? '#fee2e2' : '#e2e8f0';
-  const ticks = priceTicks(session);
+  // Hai mốc quá gần nhau thì chỉ vẽ mốc đầu: mã đi hẹp có tham chiếu sát giá thấp nhất, và hai
+  // nhãn chồng lên nhau đọc ra một con số thứ ba không có thật.
+  const ticks = priceTicks(session)
+    .filter((tick, index, all) => all.slice(0, index).every((other) => Math.abs(y(tick) - y(other)) >= 18));
   const timeLabels = axisLabels(session.labels);
 
   // Kích thước thật, không chỉ viewBox: một SVG không có width/height được trình duyệt vẽ ở cỡ mặc
@@ -270,7 +312,8 @@ function chartSvg(session, quote, title) {
   // như bản đồ nhiệt và hình PTKT.
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width * OUTPUT_SCALE}" height="${height * OUTPUT_SCALE}" viewBox="0 0 ${width} ${height}">
   <rect width="${width}" height="${height}" rx="22" fill="#f6fbf8"/>
-  <text x="${plot.left}" y="34" fill="#0f172a" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="20" font-weight="700">${escapeXml(title)}</text>
+  <text x="${plot.left}" y="36" fill="#0f172a" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="21" font-weight="700">${escapeXml(title)}</text>
+  <text x="${plot.left}" y="60" fill="#64748b" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="16">${escapeXml(caption)}</text>
   <line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${height - plot.bottom}" stroke="#94a3b8" stroke-width="2"/>
   <line x1="${plot.left}" y1="${height - plot.bottom}" x2="${width - plot.right}" y2="${height - plot.bottom}" stroke="#cbd5e1" stroke-width="1"/>
   ${ticks.map((tick) => `<g>
@@ -278,7 +321,6 @@ function chartSvg(session, quote, title) {
     <text x="${plot.left - 10}" y="${round(y(tick) + 5)}" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="17">${escapeXml(money(tick))}</text>
   </g>`).join('')}
   <line x1="${plot.left}" y1="${round(baselineY)}" x2="${width - plot.right}" y2="${round(baselineY)}" stroke="#94a3b8" stroke-width="3"/>
-  ${reference ? `<line x1="${plot.left}" y1="${round(y(reference))}" x2="${width - plot.right}" y2="${round(y(reference))}" stroke="#64748b" stroke-width="2" stroke-dasharray="8 8" opacity="0.65"/>` : ''}
   <polygon points="${area}" fill="${fill}" opacity="0.72"/>
   <polyline points="${points}" fill="none" stroke="${stroke}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   ${timeLabels.map((tick, index) => `<text x="${round(plot.left + index * ((width - plot.left - plot.right) / Math.max(1, timeLabels.length - 1)))}" y="${height - 22}" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="16">${escapeXml(tick)}</text>`).join('')}
@@ -286,7 +328,7 @@ function chartSvg(session, quote, title) {
 }
 
 function priceTicks(session) {
-  const values = [session.high, session.open, session.low].map(round);
+  const values = [session.high, session.baseline ?? session.open, session.low].map(round);
   return [...new Set(values)].sort((a, b) => b - a);
 }
 

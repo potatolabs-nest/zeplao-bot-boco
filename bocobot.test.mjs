@@ -632,24 +632,49 @@ test('hỏi một mã bằng dấu gọi thì kèm chart trong rich message', as
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!vix' })],
-    { market: stubMarket({ listed: ['VIX'] }), chart, expect: 2 },
+    { market: stubMarket({ listed: ['VIX'] }), chart, expect: 1 },
   );
 
-  // Hình một tin, chữ ngay sau: web không cho bấm thuật ngữ trên tin có hình.
+  // Một tin: dòng giá và hình cùng nhau. Hỏi một mã mà nhận ba mảnh — caption, chữ, rồi một đoạn
+  // số liệu nữa — là thứ đã phải bỏ; số của phiên nằm trong hình.
   assert.deepEqual(chart.calls.map((call) => call.symbol), ['VIX']);
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 1);
   assert.equal(sent[0].image.fileName, 'vix-2026-09-07.svg');
-  assert.equal(sent[0].text, '📈 VIX');
+  assert.match(sent[0].text, /^VIX 256,1/);
   assert.equal(sent[0].replyToMessageId, 'm1');
+  assert.equal(sent[0].rich, undefined);
   assert.match(sent[0].image.svg, /<svg [^>]*width="1440" height="840" viewBox="0 0 720 420"/);   // không bé tí
-  assert.match(sent[0].image.svg, /<line x1="86" y1="64" x2="86"/);
+  assert.match(sent[0].image.svg, /<line x1="86" y1="84" x2="86"/);
+  // Mốc là tham chiếu 13,1, không phải cây nến đầu phiên 13,2: giá thấp nhất phiên vẫn nằm trên
+  // tham chiếu nên hiện +50đ, và đó đúng là điều dòng chữ ▲ +2,29% đang nói.
+  assert.match(sent[0].image.svg, /Mở 13,2 · Cao 13,45 \(\+350đ\) · Thấp 13,15 \(\+50đ\) · TC 13,1/);
   assert.match(sent[0].image.svg, />13,45</);
-  assert.match(sent[0].image.svg, />13,2</);
+  assert.match(sent[0].image.svg, />13,1</);
   assert.match(sent[0].image.svg, />13,15</);
-  assert.match(sent[1].text, /^VIX 256,1/);
-  assert.equal(sent[1].image, undefined);
-  assert.equal(sent[1].rich.blocks[0].type, 'paragraph');
-  assert.match(sent[1].rich.blocks[1].text, /Cao 13,45 \(\+250đ\)/);
+});
+
+test('số trên hình và số trong chữ là một, kể cả khi mở cửa nhảy giá so với tham chiếu', () => {
+  // Đúng cái lỗi đã báo: TC 13,1 nhưng phiên mở ở 13,2. Đo theo cây nến đầu phiên ra +1,52%, đo
+  // theo tham chiếu — như dòng chữ vẫn đo — ra +2,29%. Hình từng nói số thứ nhất, chữ nói số thứ
+  // hai, trong cùng một tin nhắn.
+  const quote = normalize({ ...VIC, sym: 'VIX', r: 13.1, lastPrice: 13.4 });
+  const rich = chartRich({
+    symbol: 'VIX',
+    mode: 'intraday',
+    day: '2026-09-07',
+    labels: ['09:15', '09:20', '09:25'],
+    closes: [13.2, 13.35, 13.38],
+    open: 13.2,
+    close: 13.38,
+    high: 13.45,
+    low: 13.15,
+    change: 0.18,
+    percent: 1.36,
+  }, quote);
+
+  assert.match(rich.image.svg, />VIX 13,4 ▲ \+2,29%[^<]* · KL /);
+  assert.equal(rich.image.svg.includes('+1,36%'), false);
+  assert.equal(rich.blocks, undefined);   // không còn đoạn chữ rời ở dưới
 });
 
 test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async () => {
@@ -667,14 +692,15 @@ test('hỏi một mã kèm kỳ hạn thì chart nhận kỳ hạn đó', async 
   const chart = stubChart({ rich });
   const { sent } = await withBot(
     [update({ text: '!gex 1n' })],
-    { market: stubMarket({ listed: ['GEX'] }), chart, expect: 2 },
+    { market: stubMarket({ listed: ['GEX'] }), chart, expect: 1 },
   );
 
   assert.deepEqual(chart.calls.map((call) => [call.symbol, call.period]), [['GEX', '1n']]);
+  assert.equal(sent.length, 1);
   assert.equal(sent[0].image.fileName, 'gex-1n-2026-09-08.svg');
-  assert.equal(sent[0].text, '📈 GEX 1n');
+  assert.match(sent[0].text, /^GEX /);
   assert.match(sent[0].image.svg, /GEX 1 năm đến 08\/09\/2026/);
-  assert.match(sent[1].rich.blocks[1].text, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
+  assert.match(sent[0].image.svg, /Đầu kỳ 18 · Cao 26,8 · Thấp 17,8 · Cuối kỳ 26,2 · KL 6\.000/);
 });
 
 test('hỏi chart với -v thì chỉ gửi cho người gõ', async () => {
@@ -738,7 +764,7 @@ test('chart 1d dùng nến trong phiên, còn kỳ hạn dài dùng nến ngày'
   assert.match(urls[0], /resolution=5/);
   assert.match(urls[1], /resolution=1D/);
   assert.equal(ranged.image.fileName, 'gex-2d-2026-09-09.svg');
-  assert.match(ranged.blocks[0].text, /Đầu kỳ 19/);
+  assert.match(ranged.image.svg, /Đầu kỳ 19/);
 });
 
 test('chart dài hạn giữa phiên lấy cây nến cuối từ nến 5 phút của hôm nay', () => {
@@ -802,9 +828,9 @@ test('chart vẽ biến động theo đồng để không bị bẹt sát trục
   assert.match(rich.image.svg, />27,35</);
   assert.match(rich.image.svg, />27,15</);
   assert.match(rich.image.svg, /<polyline points=/);
-  assert.doesNotMatch(rich.blocks[0].text, /Thang Y/);
-  assert.match(rich.blocks[0].text, /Cao 28,2 \(\+850đ\)/);
-  assert.match(rich.blocks[0].text, /Thấp 27,15 \(-200đ\)/);
+  assert.doesNotMatch(rich.image.svg, /Thang Y/);
+  assert.match(rich.image.svg, /Cao 28,2 \(\+850đ\)/);
+  assert.match(rich.image.svg, /Thấp 27,15 \(-200đ\)/);
 });
 
 test('hỏi nhiều mã thì không kèm chart', async () => {

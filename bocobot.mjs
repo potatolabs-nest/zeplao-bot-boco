@@ -736,8 +736,12 @@ export async function run(token, {
     if (!content.image) return (await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId)).sent;
 
     const { image, ...words } = content;
-    if (withTerms(words) === words) {
-      // Không có thuật ngữ nào để bấm: hình và chữ vẫn là một tin, như trước.
+    if (!words.rich || withTerms(words) === words) {
+      // Hình và chữ đi cùng một tin, trừ đúng một trường hợp ở dưới.
+      //
+      // Chữ không có `rich` là chú thích của hình — một dòng giá — chứ không phải một bài để đọc,
+      // nên xé ra hai tin chỉ tổ làm câu trả lời rối. Chữ có `rich` mà không có thuật ngữ nào bấm
+      // được cũng vậy: chẳng có gì để bấm thì chẳng có gì phải đánh đổi.
       const whole = await send(conversationId, content, replyToMessageId, onlyForUserId);
       if (whole.sent) return whole.sent;
       return (await sayWithTerms(conversationId, withoutPicture(words), replyToMessageId, onlyForUserId)).sent;

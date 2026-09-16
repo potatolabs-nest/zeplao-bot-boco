@@ -234,5 +234,8 @@ export function resultsRich(report) {
   return {
     text,
     image: { fileName: `kq-${String(report.symbol).toLowerCase()}-${period}.svg`, svg },
+    // Chữ ở đây là một bài để đọc, không phải chú thích của hình: có `rich` thì `say` gửi hình
+    // riêng một tin để các thuật ngữ — DT, LNG, LNST — còn bấm mở được.
+    rich: { blocks: [{ type: 'paragraph', text }] },
   };
 }
