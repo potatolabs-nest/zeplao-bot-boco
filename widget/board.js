@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 4;
+  const BUILD = 5;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -66,6 +66,8 @@
   const ASK_AGAIN_MS = 2500;
   let asked = 0;            // lần gần nhất xin bot hồ sơ, để khỏi hỏi dồn
   let studied = 0;          // lần gần nhất xin bài phân tích kỹ thuật
+  let seated = false;       // đã dựng lại chỗ ngồi cũ chưa
+  const SEAT_MS = 400;
   const SVG = 'http://www.w3.org/2000/svg';
   const HELLO_AGAIN_MS = 4000;
   const HELLO_TRIES = 5;
@@ -276,6 +278,7 @@
     zoomed = name;
     drawOne(last);
     count(last);
+    seat();
   }
 
   /**
@@ -299,6 +302,7 @@
     asked = 0;
     paint(last);
     ask(symbol);
+    seat();
   }
 
   /**
@@ -331,6 +335,7 @@
     if (zoomed === null) draw(last);
     else drawOne(last);
     count(last);
+    seat();
   }
 
   back.addEventListener('click', () => {
@@ -339,6 +344,7 @@
     if (!last) return;
     draw(last);
     count(last);
+    seat();
   });
 
   /**
@@ -447,6 +453,7 @@
     button.addEventListener('click', () => {
       tab = button.dataset.tab;
       showTab();
+      seat();
       if (last) paint(last);
       // Bài phân tích chỉ được tính khi có người mở tab ấy ra. Xin ngay lúc bấm, và `paint` xin lại
       // nếu gói về vẫn chưa có — cùng lối với hồ sơ công ty.
@@ -628,6 +635,9 @@
     // mà lời chào tới cùng lúc với dữ liệu đầu tiên. Gọi lúc nạp là gọi vào chỗ chưa có gì.
     fitRoom();
 
+    // Gói đầu tiên: về đúng chỗ người này đứng lần trước, nếu bot còn nhớ.
+    if (!seated) sit(state);
+
     // Bố cục cũ thì chỉ sửa giá tại chỗ; bố cục đổi thì vẽ lại — vẽ lại kiểu nào là tuỳ người xem
     // đang mở cả bảng hay đang xem riêng một ngành, và lựa chọn ấy giữ nguyên qua mỗi nhịp đẩy.
     if (opened !== null) paint(state);
@@ -636,6 +646,9 @@
     else drawOne(state);
 
     clock.textContent = state.note ? `${state.note} · ${state.at ?? ''}`.trim() : (state.at ?? '');
+    // Số bản dựng, và số cú bấm bot đã nhận được của phòng này. Bấm mà con số sau không tăng thì
+    // cú bấm không tới được bot, và đó là chỗ hoàn toàn khác với "bot nhận rồi mà trả lời chậm".
+    if (build) build.textContent = state.got ? `b${BUILD}·${state.got}` : `b${BUILD}`;
     count(state);
   }
 
@@ -673,6 +686,46 @@
   function hello() {
     if (!z || typeof z.send !== 'function') return;
     try { z.send({ hello: 1, host: z.room?.host ?? '?' }); } catch { /* không chào được thì thôi */ }
+  }
+
+  /**
+   * Báo bot chỗ mình đang đứng, để lần sau mở lại còn về đúng đấy.
+   *
+   * Trang không tự nhớ được: widget chạy trong iframe `sandbox="allow-scripts"` không có
+   * `allow-same-origin`, nên origin là mờ và chạm vào `localStorage` là ném lỗi. Bot nhớ hộ.
+   *
+   * Gộp lại một nhịp: bấm vào một ngành rồi bấm ngay một mã là hai lần đổi trong nửa giây, mà
+   * người ta chỉ dừng ở chỗ cuối cùng.
+   */
+  let seating = null;
+
+  function seat() {
+    if (!z || typeof z.send !== 'function') return;
+    clearTimeout(seating);
+    seating = setTimeout(() => {
+      try { z.send({ seat: [zoomed, opened, tab] }); } catch { /* không báo được thì thôi */ }
+    }, SEAT_MS);
+  }
+
+  /**
+   * Dựng lại chỗ ngồi cũ, đúng một lần, lúc gói đầu tiên tới.
+   *
+   * Chỉ lần đầu: sau đó người xem đang tự đi lại trong bảng, và một cái gói tới mỗi ba giây mà kéo
+   * họ về chỗ ghi trong đó là không ai bấm đi đâu được nữa.
+   */
+  function sit(state) {
+    seated = true;
+    const mine = state.seats?.[z?.viewer?.id];
+    if (!Array.isArray(mine)) return;
+
+    const [wasZoom, wasOpen, wasTab] = mine;
+    if (typeof wasZoom === 'string' && (state.g ?? []).some(([name]) => name === wasZoom)) zoomed = wasZoom;
+    if (typeof wasOpen === 'string' && (state.c ?? []).some(([symbol]) => symbol === wasOpen)) {
+      tab = wasTab === 'ptkt' ? 'ptkt' : 'all';
+      showTab();
+      open(wasOpen);
+      if (tab === 'ptkt') study(wasOpen);
+    }
   }
 
   // Theo dõi khung bọc, không theo dõi bản đồ: chính `fit()` đặt kích thước bản đồ, nên nghe ngóng

@@ -1482,7 +1482,8 @@ test('bấm vào một ô thì gói sau mang theo hồ sơ mã ấy, kèm khối
   assert.equal(detail.h[1][5], -1);
   assert.deepEqual(detail.hb, ['KLTB 3 phiên', '6.272.867']);
 
-  assert.deepEqual(company.calls, ['VIC']);   // hỏi nguồn đúng một lần, rồi nhớ
+  // Hỏi nguồn đúng một lần cho mỗi mã rồi nhớ — kể cả khi phần hâm sẵn cũng đang chạy nền.
+  assert.deepEqual(company.calls.filter((symbol) => symbol === 'VIC'), ['VIC']);
   assert.ok(JSON.stringify(pushes.at(-1).state).length < 64 * 1024, 'một lần đẩy tối đa 64 KB');
 });
 
@@ -1502,7 +1503,9 @@ test('trang gửi về cái gì thì cũng chỉ mở được mã đang có tr�
 
   assert.ok(pushes.length > 0);
   assert.ok(pushes.every(({ state }) => !state.d), 'không mã nào được mang theo');
-  assert.deepEqual(company.calls, []);        // và nguồn hồ sơ không bị gọi lần nào
+  // Và không mã lạ nào bị mang đi hỏi nguồn. (Mã **trên bảng** thì có: chúng được hâm sẵn ở nền,
+  // để cú bấm sắp tới khỏi phải đợi một lượt mạng — xem `warmProfiles`.)
+  assert.ok(!company.calls.some((symbol) => !['VIC', 'HPG'].includes(symbol)), company.calls.join(','));
 });
 
 test('bài phân tích kỹ thuật chỉ chạy khi có người mở tab ấy ra', async () => {
@@ -1523,6 +1526,39 @@ test('bài phân tích kỹ thuật chỉ chạy khi có người mở tab ấy 
   assert.equal(card.verdict, 'TÍCH CỰC');
   assert.equal(card.steps.length, 2);
   assert.ok(card.chart.close.length > 0);
+});
+
+test('bot nhớ hộ chỗ người xem đang đứng, vì trang không tự nhớ được', async () => {
+  // Widget chạy trong iframe `sandbox="allow-scripts"` không có `allow-same-origin`: origin mờ, và
+  // chạm vào `localStorage` là ném lỗi. Nên chuyển sang phòng chat khác rồi quay lại là trang nạp
+  // mới tinh — chỗ đang đứng chỉ còn lại nếu bot giữ hộ.
+  const { pushes } = await withBot(
+    [
+      update({ text: '@bocobot' }),
+      tapped({ seat: ['Ngân hàng', 'VIC', 'ptkt'] }, 2),
+      tapped({ hello: 1 }, 3),
+    ],
+    { expect: 0, settle: 400 },
+  );
+
+  const seats = pushes.map(({ state }) => state.seats).filter(Boolean).at(-1);
+  assert.deepEqual(seats?.u1, ['Ngân hàng', 'VIC', 'ptkt']);
+});
+
+test('chỗ ngồi cũng là chữ người lạ gõ vào: mã lạ bị bỏ, tên ngành bị cắt, tab lạ thành tab mặc định', async () => {
+  const { pushes } = await withBot(
+    [
+      update({ text: '@bocobot' }),
+      tapped({ seat: ['N'.repeat(200), 'ZZZ', 'chọc-ngoáy'] }, 2),
+      tapped({ hello: 1 }, 3),
+    ],
+    { expect: 0, settle: 400 },
+  );
+
+  const seat = pushes.map(({ state }) => state.seats?.u1).filter(Boolean).at(-1);
+  assert.equal(seat[0].length, 40);
+  assert.equal(seat[1], null);
+  assert.equal(seat[2], 'all');
 });
 
 test('đóng trang chi tiết thì gói thôi mang hồ sơ mã ấy', async () => {

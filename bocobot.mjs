@@ -112,6 +112,9 @@ const BOARD_IDLE_TICKS = 20;
 /// và bắt nó hỏi lại giá cả sàn để gửi đi một gói mà phần đổi chỉ là hồ sơ một công ty là gần một
 /// giây chờ, hai lần cho mỗi cú bấm. Ngắn hơn hẳn một nhịp, nên bảng sống vẫn dựng mới mỗi nhịp.
 const BOARD_FRESH_MS = 1200;
+/// Hâm sẵn hồ sơ cho bao nhiêu ô to nhất, và cách nhau bao lâu — xem `warmProfiles`.
+const WARM_MOST = 60;
+const WARM_GAP_MS = 150;
 const BOARD_TITLE = 'Bản đồ nhiệt VN';
 /// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
 /// cho cả phần hướng dẫn.
@@ -641,6 +644,8 @@ export async function run(token, {
   const STUDY_TTL_MS = 10 * 60 * 1000;
   /// Nhiều nhất bao nhiêu mã được mang theo trong gói của một phòng.
   const MOST_DETAILS = 6;
+  /// Và nhớ chỗ ngồi của nhiều nhất bao nhiêu người xem mỗi phòng.
+  const MOST_SEATS = 12;
 
   // Phiên của lần chạy trước là phiên mồ côi: pod khởi động lại thì bảng vẫn nằm trên màn hình
   // người ta và đứng im mãi, vì không còn ai đẩy nữa. Dọn trước khi mở cái mới.
@@ -694,7 +699,13 @@ export async function run(token, {
       // Bảng mà phòng này đang thấy — cái sàng cho những gì trang gửi về sau đó.
       live.board = onBoard;
       const details = detailsFor(live, onBoard, bySymbol, named);
-      const state = details ? { ...base, d: details } : base;
+      const state = {
+        ...base,
+        ...(details ? { d: details } : {}),
+        // Ai đang xem gì. Trang tìm đúng dòng của mình trong này lúc nạp, rồi dựng lại chỗ cũ.
+        ...(live.seats?.size ? { seats: Object.fromEntries(live.seats) } : {}),
+        ...(live.got ? { got: live.got } : {}),
+      };
       const json = JSON.stringify(state);
       if (live.pushed === json) continue;
       try {
@@ -715,6 +726,9 @@ export async function run(token, {
       }
     }
     settled = Boolean(note);
+
+    // Hâm hồ sơ ở nền, không đợi: bảng đã đi rồi, phần này chỉ để cú bấm sắp tới khỏi phải chờ mạng.
+    warmProfiles(base).catch((problem) => console.error(`không hâm được hồ sơ: ${problem}`));
   }
 
   /**
@@ -776,11 +790,52 @@ export async function run(token, {
     })]));
   }
 
+  /**
+   * Hâm sẵn hồ sơ cho những mã to nhất trên bảng — từng mã một, thong thả.
+   *
+   * Đo ra thì Vietcap trả lời một mã trong chừng 50ms khi hỏi lần lượt, nhưng **sáu mã hỏi cùng
+   * lúc mất 3,7 giây**: nguồn này thắt cổ chai đúng vào lúc bị gọi song song. Nên hâm tuần tự, cách
+   * nhau một quãng — và khi người ta bấm vào một ô thì cái tên công ty đã nằm sẵn trong bộ nhớ,
+   * không phải đợi một lượt mạng nào nữa.
+   *
+   * Chỉ những ô to: ô bé thì vừa khó bấm trúng vừa hiếm ai buồn mở, và mỗi mã hâm thừa là một
+   * request vào một feed miễn phí để đổi lấy không gì cả.
+   */
+  let warming = false;
+
+  async function warmProfiles(base) {
+    if (warming) return;
+    warming = true;
+    try {
+      const biggest = [...base.c].sort((a, b) => (b[8] ?? 0) - (a[8] ?? 0)).slice(0, WARM_MOST);
+      for (const [symbol] of biggest) {
+        if (signal?.aborted) return;
+        if (profiles.has(symbol) || asking.has(symbol)) continue;
+        asking.add(symbol);
+        try {
+          profiles.set(symbol, companyCard(await company.profile(symbol)));
+        } catch (problem) {
+          console.error(`không hâm được hồ sơ ${symbol}: ${problem}`);
+        } finally {
+          asking.delete(symbol);
+        }
+        // Nghỉ giữa hai mã, và chỉ nghỉ khi vừa thật sự gọi mạng: một vòng toàn mã đã nhớ thì chạy
+        // hết trong một nhịp mắt.
+        await wait(WARM_GAP_MS);
+      }
+    } finally {
+      warming = false;
+    }
+  }
+
   /// Cái sàng cho mọi mã trang gửi về: đúng hình dạng một mã, và đang có mặt trên bảng của phòng ấy.
   /// Trang là file ai cũng sửa được, nên không lớp nào ở đây tin vào nó.
   function onBoardSymbol(live, symbol) {
     if (!/^[A-Z0-9]{3,10}$/.test(symbol)) return false;
-    return !live.board || live.board.has(symbol);
+    // Hoặc đang được phòng này mở sẵn: một mã tụt khỏi hai trăm sáu mươi ô to nhất trong lúc người
+    // ta đang đọc trang của nó thì mọi cú bấm tiếp theo sẽ rơi vào im lặng — và im lặng là thứ
+    // không ai gỡ ra được, vì trang cứ đợi mãi mà chẳng có gì báo là nó đang đợi vô ích.
+    return !live.board || live.board.has(symbol) || Boolean(live.wanted?.has(symbol));
   }
 
   /// Ghi mã vào danh sách phòng ấy đang mở. Mở lại một mã đang mở thì đưa nó xuống cuối hàng, để
@@ -802,6 +857,36 @@ export async function run(token, {
   async function onBoardAction(action) {
     const live = boards.get(action?.conversationId);
     if (!live) return;
+    // Đếm mọi thứ trang gửi tới, và đếm ngay đầu cửa. Con số này đi kèm gói và hiện ở góc bảng:
+    // nó trả lời được câu hỏi mà từ máy tôi không cách nào nhìn thấy — cú bấm có tới bot không, hay
+    // rơi đâu đó giữa đường. Bấm mà số không nhúc nhích là chuyện của nền tảng, không phải của bot.
+    live.got = (live.got ?? 0) + 1;
+
+    // Trang báo người này đang xem gì: cả bảng, một ngành, hay trang chi tiết một mã kèm tab nào.
+    //
+    // Nhớ hộ, vì **trang không tự nhớ được**: widget chạy trong iframe `sandbox="allow-scripts"`
+    // không có `allow-same-origin`, tức origin mờ, và ở đó chạm vào `localStorage` là ném lỗi. Nên
+    // chuyển sang phòng chat khác rồi quay lại là trang nạp mới tinh và về bảng mặc định — trừ khi
+    // có ai đó nhớ hộ, và chỉ bot mới nhớ được.
+    const seat = action?.action?.seat;
+    if (Array.isArray(seat)) {
+      const who = action?.from?.userId;
+      if (!who) return;
+      const [zoomed, opened, tab] = seat;
+      const mine = [
+        typeof zoomed === 'string' ? zoomed.slice(0, 40) : null,
+        typeof opened === 'string' && onBoardSymbol(live, opened.toUpperCase()) ? opened.toUpperCase() : null,
+        tab === 'ptkt' ? 'ptkt' : 'all',
+      ];
+      live.seats = live.seats ?? new Map();
+      live.seats.delete(who);
+      live.seats.set(who, mine);
+      while (live.seats.size > MOST_SEATS) live.seats.delete(live.seats.keys().next().value);
+      // Mã đang mở thì giữ luôn hồ sơ của nó trong gói: lúc người ta quay lại, trang dựng lại chỗ
+      // cũ mà số liệu đã nằm sẵn trong gói đầu tiên, không phải đợi thêm một vòng hỏi đáp nữa.
+      if (mine[1]) want(live, mine[1]);
+      return;
+    }
 
     // Trang vừa mở ra và chào một tiếng. Đẩy lại ngay cho nó.
     //
@@ -855,19 +940,26 @@ export async function run(token, {
     //
     // "Đang hỏi" phải là một trạng thái riêng, không phải một chỗ trống: trang biết phân biệt "chờ
     // chút" với "mã này không có hồ sơ", và hai câu ấy nói hai chuyện khác hẳn nhau.
+    // Hồ sơ và mười phiên là hai nguồn khác nhau, và mỗi cái về tới đâu thì đẩy tới đó — chờ cả
+    // hai rồi mới đẩy là bắt cái tên công ty đợi một bảng lịch sử mà nó chẳng liên quan gì.
     if (!profiles.has(symbol) && !asking.has(symbol)) {
       asking.add(symbol);
-      // Hồ sơ và mười phiên gần nhất hỏi cùng lúc, hai nguồn khác nhau: một cái chết thì cái kia
-      // vẫn lên trang. Bảng lịch sử không có thì trang thiếu một bảng, chứ không thiếu cả trang.
-      Promise.allSettled([
-        company.profile(symbol).then((profile) => profiles.set(symbol, companyCard(profile))),
-        history.rows(symbol).then((rows) => days.set(symbol, rows)),
-      ])
-        .then((answers) => {
-          for (const answer of answers) {
-            if (answer.status === 'rejected') console.error(`không lấy được số liệu ${symbol}: ${answer.reason}`);
-          }
+      company.profile(symbol)
+        .then((profile) => profiles.set(symbol, companyCard(profile)))
+        .catch((problem) => console.error(`không lấy được hồ sơ ${symbol}: ${problem}`))
+        .then(() => {
           asking.delete(symbol);
+          live.pushed = null;
+          return pushBoards({ stale: true });
+        })
+        .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
+    }
+
+    if (!days.has(symbol)) {
+      history.rows(symbol)
+        .then((rows) => days.set(symbol, rows))
+        .catch((problem) => console.error(`không lấy được mười phiên ${symbol}: ${problem}`))
+        .then(() => {
           live.pushed = null;
           return pushBoards({ stale: true });
         })
