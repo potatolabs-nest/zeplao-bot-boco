@@ -125,6 +125,7 @@ body {
 
 .cell {
   position: absolute;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -153,6 +154,72 @@ body {
 .cell.flat { background: radial-gradient(circle at 50% 50%, var(--flat-c, var(--flat)), var(--flat-r, var(--flat))); box-shadow: inset 0 0 0 1px var(--flat-e, transparent); }
 .cell.ceiling { background: radial-gradient(circle at 50% 50%, var(--ceiling-c, var(--ceiling)), var(--ceiling-r, var(--ceiling))); box-shadow: inset 0 0 0 1px var(--ceiling-e, transparent); color: #ffffff; }
 .cell.floor { background: radial-gradient(circle at 50% 50%, var(--floor-c, var(--floor)), var(--floor-r, var(--floor))); box-shadow: inset 0 0 0 1px var(--floor-e, transparent); color: #ffffff; }
+
+/* ---- trang chi tiết một mã ---------------------------------------------------------------- */
+
+/* Cùng khung với bản đồ (kích thước do `fit()` đặt), nên bấm vào một ô không làm card nhảy cỡ. */
+#sheet {
+  position: relative;
+  margin: 0 auto;
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 10px 14px 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Chừa chỗ cho nút quay lại ở góc — nó nằm đè lên trang, như khi xem riêng một ngành. Khoảng chừa
+   do `fit()` đo từ chính cái nút, vì bề ngang của nó đổi theo tên nhóm in trên mặt nút. */
+#s-head { margin-bottom: 8px; }
+
+#s-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#s-code { font-size: 1.9em; font-weight: 700; letter-spacing: 0.5px; }
+#s-price { font-size: 1.6em; font-weight: 700; }
+#s-move { font-size: 1.15em; font-weight: 700; }
+
+/* Màu của chính ô vừa bấm, đặt bằng biến trong `board.js`: trang chi tiết mở ra từ một ô xanh mà
+   con số lại đen thì trong một phần giây người xem tưởng mình bấm nhầm mã. */
+#s-move.up, #s-price.up { color: var(--up-r, var(--up)); }
+#s-move.down, #s-price.down { color: var(--down-r, var(--down)); }
+#s-move.flat, #s-price.flat { color: var(--flat-r, var(--flat)); }
+#s-move.ceiling, #s-price.ceiling { color: var(--ceiling); }
+#s-move.floor, #s-price.floor { color: var(--floor); }
+
+#s-name { font-size: 1.05em; font-weight: 700; margin-top: 2px; }
+#s-where { font-size: 0.95em; margin-top: 1px; }
+
+/* Khối lượng và giá trị là hai con số người ta mở trang này để xem, nên chúng to và đứng riêng. */
+#s-stats { display: flex; gap: 8px; margin-bottom: 8px; }
+
+.stat {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--bg);
+  border-radius: 5px;
+  padding: 6px 9px;
+}
+
+.stat > span { display: block; font-size: 0.9em; color: var(--muted); }
+.stat > b { display: block; font-size: 1.35em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+#s-cols { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: flex-start; }
+
+/* Hai cột nhãn — giá trị. Nhãn xám, số đen, và số dóng phải để mắt chạy dọc một mép thẳng. */
+#s-cols > dl { flex: 1 1 200px; min-width: 0; margin: 0; }
+
+#s-cols dt, #s-cols dd {
+  display: inline-block;
+  margin: 0;
+  padding: 2px 0;
+  font-size: 0.97em;
+  vertical-align: top;
+}
+
+#s-cols dt { width: 48%; color: var(--muted); }
+#s-cols dd { width: 52%; text-align: right; font-weight: 700; }
+#s-cols dd.wrap { font-weight: 400; text-align: left; }
+
+#s-about { margin: 8px 0 0; font-size: 0.93em; line-height: 1.45; }
 
 /* Một dòng, không xuống hàng: chú giải, hướng dẫn, rồi giờ. Cho xuống hàng thì đồng hồ rơi xuống
    dòng hai và lại ăn mất chừng ấy chiều cao của bản đồ — đúng thứ vừa dọn đi. Phần hướng dẫn là

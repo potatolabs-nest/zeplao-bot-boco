@@ -22,15 +22,31 @@
   const help = document.getElementById('help');
 
   const back = document.getElementById('back');
+  const sheet = document.getElementById('sheet');
+  const paper = {
+    code: document.getElementById('s-code'),
+    price: document.getElementById('s-price'),
+    move: document.getElementById('s-move'),
+    name: document.getElementById('s-name'),
+    where: document.getElementById('s-where'),
+    head: document.getElementById('s-head'),
+    stats: document.getElementById('s-stats'),
+    today: document.getElementById('s-today'),
+    firm: document.getElementById('s-firm'),
+    about: document.getElementById('s-about'),
+  };
 
   const cells = new Map();   // mã -> { box, percent }
   const titles = [];         // tên nhóm, đo lại mỗi lần khung đổi
   let version = null;        // bố cục đang hiện là của gói nào
   let zoomed = null;         // **tên** nhóm đang xem riêng, null là cả bảng
+  let opened = null;         // mã đang mở trang chi tiết, null là đang xem bản đồ
   let last = null;           // gói gần nhất, để vẽ lại khi đổi qua lại giữa hai cách xem
 
   const LEAST_LABEL = 7;
   const MOST_LABEL = 30;
+  const ASK_AGAIN_MS = 2500;
+  let asked = 0;            // lần gần nhất xin bot hồ sơ, để khỏi hỏi dồn
   const KINDS = ['up', 'down', 'flat', 'ceiling', 'floor'];
 
   /**
@@ -65,28 +81,36 @@
       // thể còn chưa có chiều cao thật — card đang được đổi cỡ — và đo lúc ấy ra 0. Đó chính là
       // cách tôi vừa làm mất sạch tên nhóm: 0 pixel thì nhóm nào cũng "quá bé để ghi tên".
       title.dataset.strip = String(header ?? 30);
-      title.addEventListener('click', () => open(index));
+      title.addEventListener('click', () => zoom(index));
       box.append(title);
       titles.push(title);
       map.append(box);
     }
 
     for (const [symbol, x, y, w, h, shown, kind] of state.c ?? []) {
-      const box = document.createElement('div');
-      box.className = `cell ${KINDS[kind] ?? 'flat'}`;
+      const box = tile(symbol, shown, kind);
       at(box, x, y, w, h, 1);
-
-      const name = document.createElement('b');
-      name.textContent = symbol;
-      const percent = document.createElement('span');
-      percent.textContent = shown;
-      box.append(name, percent);
-
       map.append(box);
-      cells.set(symbol, { box, percent });
     }
 
     fit();
+  }
+
+  /// Một ô: mã, phần trăm, màu, và bấm được để mở trang chi tiết. Cả bảng lẫn bảng phóng to đều
+  /// dựng ô bằng đây, nên một ô ở hai chỗ không bao giờ khác nhau.
+  function tile(symbol, shown, kind) {
+    const box = document.createElement('div');
+    box.className = `cell ${KINDS[kind] ?? 'flat'}`;
+
+    const name = document.createElement('b');
+    name.textContent = symbol;
+    const percent = document.createElement('span');
+    percent.textContent = shown;
+    box.append(name, percent);
+    box.addEventListener('click', () => open(symbol));
+
+    cells.set(symbol, { box, percent });
+    return box;
   }
 
   /// Bảng cũ, giá mới: chỉ sờ vào ô có số khác đi.
@@ -109,17 +133,28 @@
    */
   function fit() {
     // Bản đồ là chữ nhật 16:9 lớn nhất lọt vào chỗ còn trống, đo bằng pixel thật của khung bọc.
+    // Trang chi tiết nhận đúng cái khung ấy: bấm vào một ô không được làm cả tấm card nhảy cỡ.
     const room = wrap.getBoundingClientRect();
     if (room.width > 0 && room.height > 0) {
-      const wide = Math.min(room.width, (room.height * 16) / 9);
-      map.style.width = `${Math.floor(wide)}px`;
-      map.style.height = `${Math.floor((wide * 9) / 16)}px`;
+      const wide = Math.floor(Math.min(room.width, (room.height * 16) / 9));
+      for (const box of [map, sheet]) {
+        box.style.width = `${wide}px`;
+        box.style.height = `${Math.floor((wide * 9) / 16)}px`;
+      }
+      // Chữ trên trang chi tiết co theo khung như chữ trong các ô, nhưng có sàn và có trần: một
+      // bảng mở trên điện thoại mà chữ 7px thì không ai đọc, còn trên màn hình rộng thì chữ 30px
+      // làm trang chỉ còn vừa ba dòng.
+      sheet.style.fontSize = `${Math.max(10, Math.min(wide / 46, 17))}px`;
     }
 
-    // Nút quay lại bám góc **bản đồ**, không bám góc khung bọc: bản đồ căn giữa, nên ở cửa sổ rộng
-    // hai bên còn thừa chỗ và một nút dính mép trái sẽ nằm chơ vơ ngoài bảng.
-    back.style.left = `${map.offsetLeft + 6}px`;
-    back.style.top = `${map.offsetTop + 5}px`;
+    // Nút quay lại bám góc **trang đang hiện**, không bám góc khung bọc: trang căn giữa, nên ở cửa
+    // sổ rộng hai bên còn thừa chỗ và một nút dính mép trái sẽ nằm chơ vơ ngoài bảng.
+    const face = opened === null ? map : sheet;
+    back.style.left = `${face.offsetLeft + 6}px`;
+    back.style.top = `${face.offsetTop + 5}px`;
+    // Dòng đầu của trang chi tiết lùi vào đúng bề ngang cái nút — nó nằm đè lên trang, và bề ngang
+    // ấy đổi theo tên in trên mặt nút.
+    paper.head.style.paddingLeft = opened === null ? '' : `${back.offsetWidth + 10}px`;
 
     // Dải tên nhóm: cao đúng bằng khoảng bot đã chừa, và biến mất khi khoảng ấy hẹp quá — chữ nhỏ
     // nhất vẫn tràn ra và đè sang nhóm bên cạnh, mà một nhóm không tên vẫn nhận ra qua các mã.
@@ -158,22 +193,15 @@
     const mine = (state.c ?? []).filter((cell) => cell[7] === place);
     for (const { one, ...box } of treemap(mine.map((cell) => ({ cell, v: cell[8] ?? 1 })), { x: 0, y: 0, w: 1000, h: 1000 })) {
       const [symbol, , , , , shown, kind] = one.cell;
-      const tile = document.createElement('div');
-      tile.className = `cell ${KINDS[kind] ?? 'flat'}`;
-      at(tile, box.x, box.y, box.w, box.h, 1);
-
-      const name = document.createElement('b');
-      name.textContent = symbol;
-      const percent = document.createElement('span');
-      percent.textContent = shown;
-      tile.append(name, percent);
-
-      map.append(tile);
-      cells.set(symbol, { box: tile, percent });
+      const drawn = tile(symbol, shown, kind);
+      at(drawn, box.x, box.y, box.w, box.h, 1);
+      map.append(drawn);
     }
 
     back.hidden = false;
-    back.textContent = `← ${zoomed}`;
+    // Nút ghi chỗ nó **dẫn tới**, không ghi chỗ đang đứng: "← Ngân hàng" trên một bảng toàn mã ngân
+    // hàng thì bấm vào lại tưởng ra chỗ khác. Tên ngành đang xem nằm dưới hàng chú giải.
+    back.textContent = '← Tất cả';
     fit();
   }
 
@@ -219,7 +247,7 @@
     ];
   }
 
-  function open(index) {
+  function zoom(index) {
     if (!last) return;
     const name = (last.g?.[index] ?? [])[0];
     if (!name) return;
@@ -228,12 +256,134 @@
     count(last);
   }
 
+  /**
+   * Trang chi tiết một mã.
+   *
+   * Mở ngay bằng thứ trang đang có — mã, phần trăm, màu — rồi xin bot phần còn lại. Đợi gói mới rồi
+   * mới mở thì bấm xong phải nhìn bảng cũ thêm một nhịp, và người bấm sẽ tưởng cú bấm không ăn.
+   */
+  function open(symbol) {
+    if (!last || opened === symbol) return;
+    opened = symbol;
+    // Bản đồ biến mất khỏi DOM: các ô không còn thì `move()` cũng không còn gì để sửa, và lúc quay
+    // lại bảng được dựng lại từ gói mới nhất chứ không phải từ cái khung đã đứng im suốt lúc ấy.
+    map.hidden = true;
+    sheet.hidden = false;
+    cells.clear();
+    version = null;
+    asked = 0;
+    paint(last);
+    ask(symbol);
+  }
+
+  /**
+   * Xin bot hồ sơ của một mã, nhiều nhất mỗi vài giây một lần.
+   *
+   * Hỏi lại là có lý do: gói đẩy đi là gói chung cả phòng, nên một người khác đóng trang chi tiết
+   * của đúng mã này sẽ kéo nó ra khỏi gói, và người còn lại ngồi nhìn "đang lấy hồ sơ" mãi. Một câu
+   * hỏi lại mỗi hai giây rưỡi thì tự lành, và cũng lành luôn cả lần hỏi đầu tiên bị rơi.
+   */
+  function ask(symbol) {
+    if (!z || typeof z.send !== 'function') return;
+    const now = Date.now();
+    if (now - asked < ASK_AGAIN_MS) return;
+    asked = now;
+    try { z.send({ open: symbol }); } catch { /* không xin được thì trang vẫn mở, chỉ thiếu hồ sơ */ }
+  }
+
+  /// Rời trang chi tiết, về đúng chỗ vừa rời đi — cả bảng hay một ngành, tuỳ lúc bấm vào ô là đang
+  /// đứng ở đâu. `zoomed` không bị đụng tới lúc mở, nên nó chính là cái chỗ ấy.
+  function shut() {
+    // Nói với bot rằng chỗ này thôi xem: gói đẩy cho phòng mang theo hồ sơ của mọi mã đang mở, và
+    // giữ lại một mã không ai còn nhìn là bắt cả phòng tải nó mỗi ba giây.
+    if (opened !== null && z && typeof z.send === 'function') {
+      try { z.send({ shut: opened }); } catch { /* không nói được thì bot tự bỏ khi quá sáu mã */ }
+    }
+    opened = null;
+    sheet.hidden = true;
+    map.hidden = false;
+    if (!last) return;
+    if (zoomed === null) draw(last);
+    else drawOne(last);
+    count(last);
+  }
+
   back.addEventListener('click', () => {
+    if (opened !== null) { shut(); return; }
     zoomed = null;
     if (!last) return;
     draw(last);
     count(last);
   });
+
+  /**
+   * Vẽ trang chi tiết bằng gói mới nhất.
+   *
+   * Chạy lại mỗi nhịp đẩy, nên khối lượng và giá trị giao dịch trên trang này sống y như các ô màu
+   * phía sau nó. Phần hồ sơ công ty thì tới muộn một nhịp — bot phải hỏi nguồn — và trang nói rõ nó
+   * đang đợi, chứ không để một khoảng trống mà người xem không biết là thiếu hay là hỏng.
+   */
+  function paint(state) {
+    const cell = (state.c ?? []).find(([symbol]) => symbol === opened);
+    const detail = state.d?.[opened] ?? null;
+    const kind = KINDS[cell?.[6]] ?? 'flat';
+
+    if (!detail) ask(opened);
+
+    paper.code.textContent = opened;
+    paper.price.textContent = detail?.p ?? '';
+    paper.price.className = kind;
+    paper.move.textContent = [cell?.[5], detail?.d && `(${detail.d})`].filter(Boolean).join('  ');
+    paper.move.className = kind;
+
+    paper.name.textContent = detail?.n
+      || (detail?.f === 0 ? 'Không có hồ sơ công ty' : 'Đang lấy hồ sơ…');
+    // Ngành và giá trị giao dịch có sẵn ngay trên chính ô vừa bấm — tên nhóm nó nằm trong, và tiền
+    // giao dịch mà bảng dùng để chia ô. Lấp bằng chúng trong lúc chờ gói: một trang trống trơn suốt
+    // một vòng hỏi đáp trông như bấm hụt, dù thật ra nó đang chạy đúng.
+    paper.where.textContent = detail?.w || (cell ? (state.g?.[cell[7]] ?? [])[0] ?? '' : '');
+
+    // Hai con số của phiên hôm nay đứng riêng và to: khối lượng và giá trị giao dịch.
+    const today = detail?.q ?? [['Khối lượng', '…'], ['Giá trị', cell ? `${dot(cell[8])} tỷ` : '…']];
+    paper.stats.replaceChildren(...today.slice(0, 2).map(([label, value]) => {
+      const box = document.createElement('div');
+      box.className = 'stat';
+      const name = document.createElement('span');
+      name.textContent = label;
+      const shown = document.createElement('b');
+      shown.textContent = value;
+      box.append(name, shown);
+      return box;
+    }));
+
+    rows(paper.today, today.slice(2));
+    rows(paper.firm, detail?.r ?? []);
+    paper.about.textContent = detail?.a ?? '';
+
+    back.hidden = false;
+    back.textContent = `← ${zoomed ?? 'Bản đồ'}`;
+    fit();
+  }
+
+  /// Số có dấu chấm ngăn nghìn, kiểu Việt Nam. Trang không gọi được `Intl` của bot, mà một con số
+  /// bảy chữ số liền nhau thì đọc ra được đúng một điều: "nhiều".
+  const dot = (value) => String(Math.round(Number(value) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+  /// Một cột nhãn — giá trị. Dòng nào nguồn không có thì không có dòng đó: một dòng "Vốn hoá: —"
+  /// trông như số liệu hỏng, trong khi sự thật chỉ là nguồn không nói.
+  function rows(into, pairs) {
+    into.replaceChildren();
+    for (const [label, value] of pairs) {
+      const name = document.createElement('dt');
+      name.textContent = label;
+      const shown = document.createElement('dd');
+      shown.textContent = value;
+      // Giá trị dài — tên một ngành chẳng hạn — thì xuống hàng bên trái thay vì dóng phải: dóng
+      // phải một câu ba dòng thì mắt không tìm ra chỗ bắt đầu.
+      if (String(value).length > 18) shown.className = 'wrap';
+      into.append(name, shown);
+    }
+  }
 
   /**
    * Hàng chú giải đếm đúng thứ đang hiện trên bảng.
@@ -243,6 +393,7 @@
    */
   function count(state) {
     const tally = {};
+    let mine = 0;
     if (zoomed === null) Object.assign(tally, state.t ?? {});
     else {
       const place = placeOf(state);
@@ -250,12 +401,17 @@
         if (cell[7] !== place) continue;
         const kind = KINDS[cell[6]] ?? 'flat';
         tally[kind] = (tally[kind] ?? 0) + 1;
+        mine += 1;
       }
     }
     for (const kind of KINDS) {
       const shown = document.getElementById(`n-${kind}`);
       if (shown) shown.textContent = String(tally[kind] ?? 0);
     }
+
+    // Chỗ của câu hướng dẫn cũng là chỗ nói đang xem riêng ngành nào: hàng chú giải chỉ có một
+    // dòng, và tên ngành thì cần hơn một câu hướng dẫn mà lúc ấy không ai đọc.
+    help.textContent = zoomed === null ? (state.help ?? '') : `${zoomed} · ${mine} mã`;
   }
 
   function apply(state) {
@@ -276,12 +432,12 @@
 
     // Bố cục cũ thì chỉ sửa giá tại chỗ; bố cục đổi thì vẽ lại — vẽ lại kiểu nào là tuỳ người xem
     // đang mở cả bảng hay đang xem riêng một ngành, và lựa chọn ấy giữ nguyên qua mỗi nhịp đẩy.
-    if (state.v === version && cells.size) move(state);
+    if (opened !== null) paint(state);
+    else if (state.v === version && cells.size) move(state);
     else if (zoomed === null) draw(state);
     else drawOne(state);
 
     clock.textContent = state.note ? `${state.note} · ${state.at ?? ''}`.trim() : (state.at ?? '');
-    if (state.help) help.textContent = state.help;
     count(state);
   }
 
@@ -351,6 +507,17 @@
         ['PVD', 810, 630, 180, 350, '-2,28%', 1, 1, 240],
       ],
       t: { ceiling: 9, up: 257, flat: 93, down: 150, floor: 1 },
+      d: {
+        VPB: {
+          n: 'Ngân hàng TMCP Việt Nam Thịnh Vượng', e: 'Vietnam Prosperity JSC Bank',
+          w: 'HOSE · Ngân hàng', p: '23,50', d: '+0,50', f: 1,
+          q: [['Khối lượng', '18.462.900'], ['Giá trị', '434 tỷ'], ['Tham chiếu', '23,00'],
+            ['Trần / Sàn', '24,60 / 21,40'], ['Mở cửa', '23,05'], ['Cao / Thấp', '23,60 / 23,00']],
+          r: [['Ngành', 'Ngân hàng'], ['Vốn hoá', '186.420 tỷ đồng'], ['Cổ phiếu lưu hành', '7.933.923.601'],
+            ['Room ngoại', '30% · đang nắm 24,8%'], ['52 tuần', '17,30 – 24,10'], ['Niêm yết', '17/08/2017']],
+          a: 'Ngân hàng TMCP Việt Nam Thịnh Vượng tiền thân là Ngân hàng TMCP Các Doanh nghiệp Ngoài quốc doanh, hoạt động trong lĩnh vực ngân hàng bán lẻ và tài chính tiêu dùng.',
+        },
+      },
     });
   }
 })();

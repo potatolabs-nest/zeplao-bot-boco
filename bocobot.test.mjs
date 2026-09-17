@@ -1405,6 +1405,70 @@ test('gọi tên bot là mở bảng nhiệt sống, không phải gửi hướn
   assert.deepEqual(sent, []);   // hướng dẫn nằm dưới chân bảng, không gửi thêm tin
 });
 
+/// Bấm vào một ô trong bảng: cập nhật `widget_action` mà nền tảng gửi tới, đúng hình dạng trong doc.
+const tapped = (action, id = 2) => ({
+  id,
+  kind: 'widget_action',
+  widgetAction: {
+    sessionId: 's1', conversationId: 'p1', from: { userId: 'u1', displayName: 'Người hỏi' }, role: 'viewer', action,
+  },
+});
+
+test('bấm vào một ô thì gói sau mang theo hồ sơ mã ấy, kèm khối lượng và giá trị hôm nay', async () => {
+  const company = stubCompany();
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'VIC' })],
+    { expect: 0, settle: 400, company },
+  );
+
+  const detail = pushes.map(({ state }) => state.d?.VIC).filter(Boolean).at(-1);
+  assert.ok(detail, 'gói phải mang theo chi tiết của mã vừa bấm');
+  assert.equal(detail.n, 'Công ty Cổ phần VIC');
+  assert.equal(detail.w, 'HOSE · Bất động sản');
+  assert.equal(detail.p, '256,1');
+
+  // Hai con số người ta mở trang chi tiết ra để xem, và chúng phải là số của phiên hôm nay chứ
+  // không phải số trong hồ sơ — hồ sơ là ảnh chụp cuối phiên trước.
+  assert.deepEqual(detail.q[0], ['Khối lượng', '7.518.600']);
+  assert.deepEqual(detail.q[1], ['Giá trị', '1.926 tỷ']);
+  assert.ok(detail.r.some(([label]) => label === 'Vốn hoá'));
+  assert.ok(!detail.r.some(([label]) => label === 'Sàn'), 'sàn đã nằm ngay dưới tên mã');
+
+  assert.deepEqual(company.calls, ['VIC']);   // hỏi nguồn đúng một lần, rồi nhớ
+  assert.ok(JSON.stringify(pushes.at(-1).state).length < 64 * 1024, 'một lần đẩy tối đa 64 KB');
+});
+
+test('trang gửi về cái gì thì cũng chỉ mở được mã đang có trên bảng', async () => {
+  // Doc dặn thẳng: trang widget là file ai cũng sửa được, nên `action` phải kiểm như kiểm chữ người
+  // lạ gõ vào. Mã không có trên bảng, chuỗi bậy, và cả một lời gọi hồ sơ trá hình đều không đi đâu.
+  const company = stubCompany();
+  const { pushes } = await withBot(
+    [
+      update({ text: '@bocobot' }),
+      tapped({ open: 'ZZZ' }, 2),
+      tapped({ open: '../../etc/passwd' }, 3),
+      tapped({ open: 'VIC ' }, 4),
+    ],
+    { expect: 0, settle: 400, company },
+  );
+
+  assert.ok(pushes.length > 0);
+  assert.ok(pushes.every(({ state }) => !state.d), 'không mã nào được mang theo');
+  assert.deepEqual(company.calls, []);        // và nguồn hồ sơ không bị gọi lần nào
+});
+
+test('đóng trang chi tiết thì gói thôi mang hồ sơ mã ấy', async () => {
+  // Gói đẩy đi là gói chung cả phòng. Giữ lại hồ sơ của một mã không ai còn nhìn là bắt mọi người
+  // tải nó mỗi ba giây, suốt cả phiên.
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'VIC' }, 2), tapped({ shut: 'VIC' }, 3)],
+    { expect: 0, settle: 500 },
+  );
+
+  assert.ok(pushes.some(({ state }) => state.d?.VIC), 'đã có lúc mang theo');
+  assert.ok(!pushes.at(-1).state.d, 'gói cuối thì thôi');
+});
+
 test('không mở được phiên thì vẫn trả hướng dẫn như cũ', async () => {
   // Máy cũ, lỗi mạng, gói widget chưa lên — đường cũ phải còn đó, chứ im lặng là hỏng.
   const { sent, sessions } = await withBot([update({ text: '@bocobot' })], { refuseSessions: true });

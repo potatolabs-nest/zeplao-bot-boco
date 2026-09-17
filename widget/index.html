@@ -8,6 +8,24 @@
 <body class="board">
 <main id="wrap">
   <div id="map"></div>
+
+  <!-- Trang chi tiết một mã: mở khi bấm vào một ô, che hẳn bản đồ chứ không bật lên đè lên nó.
+       Một thẻ nổi giữa bảng thì vừa nhỏ vừa che mất chỗ người ta đang nhìn; cả trang thì đủ chỗ cho
+       tên công ty, số của phiên và hồ sơ mà không phải cắt ngắn thứ gì. -->
+  <section id="sheet" hidden>
+    <header id="s-head">
+      <div id="s-line"><b id="s-code"></b><span id="s-price"></span><span id="s-move"></span></div>
+      <div id="s-name"></div>
+      <div id="s-where" class="muted"></div>
+    </header>
+    <div id="s-stats"></div>
+    <div id="s-cols">
+      <dl id="s-today"></dl>
+      <dl id="s-firm"></dl>
+    </div>
+    <p id="s-about" class="muted"></p>
+  </section>
+
   <button id="back" type="button" hidden>← Tất cả</button>
 </main>
 

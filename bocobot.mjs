@@ -46,7 +46,7 @@ import { vndirectSectors } from './market/sectors.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
-import { companyCards, vietcapCompany, withCompany } from './market/company.mjs';
+import { boardDetail, companyCard, companyCards, vietcapCompany, withCompany } from './market/company.mjs';
 import { refusalCode, refusedForViews, withoutViews, withTerms } from './market/glossary.mjs';
 import { publishWidget } from './widget.mjs';
 
@@ -622,6 +622,13 @@ export async function run(token, {
   let pushing = null;
   let settled = false;
   let boardTrouble = null;
+  /// Mã -> thẻ hồ sơ đã lấy được (hoặc `null` khi nguồn nói không có). Chung cho mọi phòng: hồ sơ
+  /// công ty là thứ ai xem cũng như nhau, và hỏi lại nguồn cho từng phòng là nện vào một feed miễn phí.
+  const profiles = new Map();
+  /// Mã đang trên đường hỏi nguồn — khác hẳn mã đã hỏi xong và nguồn bảo không có.
+  const asking = new Set();
+  /// Nhiều nhất bao nhiêu mã được mang theo trong gói của một phòng.
+  const MOST_DETAILS = 6;
 
   // Phiên của lần chạy trước là phiên mồ côi: pod khởi động lại thì bảng vẫn nằm trên màn hình
   // người ta và đứng im mãi, vì không còn ai đẩy nữa. Dọn trước khi mở cái mới.
@@ -653,16 +660,29 @@ export async function run(token, {
 
     // Ngoài giờ khớp lệnh thì đẩy đúng một lần rồi thôi: bảng giữ số của phiên gần nhất, và không
     // ai phải hỏi feed 1.523 mã mỗi ba giây suốt đêm để nhận lại y nguyên con số cũ.
+    //
+    // Trừ khi có phòng đang chờ gói mới — ai đó vừa mở trang chi tiết một mã. Người bấm lúc 9 giờ
+    // tối vẫn phải thấy trang ấy mở ra, dù bảng phía sau đứng im từ ba giờ chiều.
     const note = sessionNote(at());
-    if (note && settled) return;
+    const waiting = [...boards.values()].some((live) => live.pushed === null);
+    if (note && settled && !waiting) return;
 
     const universe = await market.universe();
     const [quotes, named] = await Promise.all([market.quotes(universe), sectors.map()]);
-    const state = boardState(quotes, { sectors: named, at: at(), help: BOARD_HELP });
-    if (!state) return;
+    const base = boardState(quotes, { sectors: named, at: at(), help: BOARD_HELP });
+    if (!base) return;
 
-    const json = JSON.stringify(state);
+    // Mã nào đang có mặt trên bảng — thứ duy nhất trang được phép xin trang chi tiết. Trang là file
+    // ai cũng sửa được, nên `open` gửi về là chữ người lạ gõ vào: nó chỉ mở được thứ đang bày ra.
+    const onBoard = new Set(base.c.map(([symbol]) => symbol));
+    const bySymbol = new Map(quotes.filter(Boolean).map((quote) => [quote.symbol, quote]));
+
     for (const [conversationId, live] of boards) {
+      // Bảng mà phòng này đang thấy — cái sàng cho những gì trang gửi về sau đó.
+      live.board = onBoard;
+      const details = detailsFor(live, onBoard, bySymbol, named);
+      const state = details ? { ...base, d: details } : base;
+      const json = JSON.stringify(state);
       if (live.pushed === json) continue;
       try {
         // Câu trả lời kể số người thật sự nhận được gói này. Không có tin báo "đã đóng bảng" nào
@@ -682,6 +702,76 @@ export async function run(token, {
       }
     }
     settled = Boolean(note);
+  }
+
+  /**
+   * Phần chi tiết gắn thêm cho riêng một phòng: mã nào người trong phòng ấy đang mở.
+   *
+   * Gắn theo phòng chứ không gắn chung: gói đẩy đi là gói mọi người trong phòng cùng nhận, nên một
+   * phòng không có lý do gì phải tải hồ sơ của mã mà phòng bên kia đang xem. `null` khi không ai mở
+   * gì — lúc ấy gói giữ nguyên hình dạng cũ và cái so sánh "gói này y hệt gói vừa đẩy" vẫn đúng.
+   */
+  function detailsFor(live, onBoard, bySymbol, named) {
+    const wanted = [...(live.wanted ?? [])].filter((symbol) => onBoard.has(symbol));
+    if (!wanted.length) return null;
+
+    return Object.fromEntries(wanted.map((symbol) => [symbol, boardDetail({
+      symbol,
+      card: profiles.get(symbol) ?? null,
+      pending: asking.has(symbol),
+      quote: bySymbol.get(symbol) ?? null,
+      sector: named.get(symbol) ?? '',
+    })]));
+  }
+
+  /**
+   * Có người bấm vào một ô trong bảng: mở trang chi tiết của mã ấy.
+   *
+   * Doc nói thẳng ra rằng trang widget là file ai cũng sửa được, nên `action` gửi về phải kiểm như
+   * kiểm chữ người lạ gõ vào. Ở đây là ba lớp: đúng hình dạng một mã, đang có mặt trên bảng của
+   * chính phòng ấy, và nhiều nhất sáu mã một phòng — không lớp nào tin vào trang cả.
+   */
+  async function onBoardAction(action) {
+    const live = boards.get(action?.conversationId);
+    if (!live) return;
+
+    // Đóng trang chi tiết: bỏ mã khỏi gói của phòng. Không cần đẩy ngay — trang đã về bản đồ rồi,
+    // và gói tới sẽ nhẹ đi một hồ sơ.
+    const closing = String(action?.action?.shut ?? '').toUpperCase();
+    if (closing) { live.wanted?.delete(closing); return; }
+
+    const symbol = String(action?.action?.open ?? '').toUpperCase();
+    if (!/^[A-Z0-9]{3,10}$/.test(symbol)) return;
+    if (live.board && !live.board.has(symbol)) return;
+
+    live.wanted = live.wanted ?? new Set();
+    // Mở lại một mã đang mở thì đưa nó xuống cuối hàng, để cái bị đẩy ra luôn là cái cũ nhất.
+    live.wanted.delete(symbol);
+    live.wanted.add(symbol);
+    while (live.wanted.size > MOST_DETAILS) live.wanted.delete(live.wanted.values().next().value);
+
+    // Hồ sơ hỏi một lần rồi nhớ. `null` cũng là một câu trả lời — "nguồn không có mã này" — và nó
+    // được nhớ y như một hồ sơ thật, nếu không thì mỗi lần ai bấm vào mã ấy lại là một lần gọi mạng.
+    //
+    // "Đang hỏi" phải là một trạng thái riêng, không phải một chỗ trống: trang biết phân biệt "chờ
+    // chút" với "mã này không có hồ sơ", và hai câu ấy nói hai chuyện khác hẳn nhau.
+    if (!profiles.has(symbol) && !asking.has(symbol)) {
+      asking.add(symbol);
+      company.profile(symbol)
+        .then((profile) => profiles.set(symbol, companyCard(profile)))
+        .catch((problem) => console.error(`không lấy được hồ sơ ${symbol}: ${problem}`))
+        .then(() => {
+          asking.delete(symbol);
+          live.pushed = null;
+          return pushBoards();
+        })
+        .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
+    }
+
+    // Đẩy ngay chứ không đợi nhịp sau: trang đã vẽ khung trang chi tiết bằng thứ nó có sẵn, và phần
+    // còn trống chỉ đầy lên khi gói tới. Ba giây nhìn một trang nửa vời là ba giây quá dài.
+    live.pushed = null;
+    await pushBoards();
   }
 
   function startPushing() {
@@ -734,6 +824,9 @@ export async function run(token, {
 
       try {
         if (update.kind === 'message') await onMessage(update.message);
+        // Bấm vào một ô trong bảng nhiệt sống. Loại update lạ thì bỏ qua — doc dặn thế, vì sẽ có
+        // thêm loại mới, và một bot ném lỗi vì gặp loại nó chưa biết là một bot dừng ở đó.
+        else if (update.kind === 'widget_action') await onBoardAction(update.widgetAction);
       } catch (problem) {
         console.error(String(problem));
       }

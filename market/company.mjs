@@ -92,6 +92,62 @@ export function companyCard(profile) {
 }
 
 /**
+ * Trang chi tiết một mã trong bảng nhiệt sống.
+ *
+ * Cùng nội dung với thẻ bật lên khi bấm vào mã gạch chân trong tin nhắn — `companyCard` dựng chung
+ * cho cả hai — cộng số của phiên hôm nay, thứ mà thẻ trong tin nhắn không có. Khối lượng và giá trị
+ * giao dịch đổi từng giây, nên chúng chỉ đúng khi đi cùng một bảng đang chạy; trang được đẩy lại mỗi
+ * nhịp nên hai con số ấy sống y như các ô màu phía sau.
+ *
+ * `card` là `null` khi hồ sơ chưa về hoặc mã không có hồ sơ — trang vẫn mở được, chỉ thiếu phần tên
+ * và vốn hoá. Số của phiên thì luôn có, vì chúng tới từ chính cái bảng người ta vừa bấm vào.
+ */
+export function boardDetail({ symbol, card = null, quote = null, sector = '', pending = false }) {
+  const code = String(symbol ?? '').toUpperCase();
+  if (!code) return null;
+
+  const today = [];
+  if (quote) {
+    // Khối lượng và giá trị đứng trước: đó là hai con số người ta mở trang này để xem, phần còn lại
+    // là bối cảnh. Giá trị tính từ giá khớp nhân khối lượng — feed không gửi sẵn, và một con số tự
+    // nhân ra vẫn đúng hơn là không có con số nào.
+    today.push(['Khối lượng', count(quote.volume)]);
+    today.push(['Giá trị', traded(quote.price * quote.volume)]);
+    today.push(['Tham chiếu', money(quote.reference)]);
+    if (quote.ceiling > 0 && quote.floor > 0) today.push(['Trần / Sàn', `${money(quote.ceiling)} / ${money(quote.floor)}`]);
+    if (quote.open > 0) today.push(['Mở cửa', money(quote.open)]);
+    if (quote.high > 0 && quote.low > 0) today.push(['Cao / Thấp', `${money(quote.high)} / ${money(quote.low)}`]);
+    if (quote.average > 0) today.push(['Bình quân', money(quote.average)]);
+  }
+
+  return {
+    n: card ? String(card.title).replace(`${code} — `, '') : '',
+    e: card?.subtitle ?? '',
+    w: [card?.rows?.find(([label]) => label === 'Sàn')?.[1], sector].filter(Boolean).join(' · '),
+    p: quote ? money(quote.price) : '',
+    // Thay đổi bằng đồng, không phải phần trăm: phần trăm đã nằm sẵn trên chính ô vừa bấm, còn
+    // "tăng 1,2 nghìn đồng" thì cả bảng không chỗ nào nói.
+    d: quote && quote.change ? `${quote.change > 0 ? '+' : '-'}${money(Math.abs(quote.change))}` : '',
+    q: today,
+    // Bỏ dòng Sàn khỏi phần hồ sơ: nó đã đứng ngay dưới tên mã rồi.
+    r: (card?.rows ?? []).filter(([label]) => label !== 'Sàn'),
+    a: card?.about ?? '',
+    // Hồ sơ chưa về thì trang nói "đang lấy", hồ sơ về mà rỗng thì trang nói "không có" — hai
+    // chuyện khác nhau, và một cái quay mãi trong khi thật ra chẳng bao giờ có gì là chuyện thứ ba.
+    f: card ? 1 : pending ? 2 : 0,
+  };
+}
+
+/// Giá trị giao dịch, tính bằng nghìn đồng vào — số càng lớn càng ít số lẻ: "1.925 tỷ" đọc nhanh
+/// hơn "1.925,51 tỷ", còn một mã bé thì "820 triệu" mới ra được chuyện.
+function traded(thousandDong) {
+  const billion = thousandDong / 1e6;
+  if (billion >= 100) return `${count(billion)} tỷ`;
+  if (billion >= 1) return `${money(billion)} tỷ`;
+  return `${money(billion * 1000)} triệu`;
+}
+
+/**
  * Entity `view` trên lần xuất hiện đầu tiên của từng mã trong `text`.
  *
  * Cùng luật với `termEntities`: đếm bằng đơn vị UTF-16, không dính vào chữ hai bên, và không đè lên
