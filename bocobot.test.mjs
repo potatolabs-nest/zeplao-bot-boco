@@ -130,6 +130,8 @@ async function stubApi(updates, {
   const shown = [];
   /// Mọi lần bot sửa hồ sơ của chính nó.
   const settings = [];
+  /// Những phiên bot tự đóng.
+  const ended = [];
   const pushes = [];
   const widgets = [];
   let queue = [...updates];
@@ -161,6 +163,7 @@ async function stubApi(updates, {
         return answer({ ok: true });
       }
       if (path === '/endSessions') return answer({ ended: 0 });
+      if (path === '/endSession') { ended.push(JSON.parse(body)); return answer({ ok: true }); }
       if (path === '/createSession') {
         if (refuseSessions) {
           response.writeHead(400, { 'Content-Type': 'application/json' });
@@ -223,7 +226,7 @@ async function stubApi(updates, {
 
   await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
   return {
-    sent, registered, declares, widgets, sessions, shown, pushes, settings,
+    sent, registered, declares, widgets, sessions, shown, pushes, settings, ended,
     api: `http://127.0.0.1:${server.address().port}`,
     close: () => server.close(),
   };
@@ -1640,6 +1643,26 @@ test('gõ một mã không niêm yết thì không có gì xảy ra', async () =
 
   assert.ok(pushes.every(({ state }) => !state.d), 'không mã lạ nào được mang theo');
   assert.ok(!company.calls.includes('KHONGCO'));
+});
+
+test('bảng đóng theo thời gian không ai xem, không theo số lần đẩy', async () => {
+  // Luật cũ đếm **số lần đẩy**: hai mươi lần liền không ai nhận thì đóng. Cái ngưỡng ấy trôi nhanh
+  // chậm tuỳ bot đẩy dày hay thưa — mà từ khi mỗi cú bấm cũng sinh một lần đẩy, nó trôi trong chớp
+  // mắt và bot đóng bảng ngay dưới tay người đang dùng. Sau đó mọi cú bấm rơi vào một phòng không
+  // còn trong sổ: trang ngồi "đang lấy hồ sơ" mãi rồi khung tự tắt.
+  const bo = await withBot(
+    [update({ text: '@bocobot' })],
+    { expect: 0, settle: 600, board: { tickMs: 40, idleMs: 120 } },
+  );
+  assert.equal(bo.ended.length, 1, 'quá hạn không ai xem thì vẫn phải đóng');
+  assert.equal(bo.ended[0].sessionId, 's1');
+
+  // Còn trong hạn thì không, dù đã đẩy bao nhiêu lần đi nữa.
+  const giu = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'VIC' }, 2), tapped({ seat: [null, 'VIC', 'all'] }, 3)],
+    { expect: 0, settle: 600 },
+  );
+  assert.deepEqual(giu.ended, []);
 });
 
 test('bot nhớ hộ chỗ người xem đang đứng, vì trang không tự nhớ được', async () => {

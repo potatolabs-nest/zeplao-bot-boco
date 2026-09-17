@@ -103,7 +103,8 @@ export function companyCard(profile) {
  * và vốn hoá. Số của phiên thì luôn có, vì chúng tới từ chính cái bảng người ta vừa bấm vào.
  */
 export function boardDetail({
-  symbol, card = null, quote = null, sector = '', pending = false, history = [], study = null, studying = false,
+  symbol, card = null, quote = null, sector = '', pending = false, failed = false,
+  history = [], study = null, studying = false,
   foreign = new Map(),
 }) {
   const code = String(symbol ?? '').toUpperCase();
@@ -174,7 +175,8 @@ export function boardDetail({
     tks: studying ? 1 : 0,
     // Hồ sơ chưa về thì trang nói "đang lấy", hồ sơ về mà rỗng thì trang nói "không có" — hai
     // chuyện khác nhau, và một cái quay mãi trong khi thật ra chẳng bao giờ có gì là chuyện thứ ba.
-    f: card ? 1 : pending ? 2 : 0,
+    // 1 có hồ sơ · 2 đang hỏi · 3 hỏi hỏng, đáng hỏi lại · 0 nguồn bảo mã này không có hồ sơ.
+    f: card ? 1 : pending ? 2 : failed ? 3 : 0,
   };
 }
 

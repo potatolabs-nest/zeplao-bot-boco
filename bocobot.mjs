@@ -108,9 +108,9 @@ const COMMANDS_REFRESH_MS = 6 * 60 * 60 * 1000;
  * với một bản đồ nhiệt và còn xa hai cái trần kia.
  */
 const BOARD_TICK_MS = 3000;
-/// Bao nhiêu nhịp liền không còn ai nhận gói thì đóng bảng. Hai mươi nhịp là chừng một phút — đủ
-/// rộng cho người ta đóng rồi mở lại, đủ ngắn để không nuôi một bảng chẳng ai xem suốt phiên.
-const BOARD_IDLE_TICKS = 20;
+/// Bao lâu không còn ai nhận gói thì đóng bảng. Một phút rưỡi — đủ rộng cho người ta đóng rồi mở
+/// lại, hay thu nhỏ khung một lúc, và đủ ngắn để không nuôi một bảng chẳng ai xem suốt phiên.
+const BOARD_IDLE_MS = 90 * 1000;
 /// Một bảng vừa dựng còn dùng lại được trong chừng này. Cú bấm vào một ô mã cũng đi qua đường đẩy,
 /// và bắt nó hỏi lại giá cả sàn để gửi đi một gói mà phần đổi chỉ là hồ sơ một công ty là gần một
 /// giây chờ, hai lần cho mỗi cú bấm. Ngắn hơn hẳn một nhịp, nên bảng sống vẫn dựng mới mỗi nhịp.
@@ -539,7 +539,7 @@ export async function run(token, {
   at = () => new Date(),
   sectors = vndirectSectors(),
   heatmap = marketHeatmap({ at, sectors }),
-  board = { tickMs: BOARD_TICK_MS },
+  board = { tickMs: BOARD_TICK_MS, idleMs: BOARD_IDLE_MS },
   technical = technicalAnalysis(),
   results = vietcapResults(),
   company = vietcapCompany(),
@@ -690,6 +690,9 @@ export async function run(token, {
   const asking = new Set();
   /// Bao nhiêu lời gọi nguồn đang bay **vì có người vừa bấm**. Vòng hâm nền nhìn vào đây để nhường.
   let waitingOn = 0;
+  /// Mã -> lúc hỏi hồ sơ hỏng gần nhất. Khác hẳn `profiles` giữ giá trị `null`, vốn là câu trả lời
+  /// dứt khoát "nguồn không có mã này".
+  const broken = new Map();
   /// Mã -> mười phiên gần nhất. Nguồn tự nhớ mười phút; chỗ này nhớ để gói đẩy khỏi phải `await`.
   const days = new Map();
   /// Mã -> khối ngoại từng phiên, khoá theo ngày.
@@ -716,7 +719,7 @@ export async function run(token, {
       const made = await call('createSession', { conversationId, title: BOARD_TITLE, userIds: [] });
       const sessionId = made?.sessionId ?? made?.id ?? made?.session?.id;
       if (!sessionId) throw new Error(`createSession không trả sessionId: ${JSON.stringify(made).slice(0, 160)}`);
-      live = { sessionId, sent: null };
+      live = { sessionId, sent: null, seen: Date.now() };
       boards.set(conversationId, live);
       settled = false;
       await pushBoards();   // có số sẵn trước khi người ta kịp nhìn vào
@@ -830,8 +833,18 @@ export async function run(token, {
         // xem mà vẫn đẩy là hỏi feed và tiêu request cho một màn hình đã tắt.
         const answer = await call('pushState', { sessionId: live.sessionId, state });
         live.pushed = json;
-        live.idle = Number(answer?.sent) > 0 ? 0 : (live.idle ?? 0) + 1;
-        if (live.idle >= BOARD_IDLE_TICKS) {
+
+        // Đóng bảng tính theo **thời gian**, không theo số lần đẩy.
+        //
+        // Đếm số lần đẩy thì cái ngưỡng ấy trôi nhanh chậm tuỳ bot đẩy dày hay thưa — mà từ khi mỗi
+        // cú bấm cũng sinh một lần đẩy, hai mươi lần trôi qua trong chớp mắt. Bot đóng bảng ngay
+        // dưới tay người đang dùng nó, rồi mọi cú bấm sau đó rơi vào một phòng không còn trong sổ:
+        // trang ngồi "đang lấy hồ sơ" mãi, và một lúc sau thì khung tự tắt.
+        //
+        // Và gói do cú bấm sinh ra thì **không tính**: một cú bấm là bằng chứng có người ngồi đó,
+        // mạnh hơn mọi con số đếm được.
+        if (Number(answer?.sent) > 0) live.seen = Date.now();
+        else if (!stale && Date.now() - (live.seen ?? 0) > (board.idleMs ?? BOARD_IDLE_MS)) {
           boards.delete(conversationId);
           await call('endSession', { sessionId: live.sessionId }).catch(() => {});
           console.log(`đóng bảng: không còn ai xem (${conversationId})`);
@@ -902,6 +915,7 @@ export async function run(token, {
       symbol,
       card: profiles.get(symbol) ?? null,
       pending: asking.has(symbol),
+      failed: !profiles.has(symbol) && broken.has(symbol),
       quote: bySymbol.get(symbol) ?? null,
       sector: named.get(symbol) ?? '',
       history: days.get(symbol) ?? [],
@@ -950,7 +964,16 @@ export async function run(token, {
         asking.add(symbol);
         try {
           profiles.set(symbol, companyCard(await company.profile(symbol)));
+          broken.delete(symbol);
+          // Có ai đang mở đúng mã này không? Cú bấm của họ thấy mã đang được hỏi rồi nên không tự
+          // đi hỏi, tức là **vòng hâm này** là thứ duy nhất biết lúc hồ sơ về. Không đẩy ở đây thì
+          // trang của họ ngồi đợi tới nhịp sau — lâu lâu mới trúng, và trúng thì thấy chậm.
+          if ([...boards.values()].some((live) => live.wanted?.has(symbol))) {
+            for (const live of boards.values()) live.pushed = null;
+            await pushBoards({ stale: true });
+          }
         } catch (problem) {
+          broken.set(symbol, Date.now());
           console.error(`không hâm được hồ sơ ${symbol}: ${problem}`);
         } finally {
           asking.delete(symbol);
@@ -1051,6 +1074,8 @@ export async function run(token, {
     // nó trả lời được câu hỏi mà từ máy tôi không cách nào nhìn thấy — cú bấm có tới bot không, hay
     // rơi đâu đó giữa đường. Bấm mà số không nhúc nhích là chuyện của nền tảng, không phải của bot.
     live.got = (live.got ?? 0) + 1;
+    // Có người vừa bấm, tức là có người đang ngồi đó — mạnh hơn mọi con số đếm được.
+    live.seen = Date.now();
 
     // Trang báo người này đang xem gì: cả bảng, một ngành, hay trang chi tiết một mã kèm tab nào.
     //
@@ -1140,8 +1165,11 @@ export async function run(token, {
       asking.add(symbol);
       waitingOn += 1;
       company.profile(symbol)
-        .then((profile) => profiles.set(symbol, companyCard(profile)))
-        .catch((problem) => console.error(`không lấy được hồ sơ ${symbol}: ${problem}`))
+        .then((profile) => { profiles.set(symbol, companyCard(profile)); broken.delete(symbol); })
+        // Hỏng thì **nhớ là hỏng**, đừng để nó trông như "nguồn bảo mã này không có hồ sơ". Hai
+        // chuyện ấy nhìn giống hệt nhau trên màn hình mà khác hẳn nhau ở chỗ: một cái đáng hỏi lại,
+        // một cái hỏi lại bao nhiêu lần cũng thế.
+        .catch((problem) => { broken.set(symbol, Date.now()); console.error(`không lấy được hồ sơ ${symbol}: ${problem}`); })
         .then(() => {
           asking.delete(symbol);
           waitingOn -= 1;

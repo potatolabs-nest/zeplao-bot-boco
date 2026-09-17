@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 13;
+  const BUILD = 14;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -76,6 +76,10 @@
   let studied = 0;          // lần gần nhất xin bài phân tích kỹ thuật
   let openedAt = 0;         // lúc mở trang chi tiết, để biết khi nào thì thôi chờ
   const GIVE_UP_MS = 6000;
+  /// Vòng hỏi lại của trang chi tiết: mấy giây một lần, mấy lần thì thôi.
+  let chasing = null;
+  const CHASE_MS = 3000;
+  const CHASE_TRIES = 4;
   let seated = false;       // đã dựng lại chỗ ngồi cũ chưa
   let sits = 0;             // đã thử dựng lại mấy lần
   const SEAT_MS = 400;
@@ -344,8 +348,41 @@
     openedAt = Date.now();
     paint(last);
     ask(symbol);
+    chase();
     seat();
     fitRoom();   // card cao lên ngay, không đợi nhịp đẩy sau
+  }
+
+  /**
+   * Hỏi lại bằng đồng hồ của chính trang, không bằng nhịp đẩy của bot.
+   *
+   * Lần hỏi lại trước đây nằm trong hàm vẽ, mà hàm vẽ chỉ chạy khi có gói về — nên đúng lúc bot thôi
+   * đẩy (mất mạng, đóng nhầm phiên, một lời xin rơi giữa đường) thì trang cũng thôi hỏi lại. Hai cái
+   * chết cùng nhau, và người xem ngồi nhìn "đang lấy hồ sơ" không bao giờ dứt.
+   *
+   * Vài lần rồi thôi, và thôi thì **nói ra**: một trang đứng im vì đã bỏ cuộc trông y hệt một trang
+   * đang bận, mà hai cái ấy cần hai phản ứng khác nhau từ người đang nhìn.
+   */
+  function chase() {
+    clearInterval(chasing);
+    let tries = 0;
+    chasing = setInterval(() => {
+      if (opened === null) { clearInterval(chasing); return; }
+      const detail = last?.d?.[opened];
+      // 2 là đang hỏi, 3 là hỏi hỏng — cả hai đều đáng đợi thêm. Có hồ sơ, hoặc nguồn bảo mã này
+      // không có hồ sơ, thì xong.
+      if (detail && detail.f !== 2 && detail.f !== 3) { clearInterval(chasing); return; }
+
+      tries += 1;
+      if (tries > CHASE_TRIES) {
+        clearInterval(chasing);
+        if (!detail?.n) paper.name.textContent = 'Không lấy được hồ sơ — bấm lại vào mã để thử lần nữa';
+        return;
+      }
+      asked = 0;      // lần hỏi lại có chủ ý, không phải hỏi dồn
+      ask(opened);
+      if (tab === 'ptkt') { studied = 0; study(opened); }
+    }, CHASE_MS);
   }
 
   /**
@@ -371,6 +408,7 @@
     if (opened !== null && z && typeof z.send === 'function') {
       try { z.send({ shut: opened }); } catch { /* không nói được thì bot tự bỏ khi quá sáu mã */ }
     }
+    clearInterval(chasing);
     opened = null;
     sheet.hidden = true;
     map.hidden = false;
@@ -416,8 +454,10 @@
     // Ba câu cho ba tình huống, và câu thứ ba là câu quan trọng nhất: gõ nhầm một mã không có thật
     // thì phải được nói ra, chứ không để cái trang quay mãi như đang bận.
     const late = !detail && Date.now() - openedAt > GIVE_UP_MS;
-    paper.name.textContent = detail?.n || state.n?.[opened]
-      || (detail?.f === 0 ? 'Không có hồ sơ công ty' : late ? 'Không tìm thấy mã này' : 'Đang lấy hồ sơ…');
+    const waiting = detail?.f === 3 ? 'Nguồn chưa trả lời, đang thử lại…'
+      : detail?.f === 0 ? 'Không có hồ sơ công ty'
+        : late ? 'Không tìm thấy mã này' : 'Đang lấy hồ sơ…';
+    paper.name.textContent = detail?.n || state.n?.[opened] || waiting;
     // Ngành và giá trị giao dịch có sẵn ngay trên chính ô vừa bấm — tên nhóm nó nằm trong, và tiền
     // giao dịch mà bảng dùng để chia ô. Lấp bằng chúng trong lúc chờ gói: một trang trống trơn suốt
     // một vòng hỏi đáp trông như bấm hụt, dù thật ra nó đang chạy đúng.
