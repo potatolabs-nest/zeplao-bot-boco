@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 8;
+  const BUILD = 9;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -25,6 +25,8 @@
   const clock = document.getElementById('clock');
   const help = document.getElementById('help');
   const build = document.getElementById('build');
+  const finder = document.getElementById('find');
+  const finderBox = document.getElementById('find-box');
   if (build) build.textContent = `b${BUILD}`;
 
   const back = document.getElementById('back');
@@ -48,6 +50,7 @@
     verdict: document.getElementById('s-tk-verdict'),
     conf: document.getElementById('s-tk-conf'),
     chart: document.getElementById('s-tk-chart'),
+    key: document.getElementById('s-tk-key'),
     steps: document.getElementById('s-tk-steps'),
     plan: document.getElementById('s-tk-plan'),
     about: document.getElementById('s-about'),
@@ -66,6 +69,8 @@
   const ASK_AGAIN_MS = 2500;
   let asked = 0;            // lần gần nhất xin bot hồ sơ, để khỏi hỏi dồn
   let studied = 0;          // lần gần nhất xin bài phân tích kỹ thuật
+  let openedAt = 0;         // lúc mở trang chi tiết, để biết khi nào thì thôi chờ
+  const GIVE_UP_MS = 6000;
   let seated = false;       // đã dựng lại chỗ ngồi cũ chưa
   let sits = 0;             // đã thử dựng lại mấy lần
   const SEAT_MS = 400;
@@ -163,10 +168,14 @@
     const room = wrap.getBoundingClientRect();
     if (room.width > 0 && room.height > 0) {
       const wide = Math.floor(Math.min(room.width, (room.height * 16) / 9));
-      for (const box of [map, sheet]) {
-        box.style.width = `${wide}px`;
-        box.style.height = `${Math.floor((wide * 9) / 16)}px`;
-      }
+      map.style.width = `${wide}px`;
+      map.style.height = `${Math.floor((wide * 9) / 16)}px`;
+
+      // Trang chi tiết lấy **cả khung**, không theo 16:9. Luật 16:9 sinh ra cho treemap — nhét nó
+      // vào khung cao và hẹp thì các ô thành cột dựng đứng. Một trang chữ và bảng thì ngược lại:
+      // càng cao càng đỡ phải kéo, mà kéo trong một cái card nổi là việc khó chịu.
+      sheet.style.width = `${Math.floor(room.width)}px`;
+      sheet.style.height = `${Math.floor(room.height)}px`;
       // Chữ trên trang chi tiết co theo khung như chữ trong các ô, nhưng có sàn và có trần: một
       // bảng mở trên điện thoại mà chữ 7px thì không ai đọc, còn trên màn hình rộng thì chữ 30px
       // làm trang chỉ còn vừa ba dòng.
@@ -307,9 +316,11 @@
     cells.clear();
     version = null;
     asked = 0;
+    openedAt = Date.now();
     paint(last);
     ask(symbol);
     seat();
+    fitRoom();   // card cao lên ngay, không đợi nhịp đẩy sau
   }
 
   /**
@@ -338,6 +349,7 @@
     opened = null;
     sheet.hidden = true;
     map.hidden = false;
+    fitRoom();   // và thu lại đúng khung của bản đồ
     if (!last) return;
     if (zoomed === null) draw(last);
     else drawOne(last);
@@ -376,8 +388,11 @@
 
     // Tên đi sẵn trong gói cho những mã bot đã hâm hồ sơ, nên bấm vào ô là có tên ngay — không đợi
     // một vòng hỏi đáp chỉ để lấy một chuỗi chữ.
+    // Ba câu cho ba tình huống, và câu thứ ba là câu quan trọng nhất: gõ nhầm một mã không có thật
+    // thì phải được nói ra, chứ không để cái trang quay mãi như đang bận.
+    const late = !detail && Date.now() - openedAt > GIVE_UP_MS;
     paper.name.textContent = detail?.n || state.n?.[opened]
-      || (detail?.f === 0 ? 'Không có hồ sơ công ty' : 'Đang lấy hồ sơ…');
+      || (detail?.f === 0 ? 'Không có hồ sơ công ty' : late ? 'Không tìm thấy mã này' : 'Đang lấy hồ sơ…');
     // Ngành và giá trị giao dịch có sẵn ngay trên chính ô vừa bấm — tên nhóm nó nằm trong, và tiền
     // giao dịch mà bảng dùng để chia ô. Lấp bằng chúng trong lúc chờ gói: một trang trống trơn suốt
     // một vòng hỏi đáp trông như bấm hụt, dù thật ra nó đang chạy đúng.
@@ -465,6 +480,24 @@
     paper.ptkt.hidden = tab !== 'ptkt';
   }
 
+  /**
+   * Tìm một mã bằng cách gõ tên nó.
+   *
+   * Bảng chỉ bày ra hai trăm sáu mươi ô to nhất, mà sàn có hơn một nghìn năm trăm mã — phần còn lại
+   * không có cách nào bấm tới. Ô này là cách ấy.
+   */
+  finder?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const symbol = String(finderBox.value ?? '').trim().toUpperCase();
+    finderBox.value = '';
+    // Trả bàn phím lại cho màn hình: trên điện thoại nó che mất nửa cái card vừa mở ra.
+    finderBox.blur();
+    if (!/^[A-Z0-9]{3,10}$/.test(symbol)) return;
+    if (opened === symbol) return;
+    opened = null;          // để `open` chịu mở lại khi đang đứng ở một mã khác
+    open(symbol);
+  });
+
   for (const button of document.querySelectorAll('#s-tabs .tab')) {
     button.addEventListener('click', () => {
       tab = button.dataset.tab;
@@ -531,6 +564,37 @@
 
     drawn_ = card.chart;
     paper.chart.replaceChildren(sketch(card.chart));
+    legendFor(card.chart);
+  }
+
+  /**
+   * Chú giải cho chart: đường nào là đường nào.
+   *
+   * Không có nó thì trong hình có ba đường và hai vạch đứt, không cái nào mang tên — người xem phải
+   * đoán, và đoán sai thì đọc ngược cả bức tranh. Dựng bằng HTML chứ không vẽ trong SVG: chữ nét
+   * hơn, và nó tự xuống hàng khi khung hẹp.
+   */
+  function legendFor(chart) {
+    const items = [
+      ['rise', 'Phiên tăng', ''],
+      ['fall', 'Phiên giảm', ''],
+      ['line', 'MA20', 'var(--ma20)'],
+      ['line', 'MA50', 'var(--ma50)'],
+      ['dash', `Hỗ trợ ${vi(chart.support)}`, 'var(--up-r, var(--up))'],
+      ['dash', `Kháng cự ${vi(chart.resistance)}`, 'var(--down-r, var(--down))'],
+    ].filter(([, label]) => !/(NaN|undefined)/.test(label));
+
+    paper.key.replaceChildren(...items.map(([kind, label, colour]) => {
+      const box = document.createElement('span');
+      box.className = 'key';
+      if (colour) box.style.color = colour;
+      const mark = document.createElement('i');
+      mark.className = kind;
+      const text = document.createElement('span');
+      text.textContent = label;
+      box.append(mark, text);
+      return box;
+    }));
   }
 
   /// Chart vừa vẽ, giữ lại để vẽ lại khi khung đổi cỡ — nó tính theo pixel thật nên không tự co.
@@ -624,7 +688,7 @@
     }
 
     // Hai đường trung bình vẽ sau cùng, đè lên nến.
-    for (const [values, colour, thick] of [[chart.ma50, 'var(--muted)', 1], [chart.ma20, 'var(--flat)', 1.4]]) {
+    for (const [values, colour, thick] of [[chart.ma50, 'var(--ma50)', 1.3], [chart.ma20, 'var(--ma20)', 1.3]]) {
       const points = (values ?? [])
         .map((value, index) => (Number.isFinite(value) ? `${mid(index).toFixed(1)},${y(value).toFixed(1)}` : null))
         .filter(Boolean)
@@ -740,18 +804,29 @@
    */
   const chrome = () => Math.round((legend?.getBoundingClientRect().height || 24) + 10);
 
+  let wanted = null;   // kích thước vừa xin, để không xin đi xin lại y hệt một thứ
+
   function fitRoom() {
     const room = z?.room;
     if (!room?.width || typeof z.setSize !== 'function') return;
 
     const CHROME = chrome();
-    const width = Math.max(200, Math.min(room.width, ((room.height - CHROME) * 16) / 9));
-    const wide = Math.round(width);
-    const tall = Math.round((width * 9) / 16 + CHROME);
+    // Bản đồ: chữ nhật 16:9 lớn nhất lọt vào phòng. Trang chi tiết: xin hết những gì phòng có —
+    // bảng mười phiên, chart và phần hồ sơ cộng lại dài hơn một khung 16:9 rất nhiều.
+    const wide = opened === null
+      ? Math.round(Math.max(200, Math.min(room.width, ((room.height - CHROME) * 16) / 9)))
+      : Math.round(room.width);
+    const tall = opened === null
+      ? Math.round((wide * 9) / 16 + CHROME)
+      : Math.round(room.height);
 
     // So với **khung ứng dụng đang cho**, không phải với thứ vừa xin: host báo lại khung thật sự
     // cấp qua đúng đường `onRoom` này, nên xin lại cái khung đang có là một vòng đổi cỡ không dừng.
     if (Math.abs(room.width - wide) <= 2 && Math.abs(room.height - tall) <= 2) return;
+    // Và đừng xin lại đúng thứ vừa xin: ứng dụng có quyền kẹp bớt, lúc ấy `z.room` không bao giờ
+    // bằng thứ mình hỏi, và hỏi mãi là một vòng lặp gửi đi mỗi nhịp đẩy.
+    if (wanted && wanted.w === wide && wanted.h === tall) return;
+    wanted = { w: wide, h: tall };
     z.setSize(wide, tall);
   }
 

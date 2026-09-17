@@ -118,6 +118,9 @@ const BOARD_FRESH_MS = 1200;
 /// Hâm sẵn hồ sơ cho bao nhiêu ô to nhất, và cách nhau bao lâu — xem `warmProfiles`.
 const WARM_MOST = 60;
 const WARM_GAP_MS = 150;
+/// Hạn mức mã ngoài bảng mỗi phòng mở được trong một phút — xem `budget`.
+const BUDGET_MOST = 20;
+const BUDGET_MS = 60 * 1000;
 const BOARD_TITLE = 'Bản đồ nhiệt VN';
 /// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
 /// cho cả phần hướng dẫn.
@@ -735,6 +738,19 @@ export async function run(token, {
     const { base, onBoard, bySymbol, named } = built;
     const names = namesOn(base);
 
+    // Mã tìm bằng ô tìm kiếm không nằm trong bảng, nên cũng không có giá trong mớ vừa dựng. Hỏi
+    // thêm cho đúng những mã ấy — nguồn giá nhớ năm giây, nên nhiều nhịp đẩy liền nhau chỉ tốn một
+    // lượt gọi.
+    const offBoard = [...new Set([...boards.values()].flatMap((live) => [...(live.wanted ?? [])]))]
+      .filter((symbol) => !bySymbol.has(symbol));
+    if (offBoard.length) {
+      try {
+        for (const quote of await market.quotes(offBoard)) bySymbol.set(quote.symbol, quote);
+      } catch (problem) {
+        console.error(`không lấy được giá mã ngoài bảng: ${problem}`);
+      }
+    }
+
     for (const [conversationId, live] of boards) {
       // Bảng mà phòng này đang thấy — cái sàng cho những gì trang gửi về sau đó.
       live.board = onBoard;
@@ -819,7 +835,9 @@ export async function run(token, {
    * gì — lúc ấy gói giữ nguyên hình dạng cũ và cái so sánh "gói này y hệt gói vừa đẩy" vẫn đúng.
    */
   function detailsFor(live, onBoard, bySymbol, named) {
-    const wanted = [...(live.wanted ?? [])].filter((symbol) => onBoard.has(symbol));
+    // Không lọc lại theo bảng: mã nào vào được `wanted` cũng đã qua cái sàng rồi, và một mã tìm bằng
+    // ô tìm kiếm thì vốn không có trên bảng — lọc ở đây là vứt đi đúng thứ vừa được hỏi.
+    const wanted = [...(live.wanted ?? [])];
     if (!wanted.length) return null;
 
     return Object.fromEntries(wanted.map((symbol) => [symbol, boardDetail({
@@ -892,6 +910,34 @@ export async function run(token, {
     // ta đang đọc trang của nó thì mọi cú bấm tiếp theo sẽ rơi vào im lặng — và im lặng là thứ
     // không ai gỡ ra được, vì trang cứ đợi mãi mà chẳng có gì báo là nó đang đợi vô ích.
     return !live.board || live.board.has(symbol) || Boolean(live.wanted?.has(symbol));
+  }
+
+  /**
+   * Và cái sàng rộng hơn, cho ô tìm mã: mã không có trên bảng vẫn mở được, **nếu nó thật sự niêm yết**.
+   *
+   * Bảng chỉ bày hai trăm sáu mươi ô to nhất trong hơn một nghìn năm trăm mã, nên không có đường
+   * này thì phần còn lại của sàn là vùng không ai tới được. Danh sách niêm yết có sẵn trong bộ nhớ
+   * nên phép kiểm không tốn gì, và nó vẫn là một danh sách đóng — không phải muốn gõ gì cũng được.
+   */
+  async function allowed(live, symbol) {
+    if (!/^[A-Z0-9]{3,10}$/.test(symbol)) return false;
+    if (onBoardSymbol(live, symbol)) return true;
+    if (!budget(live)) return false;
+    try {
+      return (await market.universe()).includes(symbol);
+    } catch {
+      return false;
+    }
+  }
+
+  /// Hạn mức mã lạ mỗi phòng được mở trong một phút. Người gõ tay thì không chạm tới nó; một trang
+  /// bị sửa để gọi liên tục thì chạm ngay — và đó đúng là chỗ cần chặn.
+  function budget(live) {
+    const now = Date.now();
+    live.spent = (live.spent ?? []).filter((at) => now - at < BUDGET_MS);
+    if (live.spent.length >= BUDGET_MOST) return false;
+    live.spent.push(now);
+    return true;
   }
 
   /**
@@ -990,7 +1036,7 @@ export async function run(token, {
     // trang chi tiết mở ra, xem dưới — nên cú bấm này chỉ còn là một lần đẩy.
     const studied = String(action?.action?.ptkt ?? '').toUpperCase();
     if (studied) {
-      if (!onBoardSymbol(live, studied)) return;
+      if (!(await allowed(live, studied))) return;
       want(live, studied);
       studyFor(live, studied);
       // Đẩy ngay một gói nữa để trang biết là "đang phân tích", chứ không đứng im nhìn chữ cũ.
@@ -1000,7 +1046,7 @@ export async function run(token, {
     }
 
     const symbol = String(action?.action?.open ?? '').toUpperCase();
-    if (!onBoardSymbol(live, symbol)) return;
+    if (!(await allowed(live, symbol))) return;
     want(live, symbol);
 
     // Phân tích kỹ thuật ngay từ lúc mở trang, không đợi tới lúc bấm sang tab ấy.

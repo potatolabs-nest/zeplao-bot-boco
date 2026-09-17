@@ -13,6 +13,11 @@
   --flat: #f6b846;
   --ceiling: #8b1dc9;
   --floor: #1e88e5;
+
+  /* Hai đường trung bình trong chart PTKT — cùng bộ màu với hình mà `!ptkt` gửi trong tin nhắn,
+     để một người xem cả hai không phải học hai bảng màu. */
+  --ma20: #2a78d6;
+  --ma50: #eb6834;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,6 +27,9 @@
     --text: #e2e8f0;
     --muted: #94a3b8;
     --line: #1e293b;
+    /* Nền tối thì hai màu kia chìm; nâng sáng lên chứ không đổi sắc. */
+    --ma20: #6aa9f0;
+    --ma50: #f59563;
   }
 }
 
@@ -240,6 +248,24 @@ body {
    với `height` lên thẻ `svg`. Kéo giãn bằng CSS thì nét dọc mảnh đi, nét ngang dày lên và chữ bị
    bẹt ngang — cái chart trông như bị ngồi lên. */
 #s-tk-chart { min-width: 0; }
+
+/* Chú giải: không có nó thì ba đường trong chart là ba đường không tên, và người xem phải đoán.
+   Để bằng HTML chứ không vẽ trong SVG — chữ nét hơn, và tự xuống hàng khi khung hẹp. */
+#s-tk-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 0.88em;
+  color: var(--muted);
+}
+
+.key { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.key > i { display: inline-block; width: 14px; height: 10px; }
+.key > i.line { height: 0; border-top: 2px solid currentColor; }
+.key > i.dash { height: 0; border-top: 2px dashed currentColor; }
+.key > i.rise { border: 1.5px solid var(--up-r, var(--up)); background: var(--panel); width: 8px; }
+.key > i.fall { background: var(--down-r, var(--down)); width: 8px; }
 #s-tk-chart svg { display: block; max-width: 100%; }
 
 #s-tk-cols { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: flex-start; margin-top: 8px; }
@@ -319,9 +345,59 @@ body {
   min-width: 0;
   overflow: hidden;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   padding: 0 12px 8px;
   font-size: 12px;
+}
+
+/* Năm thẻ màu gom vào một khối co được và **cắt bớt** khi hẹp, thay vì đẩy những thứ sau nó ra khỏi
+   hàng. Mất một hai cái thẻ thì vẫn còn màu trên bảng phía trên; mất ô tìm mã hay mất đồng hồ thì
+   không có gì thay thế. */
+#tags {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Ô tìm mã: nhỏ, nằm gọn trong hàng chú giải. Nó không được giành chỗ của đồng hồ hay của các thẻ
+   màu — khi khung hẹp thì phần hướng dẫn co lại trước, rồi mới tới nó. */
+#find { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+
+#find-box {
+  width: 74px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: 700 11px/1.2 Arial, Helvetica, system-ui, sans-serif;
+  text-transform: uppercase;
+}
+
+#find-box::placeholder { color: var(--muted); font-weight: 400; text-transform: none; }
+#find-box:focus { outline: 2px solid var(--ma20); outline-offset: -1px; }
+
+#find-go {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font: 700 11px/1 Arial, Helvetica, system-ui, sans-serif;
+  padding: 4px 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#find-go:hover { color: var(--text); background: var(--line); }
+
+/* Ngón tay cần chỗ rộng hơn con trỏ chuột. */
+@media (pointer: coarse) {
+  #find-box { padding: 7px 7px; font-size: 13px; width: 82px; }
+  #find-go { padding: 8px 9px; font-size: 13px; }
 }
 
 #help {

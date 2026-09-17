@@ -1561,6 +1561,42 @@ test('bấm sang tab PTKT một mã đã tính rồi thì không tính lại', a
   assert.ok(pushes.at(-1).state.d?.VIC?.tk);
 });
 
+test('ô tìm mã mở được cả mã không có trên bảng, miễn là nó có niêm yết', async () => {
+  // Bảng bày hai trăm sáu mươi ô to nhất trong hơn nghìn rưởi mã. Không có đường này thì phần còn
+  // lại của sàn là vùng không ai bấm tới được.
+  // TCX niêm yết nhưng hôm nay chưa khớp lệnh nào, nên nó không có chỗ trên bản đồ nhiệt — đúng
+  // kiểu mã mà chỉ ô tìm kiếm mới với tới.
+  const market = {
+    async universe() { return ['VIC', 'HPG', 'TCX']; },
+    async quotes(symbols) {
+      return symbols
+        .filter((symbol) => ['VIC', 'HPG', 'TCX'].includes(symbol))
+        .map((symbol) => normalize(symbol === 'TCX' ? { ...VIC, sym: symbol, r: 0, lastPrice: 0, lot: 0 } : { ...VIC, sym: symbol }));
+    },
+  };
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'TCX' })],
+    { expect: 0, settle: 400, market },
+  );
+
+  const onBoard = pushes.at(-1).state.c.map(([symbol]) => symbol);
+  assert.ok(!onBoard.includes('TCX'), 'mã này đúng là không có trên bảng');
+  const detail = pushes.map(({ state }) => state.d?.TCX).filter(Boolean).at(-1);
+  assert.ok(detail, 'mà vẫn phải mở được trang chi tiết');
+  assert.equal(detail.n, 'Công ty Cổ phần TCX');
+});
+
+test('gõ một mã không niêm yết thì không có gì xảy ra', async () => {
+  const company = stubCompany();
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'KHONGCO' })],
+    { expect: 0, settle: 400, company },
+  );
+
+  assert.ok(pushes.every(({ state }) => !state.d), 'không mã lạ nào được mang theo');
+  assert.ok(!company.calls.includes('KHONGCO'));
+});
+
 test('bot nhớ hộ chỗ người xem đang đứng, vì trang không tự nhớ được', async () => {
   // Widget chạy trong iframe `sandbox="allow-scripts"` không có `allow-same-origin`: origin mờ, và
   // chạm vào `localStorage` là ném lỗi. Nên chuyển sang phòng chat khác rồi quay lại là trang nạp

@@ -45,6 +45,7 @@
       <div id="s-tk">
         <div id="s-tk-head"><b id="s-tk-verdict"></b><span id="s-tk-conf" class="muted"></span></div>
         <div id="s-tk-chart"></div>
+        <div id="s-tk-key"></div>
         <div id="s-tk-cols">
           <ul id="s-tk-steps"></ul>
           <div id="s-tk-plan"></div>
@@ -61,11 +62,22 @@
      một dòng tiêu đề riêng trên đỉnh ăn mất cả chục phần trăm chiều cao để nói một điều người mở
      nó đã biết — thanh tiêu đề của chính cái card đã ghi tên bot rồi. -->
 <footer id="legend">
-  <span class="tag"><i class="swatch ceiling"></i><span id="n-ceiling">0</span> trần</span>
-  <span class="tag"><i class="swatch up"></i><span id="n-up">0</span> tăng</span>
-  <span class="tag"><i class="swatch flat"></i><span id="n-flat">0</span> đứng</span>
-  <span class="tag"><i class="swatch down"></i><span id="n-down">0</span> giảm</span>
-  <span class="tag"><i class="swatch floor"></i><span id="n-floor">0</span> sàn</span>
+  <!-- Tìm một mã bất kỳ, kể cả mã không nằm trong hai trăm sáu mươi ô to nhất của bảng. Đặt ở hàng
+       chú giải vì đó là hàng duy nhất còn chỗ — bảng nhiệt sống bằng diện tích. Và đặt **đầu hàng**:
+       ở card hẹp, hàng này không đủ chỗ cho mọi thứ, mà một ô nhập bị đẩy văng ra ngoài thì coi như
+       không có, còn năm cái thẻ màu bị cắt bớt thì vẫn còn màu trên chính cái bảng phía trên. -->
+  <form id="find">
+    <input id="find-box" type="text" inputmode="text" autocapitalize="characters" autocomplete="off"
+           spellcheck="false" maxlength="10" placeholder="Tìm mã" aria-label="Tìm mã">
+    <button type="submit" id="find-go" aria-label="Tìm">↵</button>
+  </form>
+  <div id="tags">
+    <span class="tag"><i class="swatch ceiling"></i><span id="n-ceiling">0</span> trần</span>
+    <span class="tag"><i class="swatch up"></i><span id="n-up">0</span> tăng</span>
+    <span class="tag"><i class="swatch flat"></i><span id="n-flat">0</span> đứng</span>
+    <span class="tag"><i class="swatch down"></i><span id="n-down">0</span> giảm</span>
+    <span class="tag"><i class="swatch floor"></i><span id="n-floor">0</span> sàn</span>
+  </div>
   <span id="help" class="muted"></span>
   <span id="clock" class="muted">Đang mở…</span>
   <!-- Số bản dựng của gói widget. Hai ký tự, nhưng chúng trả lời được câu hỏi tốn nhiều thời gian
