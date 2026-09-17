@@ -13,6 +13,9 @@ const GAP = 4;
 const HEADER = 34;
 const FOOTER = 42;
 const MIN_TILE = 36;
+/// Cỡ chữ lớn nhất và nhỏ nhất còn đáng in ra. Dưới mức nhỏ nhất thì ô để trống.
+const MOST_LABEL = 30;
+const LEAST_LABEL = 9;
 /// Khe trắng giữa hai ô, và góc bo của ô. Cả phần "trắng" của bản đồ nằm ở đây: không phủ gì lên
 /// màu, chỉ chừa ra một mạch hở đủ mảnh để mỗi mã thành một viên riêng thay vì một mảng liền.
 const TILE_GAP = 1.5;
@@ -198,12 +201,18 @@ function gapFor(rect) {
 function tileSvg(quote, rect) {
   if (rect.w <= 0 || rect.h <= 0) return '';
   const color = colorFor(quote);
-  const label = rect.w >= MIN_TILE && rect.h >= MIN_TILE;
   // Mã và phần trăm **cùng một cỡ**. Hai dòng ấy là một thông tin, không phải một cái tên với một
   // ghi chú: người ta liếc bản đồ để đọc mức tăng giảm, nên thu nhỏ con số đi là thu nhỏ đúng thứ
-  // đáng nhìn. Cỡ chữ vì thế tính theo chỗ cho **hai dòng bằng nhau**: bề ngang đủ cho `-3,02%`,
-  // bề dọc đủ cho hai dòng chồng lên nhau.
-  const size = clamp(Math.min(rect.w / 4.2, rect.h / 2.9), 11, 30);
+  // đáng nhìn.
+  //
+  // Cỡ chữ tính từ chỗ trống, và **không có sàn**. Hai dòng cao chừng 1,8 lần cỡ chữ, nên chia
+  // chiều cao ô cho 3,6 là chữ chiếm đúng nửa ô, không hơn. Bề ngang chia 4,3 cho vừa `-3,02%`.
+  //
+  // Trước đây có sàn 11px: ô bé tới đâu thì chữ vẫn bị kéo lên 11, và hai dòng chữ ăn gần hết ô.
+  // Ô không đủ chỗ thì để trống — một ô trống vẫn đọc được màu, còn một ô đặc chữ thì không đọc
+  // được gì cả.
+  const size = Math.min(rect.w / 4.3, rect.h / 3.6, MOST_LABEL);
+  const label = size >= LEAST_LABEL;
   const percent = signed(quote.percent);
 
   return `<g data-symbol="${escapeXml(quote.symbol)}">
