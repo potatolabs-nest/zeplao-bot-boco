@@ -40,7 +40,7 @@ import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
 import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
 import { googleNews, newsMessage } from './market/news.mjs';
-import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
+import { dailyHistory, intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 import { askedHeatmapFor, boardState, marketHeatmap } from './market/heatmap.mjs';
 import { vndirectSectors } from './market/sectors.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
@@ -504,6 +504,7 @@ export async function run(token, {
   technical = technicalAnalysis(),
   results = vietcapResults(),
   company = vietcapCompany(),
+  history = dailyHistory(),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -627,6 +628,8 @@ export async function run(token, {
   const profiles = new Map();
   /// Mã đang trên đường hỏi nguồn — khác hẳn mã đã hỏi xong và nguồn bảo không có.
   const asking = new Set();
+  /// Mã -> mười phiên gần nhất. Nguồn tự nhớ mười phút; chỗ này nhớ để gói đẩy khỏi phải `await`.
+  const days = new Map();
   /// Nhiều nhất bao nhiêu mã được mang theo trong gói của một phòng.
   const MOST_DETAILS = 6;
 
@@ -648,6 +651,9 @@ export async function run(token, {
       await pushBoards();   // có số sẵn trước khi người ta kịp nhìn vào
     }
     await call('showSession', { sessionId: live.sessionId, ...(userId ? { to: userId } : {}) });
+    // Và đánh dấu phòng này cần một gói nữa: gói vừa đẩy ở trên đi trước lúc trang tồn tại. Tiếng
+    // chào của trang cũng làm việc này, nhưng tiếng chào có thể rơi, còn nhịp đẩy thì luôn tới.
+    live.pushed = null;
     startPushing();
   }
 
@@ -721,6 +727,7 @@ export async function run(token, {
       pending: asking.has(symbol),
       quote: bySymbol.get(symbol) ?? null,
       sector: named.get(symbol) ?? '',
+      history: days.get(symbol) ?? [],
     })]));
   }
 
@@ -734,6 +741,17 @@ export async function run(token, {
   async function onBoardAction(action) {
     const live = boards.get(action?.conversationId);
     if (!live) return;
+
+    // Trang vừa mở ra và chào một tiếng. Đẩy lại ngay cho nó.
+    //
+    // Đây không phải chuyện lịch sự mà là đường sống của bảng: ngoài giờ khớp lệnh bot đẩy đúng một
+    // lần rồi nghỉ, mà lần ấy xảy ra **trước** `showSession` — tức trước khi trang kịp tồn tại. Không
+    // có tiếng chào này thì người mở bảng lúc bảy giờ tối ngồi nhìn "Đang mở…" tới sáng.
+    if (action?.action?.hello) {
+      live.pushed = null;
+      await pushBoards();
+      return;
+    }
 
     // Đóng trang chi tiết: bỏ mã khỏi gói của phòng. Không cần đẩy ngay — trang đã về bản đồ rồi,
     // và gói tới sẽ nhẹ đi một hồ sơ.
@@ -757,10 +775,16 @@ export async function run(token, {
     // chút" với "mã này không có hồ sơ", và hai câu ấy nói hai chuyện khác hẳn nhau.
     if (!profiles.has(symbol) && !asking.has(symbol)) {
       asking.add(symbol);
-      company.profile(symbol)
-        .then((profile) => profiles.set(symbol, companyCard(profile)))
-        .catch((problem) => console.error(`không lấy được hồ sơ ${symbol}: ${problem}`))
-        .then(() => {
+      // Hồ sơ và mười phiên gần nhất hỏi cùng lúc, hai nguồn khác nhau: một cái chết thì cái kia
+      // vẫn lên trang. Bảng lịch sử không có thì trang thiếu một bảng, chứ không thiếu cả trang.
+      Promise.allSettled([
+        company.profile(symbol).then((profile) => profiles.set(symbol, companyCard(profile))),
+        history.rows(symbol).then((rows) => days.set(symbol, rows)),
+      ])
+        .then((answers) => {
+          for (const answer of answers) {
+            if (answer.status === 'rejected') console.error(`không lấy được số liệu ${symbol}: ${answer.reason}`);
+          }
           asking.delete(symbol);
           live.pushed = null;
           return pushBoards();

@@ -14,12 +14,18 @@
 // Gói tới liên tục nhưng DOM chỉ dựng lại khi **bố cục** đổi (`v`). Giá thì sửa tại chỗ: dựng lại
 // cả bảng mỗi nhịp là cách làm chữ nhấp nháy và mất chỗ người ta đang nhìn.
 (function () {
+  /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
+  /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
+  const BUILD = 3;
+
   const z = window.Zeplao;
   const map = document.getElementById('map');
   const wrap = document.getElementById('wrap');
   const legend = document.getElementById('legend');
   const clock = document.getElementById('clock');
   const help = document.getElementById('help');
+  const build = document.getElementById('build');
+  if (build) build.textContent = `b${BUILD}`;
 
   const back = document.getElementById('back');
   const sheet = document.getElementById('sheet');
@@ -33,6 +39,7 @@
     stats: document.getElementById('s-stats'),
     today: document.getElementById('s-today'),
     firm: document.getElementById('s-firm'),
+    days: document.getElementById('s-days'),
     about: document.getElementById('s-about'),
   };
 
@@ -47,6 +54,8 @@
   const MOST_LABEL = 30;
   const ASK_AGAIN_MS = 2500;
   let asked = 0;            // lần gần nhất xin bot hồ sơ, để khỏi hỏi dồn
+  const HELLO_AGAIN_MS = 4000;
+  const HELLO_TRIES = 5;
   const KINDS = ['up', 'down', 'flat', 'ceiling', 'floor'];
 
   /**
@@ -343,9 +352,11 @@
     // một vòng hỏi đáp trông như bấm hụt, dù thật ra nó đang chạy đúng.
     paper.where.textContent = detail?.w || (cell ? (state.g?.[cell[7]] ?? [])[0] ?? '' : '');
 
-    // Hai con số của phiên hôm nay đứng riêng và to: khối lượng và giá trị giao dịch.
+    // Ba con số to: khối lượng và giá trị hôm nay, rồi khối lượng bình quân mười phiên — cái thứ ba
+    // là thước đo của hai cái đầu, và để nó nằm ở chân một cái bảng phải cuộn mới tới là chôn nó.
     const today = detail?.q ?? [['Khối lượng', '…'], ['Giá trị', cell ? `${dot(cell[8])} tỷ` : '…']];
-    paper.stats.replaceChildren(...today.slice(0, 2).map(([label, value]) => {
+    const tiles = [...today.slice(0, 2), ...(detail?.hb ? [detail.hb] : [])];
+    paper.stats.replaceChildren(...tiles.map(([label, value]) => {
       const box = document.createElement('div');
       box.className = 'stat';
       const name = document.createElement('span');
@@ -358,11 +369,45 @@
 
     rows(paper.today, today.slice(2));
     rows(paper.firm, detail?.r ?? []);
+    history(detail);
     paper.about.textContent = detail?.a ?? '';
 
     back.hidden = false;
     back.textContent = `← ${zoomed ?? 'Bản đồ'}`;
     fit();
+  }
+
+  /**
+   * Bảng mười phiên gần nhất, và khối lượng bình quân ở chân bảng.
+   *
+   * Bảng vắng mặt khi nguồn nến không trả lời — không dựng một cái khung rỗng có tiêu đề: một bảng
+   * năm cột trống trông như số liệu hỏng, còn không có bảng thì chỉ là không có bảng.
+   */
+  function history(detail) {
+    const days = detail?.h ?? [];
+    paper.days.replaceChildren();
+    if (!days.length) return;
+
+    const head = document.createElement('tr');
+    for (const label of ['Ngày', 'Giá', 'Thay đổi', 'Khối lượng', 'Giá trị']) {
+      const cell = document.createElement('th');
+      cell.textContent = label;
+      head.append(cell);
+    }
+    paper.days.append(head);
+
+    for (const [day, close, percent, volume, value, way] of days) {
+      const line = document.createElement('tr');
+      for (const [index, shown] of [day, close, percent, volume, value].entries()) {
+        const cell = document.createElement('td');
+        cell.textContent = shown;
+        // Chỉ cột giá và cột thay đổi ăn màu: tô cả dòng thì bảng thành một mảng xanh đỏ và không
+        // còn đọc được cột nào.
+        if (index === 1 || index === 2) cell.className = way > 0 ? 'up' : way < 0 ? 'down' : '';
+        line.append(cell);
+      }
+      paper.days.append(line);
+    }
   }
 
   /// Số có dấu chấm ngăn nghìn, kiểu Việt Nam. Trang không gọi được `Intl` của bot, mà một con số
@@ -472,6 +517,11 @@
     z.setSize(wide, tall);
   }
 
+  function hello() {
+    if (!z || typeof z.send !== 'function') return;
+    try { z.send({ hello: 1, host: z.room?.host ?? '?' }); } catch { /* không chào được thì thôi */ }
+  }
+
   // Theo dõi khung bọc, không theo dõi bản đồ: chính `fit()` đặt kích thước bản đồ, nên nghe ngóng
   // bản đồ là nghe lại tiếng của mình và quay vòng.
   if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(wrap);
@@ -490,9 +540,24 @@
 
     // Chào một tiếng. Không có tin báo "đã mở" nào cho bot, nên đây là cách duy nhất bot biết bảng
     // thật sự hiện ra trên máy ai — và biết nó hiện trên web hay điện thoại.
-    if (typeof z.send === 'function') {
-      try { z.send({ hello: 1, host: z.room?.host ?? '?' }); } catch { /* không chào được thì thôi */ }
-    }
+    //
+    // Tiếng chào này là **điều kiện để có số**, không phải phép lịch sự: ngoài giờ khớp lệnh bot
+    // đẩy đúng một lần rồi nghỉ, và lần ấy đi trước lúc trang này tồn tại. Nên chào lại tới khi có
+    // gói đầu tiên — một gói rơi mất là cả cái bảng không bao giờ hiện ra.
+    hello();
+    let tries = 0;
+    const again = setInterval(() => {
+      if (last) { clearInterval(again); return; }
+      tries += 1;
+      if (tries > HELLO_TRIES) {
+        clearInterval(again);
+        // Nói ra thay vì đứng mãi ở "Đang mở…": hai câu ấy trông giống nhau trên màn hình nhưng
+        // một câu là đang chờ, còn câu kia là đã hỏng — và chỉ câu thứ hai mới đáng đi báo.
+        clock.textContent = 'Chưa nhận được số liệu';
+        return;
+      }
+      hello();
+    }, HELLO_AGAIN_MS);
   } else {
     // Mở thẳng file trong trình duyệt: vẽ một bảng mẫu, để sửa giao diện mà không cần bot chạy.
     apply({
@@ -515,6 +580,14 @@
             ['Trần / Sàn', '24,60 / 21,40'], ['Mở cửa', '23,05'], ['Cao / Thấp', '23,60 / 23,00']],
           r: [['Ngành', 'Ngân hàng'], ['Vốn hoá', '186.420 tỷ đồng'], ['Cổ phiếu lưu hành', '7.933.923.601'],
             ['Room ngoại', '30% · đang nắm 24,8%'], ['52 tuần', '17,30 – 24,10'], ['Niêm yết', '17/08/2017']],
+          h: [
+            ['17/09', '23,50', '+2,17%', '18.462.900', '434 tỷ', 1],
+            ['16/09', '23,00', '-0,18%', '20.259.400', '466 tỷ', -1],
+            ['15/09', '23,05', '+1,65%', '24.355.000', '561 tỷ', 1],
+            ['12/09', '22,67', '+0,93%', '25.705.400', '583 tỷ', 1],
+            ['11/09', '22,46', '-2,00%', '27.525.700', '618 tỷ', -1],
+          ],
+          hb: ['KLTB 5 phiên', '23.261.680'],
           a: 'Ngân hàng TMCP Việt Nam Thịnh Vượng tiền thân là Ngân hàng TMCP Các Doanh nghiệp Ngoài quốc doanh, hoạt động trong lĩnh vực ngân hàng bán lẻ và tài chính tiêu dùng.',
         },
       },

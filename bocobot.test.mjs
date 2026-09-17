@@ -370,6 +370,24 @@ function stubCompany({ broken = false, quiet = false } = {}) {
   };
 }
 
+/// Mười phiên gần nhất, giả. Mặc định của `run` gọi ra API nến ngày thật — và một bộ test đi ra
+/// internet là một bộ test đỏ khi mất mạng, đỏ trên CI, và đỏ vào đúng hôm nguồn kia bảo trì.
+function stubHistory({ broken = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async rows(symbol) {
+      calls.push(symbol);
+      if (broken) throw new Error('nguồn nến chết');
+      return [
+        { day: '07/09/2026', close: 256.1, change: 11.6, percent: 4.74, volume: 7518600, value: 1925514060 },
+        { day: '04/09/2026', close: 244.5, change: -2.5, percent: -1.01, volume: 6100000, value: 1491450000 },
+        { day: '03/09/2026', close: 247, change: 0, percent: 0, volume: 5200000, value: 1284400000 },
+      ];
+    },
+  };
+}
+
 /// Bảng ngành giả. Mặc định của `run` gọi ra VNDirect, và một bộ test gọi ra internet là một bộ
 /// test đỏ khi mất mạng.
 function stubSectors() {
@@ -399,8 +417,11 @@ async function withBot(
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
+    history = stubHistory(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
     refuseSessions = false,
+    // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú. Bài nào cần sàn đóng thì đưa giờ khác vào.
+    at = () => new Date('2026-09-07T03:00:00Z'),
   } = {},
 ) {
   const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers, keepCommands, refuseSessions });
@@ -417,10 +438,11 @@ async function withBot(
     technical,
     results,
     company,
+    history,
     sectors,
     board,
     statePath,
-    at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
+    at,
   });
 
   // Đợi tới khi nó nói đủ số câu đang chờ, rồi lặng thêm một nhịp nữa.
@@ -1434,6 +1456,14 @@ test('bấm vào một ô thì gói sau mang theo hồ sơ mã ấy, kèm khối
   assert.ok(detail.r.some(([label]) => label === 'Vốn hoá'));
   assert.ok(!detail.r.some(([label]) => label === 'Sàn'), 'sàn đã nằm ngay dưới tên mã');
 
+  // Mười phiên gần nhất, và khối lượng bình quân của đúng chừng ấy phiên — không phải "bình quân
+  // tháng" của hồ sơ, vốn là một con số khác đứng ngay bên cạnh trong cùng trang.
+  assert.equal(detail.h.length, 3);
+  assert.deepEqual(detail.h[0].slice(0, 5), ['07/09', '256,1', '+4,74%', '7.518.600', '1.926 tỷ']);
+  assert.equal(detail.h[0][5], 1);            // phiên tăng, để trang tô đúng màu
+  assert.equal(detail.h[1][5], -1);
+  assert.deepEqual(detail.hb, ['KLTB 3 phiên', '6.272.867']);
+
   assert.deepEqual(company.calls, ['VIC']);   // hỏi nguồn đúng một lần, rồi nhớ
   assert.ok(JSON.stringify(pushes.at(-1).state).length < 64 * 1024, 'một lần đẩy tối đa 64 KB');
 });
@@ -1467,6 +1497,21 @@ test('đóng trang chi tiết thì gói thôi mang hồ sơ mã ấy', async () 
 
   assert.ok(pushes.some(({ state }) => state.d?.VIC), 'đã có lúc mang theo');
   assert.ok(!pushes.at(-1).state.d, 'gói cuối thì thôi');
+});
+
+test('sàn đóng cửa vẫn phải có số trên bảng, nhưng không đẩy mãi suốt đêm', async () => {
+  // Gói đầu tiên đi **trước** `showSession`, tức trước khi trang kịp tồn tại trên máy ai. Ngoài giờ
+  // khớp lệnh bot đẩy một lần rồi nghỉ, nên nếu không có gói thứ hai thì người mở bảng lúc bảy giờ
+  // tối ngồi nhìn "Đang mở…" tới sáng — bảng trống, bấm vào đâu cũng không ra gì.
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' })],
+    { expect: 0, settle: 500, at: () => new Date('2026-09-07T09:00:00Z') },   // 16:00: đã đóng cửa
+  );
+
+  assert.ok(pushes.length >= 2, `trang mở ra phải nhận được một gói; mới đẩy ${pushes.length} lần`);
+  // Mà cũng đừng đẩy mỗi nhịp: `settle` 500ms với nhịp 40ms là hơn mười nhịp.
+  assert.ok(pushes.length <= 4, `ngoài giờ thì thôi đẩy; đã đẩy ${pushes.length} lần`);
+  assert.match(pushes.at(-1).state.note, /đóng cửa/);
 });
 
 test('không mở được phiên thì vẫn trả hướng dẫn như cũ', async () => {

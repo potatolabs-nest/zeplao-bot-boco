@@ -17,6 +17,10 @@ const MAX_RANGE_DAYS = 365 * 20;
 const SESSION_LOOKBACK_DAYS = 4;
 /// SVG được khai kích thước gấp đôi viewBox, để hiện nét và đủ lớn trong khung chat.
 const OUTPUT_SCALE = 2;
+/// Bảng lịch sử: bao nhiêu phiên, lùi bao xa để chắc chắn gom đủ, và nhớ trong bao lâu.
+export const HISTORY_ROWS = 10;
+const HISTORY_LOOKBACK_DAYS = 40;
+const HISTORY_TTL_MS = 10 * 60 * 1000;
 
 export function parseChartPeriod(value) {
   const matched = /^([1-9]\d{0,3})([dmy]|n)$/i.exec(String(value ?? '').trim());
@@ -335,6 +339,68 @@ function chartSvg(session, title, caption) {
 function priceTicks(session) {
   const values = [session.high, session.baseline ?? session.open, session.low].map(round);
   return [...new Set(values)].sort((a, b) => b - a);
+}
+
+/**
+ * Mười phiên gần nhất của một mã, mới nhất trước.
+ *
+ * Nguồn là nến ngày của cùng cái API vẽ chart — không thêm một nguồn nào nữa cho một bảng năm cột.
+ * Có nhớ: bảng này chỉ đổi sau mỗi phiên, mà người ta bấm ra bấm vào trang chi tiết liên tục.
+ */
+export function dailyHistory({
+  base = CHART, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now(), ttlMs = HISTORY_TTL_MS,
+} = {}) {
+  const kept = new Map();
+
+  return {
+    async rows(symbol, want = HISTORY_ROWS) {
+      const code = String(symbol ?? '').toUpperCase();
+      const held = kept.get(code);
+      if (held && now() - held.at < ttlMs) return held.rows;
+
+      const to = Math.floor(now() / 1000);
+      // Lùi xa hơn mười phiên rất nhiều: mười phiên giao dịch nằm rải trong chừng hai tuần lịch,
+      // và một cái Tết thì đẩy chúng đi xa hơn thế.
+      const from = to - HISTORY_LOOKBACK_DAYS * 24 * 60 * 60;
+      const url = `${base}/${kindOf(code)}?from=${from}&to=${to}&symbol=${code}&resolution=${DAILY_RESOLUTION}`;
+
+      const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeout) });
+      if (!response.ok) throw new Error(`nến ngày trả lời ${response.status}`);
+      const rows = dailyRows(await response.json(), want);
+      kept.set(code, { rows, at: now() });
+      return rows;
+    },
+  };
+}
+
+/**
+ * Mảng song song `t c v` → từng phiên, mới nhất trước.
+ *
+ * Thay đổi tính so với phiên **liền trước trong chính mảng này**, không so với tham chiếu của hôm
+ * nay: đây là lịch sử, và mỗi dòng phải nói đúng chuyện của ngày nó.
+ */
+export function dailyRows(data, want = HISTORY_ROWS) {
+  if (!Array.isArray(data?.t) || !Array.isArray(data?.c)) return [];
+
+  const rows = [];
+  for (let index = data.c.length - 1; index >= 0 && rows.length < want; index -= 1) {
+    const close = Number(data.c[index]);
+    if (!Number.isFinite(close) || close <= 0) continue;
+
+    const before = Number(data.c[index - 1]);
+    const change = Number.isFinite(before) && before > 0 ? round(close - before) : 0;
+    const volume = Number(data.v?.[index] ?? 0);
+    rows.push({
+      day: formatDay(tradingDay(Number(data.t[index]))),
+      close,
+      change,
+      percent: before > 0 ? round((change / before) * 100) : 0,
+      volume,
+      // Giá trị khớp: nguồn không gửi, nhưng giá đóng nhân khối lượng là con số mọi bảng giá dùng.
+      value: close * volume,
+    });
+  }
+  return rows;
 }
 
 export function tradingDay(seconds) {

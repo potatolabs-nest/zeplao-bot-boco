@@ -102,9 +102,25 @@ export function companyCard(profile) {
  * `card` là `null` khi hồ sơ chưa về hoặc mã không có hồ sơ — trang vẫn mở được, chỉ thiếu phần tên
  * và vốn hoá. Số của phiên thì luôn có, vì chúng tới từ chính cái bảng người ta vừa bấm vào.
  */
-export function boardDetail({ symbol, card = null, quote = null, sector = '', pending = false }) {
+export function boardDetail({ symbol, card = null, quote = null, sector = '', pending = false, history = [] }) {
   const code = String(symbol ?? '').toUpperCase();
   if (!code) return null;
+
+  // Mười phiên gần nhất, mỗi phiên một dòng năm cột. Khối lượng bình quân đứng riêng ở chân bảng:
+  // một mã hôm nay khớp mười triệu là nhiều hay ít thì chỉ con số ấy trả lời được.
+  const days = history.map((row) => [
+    // Ngày/tháng thôi: mười phiên gần nhất thì năm là bốn chữ số không nói thêm gì, mà bảng có năm
+    // cột và cột nào cũng đang tranh chỗ.
+    row.day.slice(0, 5),
+    money(row.close),
+    `${signed(row.percent)}%`,
+    count(row.volume),
+    traded(row.close * row.volume),
+    row.change > 0 ? 1 : row.change < 0 ? -1 : 0,
+  ]);
+  const average = history.length
+    ? Math.round(history.reduce((sum, row) => sum + row.volume, 0) / history.length)
+    : 0;
 
   const today = [];
   if (quote) {
@@ -114,9 +130,11 @@ export function boardDetail({ symbol, card = null, quote = null, sector = '', pe
     today.push(['Khối lượng', count(quote.volume)]);
     today.push(['Giá trị', traded(quote.price * quote.volume)]);
     today.push(['Tham chiếu', money(quote.reference)]);
-    if (quote.ceiling > 0 && quote.floor > 0) today.push(['Trần / Sàn', `${money(quote.ceiling)} / ${money(quote.floor)}`]);
+    // Nhãn viết sát, không có khoảng trắng quanh dấu gạch: cột này hẹp, và "Cao / Thấp" xuống hai
+    // dòng thì một cái nhãn hai chữ chiếm chỗ bằng hai dòng số.
+    if (quote.ceiling > 0 && quote.floor > 0) today.push(['Trần/Sàn', `${money(quote.ceiling)} / ${money(quote.floor)}`]);
     if (quote.open > 0) today.push(['Mở cửa', money(quote.open)]);
-    if (quote.high > 0 && quote.low > 0) today.push(['Cao / Thấp', `${money(quote.high)} / ${money(quote.low)}`]);
+    if (quote.high > 0 && quote.low > 0) today.push(['Cao/Thấp', `${money(quote.high)} / ${money(quote.low)}`]);
     if (quote.average > 0) today.push(['Bình quân', money(quote.average)]);
   }
 
@@ -129,13 +147,29 @@ export function boardDetail({ symbol, card = null, quote = null, sector = '', pe
     // "tăng 1,2 nghìn đồng" thì cả bảng không chỗ nào nói.
     d: quote && quote.change ? `${quote.change > 0 ? '+' : '-'}${money(Math.abs(quote.change))}` : '',
     q: today,
-    // Bỏ dòng Sàn khỏi phần hồ sơ: nó đã đứng ngay dưới tên mã rồi.
-    r: (card?.rows ?? []).filter(([label]) => label !== 'Sàn'),
+    // Bỏ dòng Sàn khỏi phần hồ sơ: nó đã đứng ngay dưới tên mã rồi. Vài nhãn rút ngắn cho vừa một
+    // cột hẹp — thẻ trong tin nhắn rộng hơn nên nó giữ nguyên tên đầy đủ.
+    r: (card?.rows ?? [])
+      .filter(([label]) => label !== 'Sàn')
+      .map(([label, value]) => [SHORTER[label] ?? label, value]),
+    h: days,
+    // Khối lượng bình quân mười phiên — và ghi rõ mười phiên, vì hồ sơ Vietcap cũng có một con số
+    // "KL bình quân tháng" ngay bên cạnh, và hai con số giống tên nhau mà khác nghĩa là chỗ sai.
+    hb: average ? [`KLTB ${history.length} phiên`, count(average)] : null,
     a: card?.about ?? '',
     // Hồ sơ chưa về thì trang nói "đang lấy", hồ sơ về mà rỗng thì trang nói "không có" — hai
     // chuyện khác nhau, và một cái quay mãi trong khi thật ra chẳng bao giờ có gì là chuyện thứ ba.
     f: card ? 1 : pending ? 2 : 0,
   };
+}
+
+const SHORTER = { 'Cổ phiếu lưu hành': 'CP lưu hành', 'KL bình quân tháng': 'KLTB tháng' };
+
+/// Dấu đi liền số, và số không thì không mang dấu nào.
+function signed(value) {
+  if (value > 0) return `+${money(value)}`;
+  if (value < 0) return `-${money(Math.abs(value))}`;
+  return money(0);
 }
 
 /// Giá trị giao dịch, tính bằng nghìn đồng vào — số càng lớn càng ít số lẻ: "1.925 tỷ" đọc nhanh

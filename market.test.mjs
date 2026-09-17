@@ -13,8 +13,9 @@ import { withCache } from './market/vps.mjs';
 import { looksLikeCode, tokensIn, makeGuard } from './market/symbols.mjs';
 import { sectorsOf, vndirectSectors } from './market/sectors.mjs';
 import {
-  companyCard, companyCards, companyEntities, companyOf, plainText, vietcapCompany,
+  boardDetail, companyCard, companyCards, companyEntities, companyOf, plainText, vietcapCompany,
 } from './market/company.mjs';
+import { dailyHistory, dailyRows } from './market/chart.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -466,4 +467,57 @@ test('hồ sơ hỏi một lần rồi nhớ, và mã lạ trả về 200 kèm d
 test('nguồn hồ sơ chậm thì câu trả lời vẫn đi, không đợi', async () => {
   const stuck = { profile: () => new Promise(() => {}) };
   assert.equal((await companyCards(stuck, ['VIC'], { waitMs: 20 })).size, 0);
+});
+
+// ---- mười phiên gần nhất ----------------------------------------------------------------------
+
+test('nến ngày thành các phiên, mới nhất trước, mỗi phiên so với phiên liền trước nó', () => {
+  const rows = dailyRows({
+    t: [1757030400, 1757116800, 1757203200, 1757289600],
+    c: [100, 102, 102, 99],
+    v: [1000, 2000, 3000, 4000],
+  }, 3);
+
+  assert.deepEqual(rows.map((row) => row.close), [99, 102, 102]);
+  assert.deepEqual(rows.map((row) => row.percent), [-2.94, 0, 2]);
+  // Phiên cũ nhất trong cửa sổ không có phiên trước để so — nói 0 chứ không bịa ra một con số.
+  assert.equal(dailyRows({ t: [1757030400], c: [100], v: [10] })[0].percent, 0);
+  assert.deepEqual(dailyRows(null), []);
+  assert.deepEqual(dailyRows({ c: [1] }), []);
+});
+
+test('nguồn nến ngày nhớ lại, không hỏi lại mỗi lần ai mở trang', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return { ok: true, json: async () => ({ t: [1757030400, 1757116800], c: [100, 101], v: [10, 20] }) };
+  };
+  let clock = 0;
+  const source = dailyHistory({ fetchImpl, now: () => clock, ttlMs: 1000 });
+
+  assert.equal((await source.rows('VIC')).length, 2);
+  await source.rows('VIC');
+  assert.equal(calls, 1);
+  clock = 1500;
+  await source.rows('VIC');
+  assert.equal(calls, 2);
+});
+
+test('trang chi tiết gộp hồ sơ, giá hôm nay và mười phiên — thiếu cái nào thì thiếu mình nó', () => {
+  const quote = { symbol: 'VIC', price: 256.1, reference: 244.5, ceiling: 261.6, floor: 227.4, open: 244.7, high: 260, low: 244.7, average: 255.12, volume: 7518600, change: 11.6, percent: 4.74, traded: true };
+  const full = boardDetail({ symbol: 'VIC', quote, sector: 'Bất động sản', history: [{ day: '07/09/2026', close: 256.1, change: 11.6, percent: 4.74, volume: 7518600 }] });
+
+  // Không có hồ sơ mà vẫn có trang: số của phiên tới từ chính cái bảng người ta vừa bấm vào.
+  assert.equal(full.n, '');
+  assert.equal(full.f, 0);
+  assert.equal(full.w, 'Bất động sản');
+  assert.deepEqual(full.q[0], ['Khối lượng', '7.518.600']);
+  assert.deepEqual(full.hb, ['KLTB 1 phiên', '7.518.600']);
+
+  // Ngược lại: có hồ sơ, chưa có nến — bảng vắng mặt chứ không thành một cái khung rỗng.
+  const noDays = boardDetail({ symbol: 'VIC', card: companyCard(companyOf({ ticker: 'VIC', viOrganName: 'Vingroup', comGroupCode: 'VNINDEX', marketCap: 1e12 })), quote });
+  assert.deepEqual(noDays.h, []);
+  assert.equal(noDays.hb, null);
+  assert.equal(noDays.f, 1);
+  assert.ok(noDays.r.some(([label]) => label === 'Vốn hoá'));
 });

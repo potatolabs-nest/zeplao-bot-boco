@@ -19,9 +19,14 @@
       <div id="s-where" class="muted"></div>
     </header>
     <div id="s-stats"></div>
+    <!-- Ba cột cạnh nhau: số hôm nay, hồ sơ, rồi mười phiên gần nhất. Trang này rộng hơn cao, nên
+         xếp dọc là bắt người ta cuộn để xem thứ vốn nằm vừa trong một màn hình. -->
     <div id="s-cols">
       <dl id="s-today"></dl>
       <dl id="s-firm"></dl>
+      <!-- Bảng nằm trong một khung riêng: một `<table>` làm flex item thì không giãn theo dòng, nó
+           co về bề rộng tối thiểu và năm cột số dính vào nhau. -->
+      <div id="s-frame"><table id="s-days"></table></div>
     </div>
     <p id="s-about" class="muted"></p>
   </section>
@@ -40,6 +45,9 @@
   <span class="tag"><i class="swatch floor"></i><span id="n-floor">0</span> sàn</span>
   <span id="help" class="muted"></span>
   <span id="clock" class="muted">Đang mở…</span>
+  <!-- Số bản dựng của gói widget. Hai ký tự, nhưng chúng trả lời được câu hỏi tốn nhiều thời gian
+       nhất: máy này đang chạy gói nào — vì một phiên ghim phiên bản gói lúc nó được tạo ra. -->
+  <span id="build" class="muted"></span>
 </footer>
 
 <!-- zeplao.js do nền tảng ghi vào gói lúc tải lên; xem term.html. Trang này là trang của **phiên**

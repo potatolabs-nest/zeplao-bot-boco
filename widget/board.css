@@ -103,14 +103,32 @@ body {
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--panel);
-  opacity: 0.88;
+  opacity: 0.92;
   color: var(--text);
-  font: 700 11px/1 Arial, Helvetica, system-ui, sans-serif;
-  padding: 5px 8px;
+  font: 700 12px/1 Arial, Helvetica, system-ui, sans-serif;
+  padding: 8px 11px;
+  min-height: 30px;
   cursor: pointer;
+  /* Bỏ quãng chờ 300ms mà trình duyệt để dành cho cú chạm đúp: nửa giây im lặng sau khi bấm là
+     đủ để người ta kết luận cái nút hỏng, rồi bấm tiếp vào chỗ khác. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.12);
 }
 
 #back:hover { opacity: 1; background: var(--line); }
+#back:active { background: var(--line); }
+
+/* Ngón tay không phải con trỏ chuột. Một cái nút cao 22px sát mép trên màn hình điện thoại thì
+   bấm mười lần trúng ba — và người bấm sẽ kết luận là tính năng chưa chạy, chứ không kết luận là
+   mình bấm trượt. Vùng chạm nới thêm bằng `::before`, để mặt nút nhìn vẫn nhỏ như cũ. */
+@media (pointer: coarse) {
+  #back { min-height: 40px; padding: 11px 14px; font-size: 13px; }
+  #back::before {
+    content: '';
+    position: absolute;
+    inset: -8px -10px -10px -8px;
+  }
+}
 
 /* Chiều cao và cỡ chữ do `board.js` đặt, theo đúng khoảng bot đã chừa — xem chú thích ở đó. */
 .group > h2 {
@@ -170,12 +188,12 @@ body {
 
 /* Chừa chỗ cho nút quay lại ở góc — nó nằm đè lên trang, như khi xem riêng một ngành. Khoảng chừa
    do `fit()` đo từ chính cái nút, vì bề ngang của nó đổi theo tên nhóm in trên mặt nút. */
-#s-head { margin-bottom: 8px; }
+#s-head { margin-bottom: 6px; }
 
 #s-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-#s-code { font-size: 1.9em; font-weight: 700; letter-spacing: 0.5px; }
-#s-price { font-size: 1.6em; font-weight: 700; }
-#s-move { font-size: 1.15em; font-weight: 700; }
+#s-code { font-size: 1.75em; font-weight: 700; letter-spacing: 0.5px; }
+#s-price { font-size: 1.45em; font-weight: 700; }
+#s-move { font-size: 1.1em; font-weight: 700; }
 
 /* Màu của chính ô vừa bấm, đặt bằng biến trong `board.js`: trang chi tiết mở ra từ một ô xanh mà
    con số lại đen thì trong một phần giây người xem tưởng mình bấm nhầm mã. */
@@ -196,28 +214,50 @@ body {
   min-width: 0;
   background: var(--bg);
   border-radius: 5px;
-  padding: 6px 9px;
+  padding: 4px 9px 5px;
 }
 
-.stat > span { display: block; font-size: 0.9em; color: var(--muted); }
-.stat > b { display: block; font-size: 1.35em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat > span { display: block; font-size: 0.88em; color: var(--muted); }
+.stat > b { display: block; font-size: 1.25em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-#s-cols { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: flex-start; }
+#s-cols { display: flex; gap: 8px 16px; flex-wrap: wrap; align-items: flex-start; }
 
-/* Hai cột nhãn — giá trị. Nhãn xám, số đen, và số dóng phải để mắt chạy dọc một mép thẳng. */
-#s-cols > dl { flex: 1 1 200px; min-width: 0; margin: 0; }
+/* Cột nhãn — giá trị. Nhãn xám, số đen, và số dóng phải để mắt chạy dọc một mép thẳng.
+   Hai cột này co được xuống 150px; bảng mười phiên thì không, nên khi khung hẹp lại chính nó là
+   thứ rớt xuống hàng dưới — năm cột số mà bị ép thì không cột nào còn đọc được. */
+#s-cols > dl { min-width: 0; margin: 0; }
+#s-today { flex: 1 1 150px; }
+#s-firm { flex: 1.2 1 180px; }
 
 #s-cols dt, #s-cols dd {
   display: inline-block;
   margin: 0;
-  padding: 2px 0;
-  font-size: 0.97em;
+  padding: 1px 0;
+  font-size: 0.95em;
   vertical-align: top;
 }
 
-#s-cols dt { width: 48%; color: var(--muted); }
-#s-cols dd { width: 52%; text-align: right; font-weight: 700; }
+#s-cols dt { width: 46%; color: var(--muted); }
+#s-cols dd { width: 54%; text-align: right; font-weight: 700; }
 #s-cols dd.wrap { font-weight: 400; text-align: left; }
+
+/* Mười phiên gần nhất. Số dóng phải, ngày dóng trái — mắt chạy dọc một mép thẳng thì so được các
+   con số với nhau, mà so được chính là lý do bảng này có mặt. */
+#s-frame { flex: 2 1 300px; min-width: 0; }
+
+#s-days {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+#s-days th, #s-days td { padding: 1px 0; text-align: right; white-space: nowrap; }
+#s-days th:first-child, #s-days td:first-child { text-align: left; }
+#s-days th { color: var(--muted); font-weight: 400; border-bottom: 1px solid var(--line); }
+#s-days td { font-weight: 700; }
+#s-days tr + tr td { border-top: 1px solid var(--line); }
+#s-days td.up { color: var(--up-r, var(--up)); }
+#s-days td.down { color: var(--down-r, var(--down)); }
 
 #s-about { margin: 8px 0 0; font-size: 0.93em; line-height: 1.45; }
 
