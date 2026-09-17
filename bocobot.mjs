@@ -108,9 +108,12 @@ const COMMANDS_REFRESH_MS = 6 * 60 * 60 * 1000;
  * với một bản đồ nhiệt và còn xa hai cái trần kia.
  */
 const BOARD_TICK_MS = 3000;
-/// Bao lâu không còn ai nhận gói thì đóng bảng. Một phút rưỡi — đủ rộng cho người ta đóng rồi mở
-/// lại, hay thu nhỏ khung một lúc, và đủ ngắn để không nuôi một bảng chẳng ai xem suốt phiên.
-const BOARD_IDLE_MS = 90 * 1000;
+/// Bao lâu không còn ai nhận gói thì đóng bảng.
+///
+/// Năm phút chứ không phải một phút rưỡi: cái giá của việc đóng nhầm cao hơn hẳn cái giá của việc
+/// nuôi thừa một bảng. Người ta thu nhỏ khung đi đọc chuyện khác rồi mở lại, và ứng dụng thì cứ mỗi
+/// nhịp lại báo "thôi xem" rồi ghi danh lại — đóng sớm là bảng chết ngay dưới tay người đang dùng.
+const BOARD_IDLE_MS = 5 * 60 * 1000;
 /// Một bảng vừa dựng còn dùng lại được trong chừng này. Cú bấm vào một ô mã cũng đi qua đường đẩy,
 /// và bắt nó hỏi lại giá cả sàn để gửi đi một gói mà phần đổi chỉ là hồ sơ một công ty là gần một
 /// giây chờ, hai lần cho mỗi cú bấm. Ngắn hơn hẳn một nhịp, nên bảng sống vẫn dựng mới mỗi nhịp.
@@ -1137,7 +1140,23 @@ export async function run(token, {
    * chính phòng ấy, và nhiều nhất sáu mã một phòng — không lớp nào tin vào trang cả.
    */
   async function onBoardAction(action) {
-    const live = boards.get(action?.conversationId);
+    let live = boards.get(action?.conversationId);
+
+    // Không còn phòng này trong sổ, mà trang vẫn đang bấm — nghĩa là phiên đã mất ở đâu đó (bot
+    // đóng nhầm vì tưởng hết người xem, hoặc một lần đẩy trả về `session_not_found`) trong khi cái
+    // bảng vẫn nằm trên màn hình người ta. Trước đây đó là chết vĩnh viễn: mọi cú bấm rơi vào hư
+    // không, không một lời giải thích, và chỉ mở lại widget mới sống.
+    //
+    // Cú bấm chính là bằng chứng có người đang ngồi đó, nên mở lại bảng cho họ.
+    if (!live && action?.conversationId) {
+      try {
+        await openBoard(action.conversationId, action?.from?.userId);
+        live = boards.get(action.conversationId);
+        console.log(`mở lại bảng cho phòng còn người dùng (${action.conversationId})`);
+      } catch (problem) {
+        console.error(`không mở lại được bảng: ${problem}`);
+      }
+    }
     if (!live) return;
     // Đếm mọi thứ trang gửi tới, và đếm ngay đầu cửa. Con số này đi kèm gói và hiện ở góc bảng:
     // nó trả lời được câu hỏi mà từ máy tôi không cách nào nhìn thấy — cú bấm có tới bot không, hay

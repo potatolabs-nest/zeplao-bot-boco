@@ -1645,6 +1645,21 @@ test('gõ một mã không niêm yết thì không có gì xảy ra', async () =
   assert.ok(!company.calls.includes('KHONGCO'));
 });
 
+test('phiên mất mà người ta vẫn bấm thì bot mở lại bảng, không để chết vĩnh viễn', async () => {
+  // Bot đóng nhầm vì tưởng hết người xem, hay một lần đẩy trả về `session_not_found` — cả hai đều
+  // xoá phòng khỏi sổ, và từ đó mọi cú bấm rơi vào hư không: trang treo mãi, chỉ mở lại widget mới
+  // sống. Cú bấm chính là bằng chứng có người đang ngồi đó.
+  const { sessions, shown } = await withBot(
+    // Không có tin nào mở bảng trước: cú bấm tới một phòng bot chưa hề mở bảng, đúng như sau khi
+    // phòng ấy bị xoá khỏi sổ.
+    [tapped({ open: 'VIC' }, 1)],
+    { expect: 0, settle: 400 },
+  );
+
+  assert.equal(sessions.length, 1, 'phải mở lại một phiên cho phòng ấy');
+  assert.equal(shown[0]?.to, 'u1');
+});
+
 test('bảng đóng theo thời gian không ai xem, không theo số lần đẩy', async () => {
   // Luật cũ đếm **số lần đẩy**: hai mươi lần liền không ai nhận thì đóng. Cái ngưỡng ấy trôi nhanh
   // chậm tuỳ bot đẩy dày hay thưa — mà từ khi mỗi cú bấm cũng sinh một lần đẩy, nó trôi trong chớp
