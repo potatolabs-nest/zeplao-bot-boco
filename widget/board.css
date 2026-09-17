@@ -206,6 +206,55 @@ body {
 #s-name { font-size: 1.05em; font-weight: 700; margin-top: 2px; }
 #s-where { font-size: 0.95em; margin-top: 1px; }
 
+/* Hai tab. Gạch dưới cái đang mở chứ không tô nền: trang này đã nhiều mảng màu rồi. */
+#s-tabs {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 700 1em/1 Arial, Helvetica, system-ui, sans-serif;
+  padding: 6px 2px 7px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tab.on { color: var(--text); border-bottom-color: var(--text); }
+
+/* ---- tab phân tích kỹ thuật ---- */
+
+#s-tk-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+#s-tk-verdict { font-size: 1.15em; }
+#s-tk-verdict.positive { color: var(--up-r, var(--up)); }
+#s-tk-verdict.negative { color: var(--down-r, var(--down)); }
+#s-tk-verdict.neutral { color: var(--flat-r, var(--flat)); }
+
+/* Chiều cao ghim bằng pixel, bề ngang kéo hết khung: `viewBox` cộng `height: auto` thì ở màn hình
+   rộng cái chart cao gấp đôi và đẩy hết phần tín hiệu xuống dưới đáy trang. Trục x chỉ là số thứ tự
+   phiên nên kéo giãn ngang không làm sai điều gì. */
+#s-tk-chart svg { display: block; width: 100%; height: 120px; }
+
+#s-tk-cols { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: flex-start; margin-top: 8px; }
+
+#s-tk-steps { flex: 1.4 1 260px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+#s-tk-steps > li { padding: 1px 0; font-size: 0.95em; }
+/* Dấu ở đầu dòng thay cho chấm tròn: nó nói tín hiệu ấy nghiêng về bên nào, thứ mà một dấu chấm
+   giống hệt nhau ở mọi dòng không nói được. */
+#s-tk-steps > li::before { content: '· '; color: var(--muted); }
+#s-tk-steps > li.up::before { content: '▲ '; color: var(--up-r, var(--up)); }
+#s-tk-steps > li.down::before { content: '▼ '; color: var(--down-r, var(--down)); }
+
+#s-tk-plan { flex: 1 1 200px; min-width: 0; }
+#s-tk-plan > div { padding: 1px 0; font-size: 0.95em; font-weight: 700; }
+#s-tk-note { margin: 8px 0 0; font-size: 0.88em; }
+
 /* Khối lượng và giá trị là hai con số người ta mở trang này để xem, nên chúng to và đứng riêng. */
 #s-stats { display: flex; gap: 8px; margin-bottom: 8px; }
 
@@ -222,12 +271,8 @@ body {
 
 #s-cols { display: flex; gap: 8px 16px; flex-wrap: wrap; align-items: flex-start; }
 
-/* Cột nhãn — giá trị. Nhãn xám, số đen, và số dóng phải để mắt chạy dọc một mép thẳng.
-   Hai cột này co được xuống 150px; bảng mười phiên thì không, nên khi khung hẹp lại chính nó là
-   thứ rớt xuống hàng dưới — năm cột số mà bị ép thì không cột nào còn đọc được. */
-#s-cols > dl { min-width: 0; margin: 0; }
-#s-today { flex: 1 1 150px; }
-#s-firm { flex: 1.2 1 180px; }
+/* Hai cột nhãn — giá trị. Nhãn xám, số đen, và số dóng phải để mắt chạy dọc một mép thẳng. */
+#s-cols > dl { flex: 1 1 220px; min-width: 0; margin: 0; }
 
 #s-cols dt, #s-cols dd {
   display: inline-block;
@@ -243,15 +288,15 @@ body {
 
 /* Mười phiên gần nhất. Số dóng phải, ngày dóng trái — mắt chạy dọc một mép thẳng thì so được các
    con số với nhau, mà so được chính là lý do bảng này có mặt. */
-#s-frame { flex: 2 1 300px; min-width: 0; }
+#s-days-title { margin: 12px 0 2px; font-size: 0.95em; font-weight: 700; }
 
 #s-days {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.92em;
+  font-size: 0.95em;
 }
 
-#s-days th, #s-days td { padding: 1px 0; text-align: right; white-space: nowrap; }
+#s-days th, #s-days td { padding: 3px 0; text-align: right; white-space: nowrap; }
 #s-days th:first-child, #s-days td:first-child { text-align: left; }
 #s-days th { color: var(--muted); font-weight: 400; border-bottom: 1px solid var(--line); }
 #s-days td { font-weight: 700; }

@@ -630,6 +630,11 @@ export async function run(token, {
   const asking = new Set();
   /// Mã -> mười phiên gần nhất. Nguồn tự nhớ mười phút; chỗ này nhớ để gói đẩy khỏi phải `await`.
   const days = new Map();
+  /// Mã -> bài phân tích kỹ thuật dạng dữ liệu, và mã đang trên đường phân tích.
+  const studies = new Map();
+  const studying = new Set();
+  /// Bài phân tích cũ đi theo phiên, không theo phút. Hỏi lại sau chừng này thì đủ mới.
+  const STUDY_TTL_MS = 10 * 60 * 1000;
   /// Nhiều nhất bao nhiêu mã được mang theo trong gói của một phòng.
   const MOST_DETAILS = 6;
 
@@ -728,7 +733,25 @@ export async function run(token, {
       quote: bySymbol.get(symbol) ?? null,
       sector: named.get(symbol) ?? '',
       history: days.get(symbol) ?? [],
+      study: studies.get(symbol)?.card ?? null,
+      studying: studying.has(symbol),
     })]));
+  }
+
+  /// Cái sàng cho mọi mã trang gửi về: đúng hình dạng một mã, và đang có mặt trên bảng của phòng ấy.
+  /// Trang là file ai cũng sửa được, nên không lớp nào ở đây tin vào nó.
+  function onBoardSymbol(live, symbol) {
+    if (!/^[A-Z0-9]{3,10}$/.test(symbol)) return false;
+    return !live.board || live.board.has(symbol);
+  }
+
+  /// Ghi mã vào danh sách phòng ấy đang mở. Mở lại một mã đang mở thì đưa nó xuống cuối hàng, để
+  /// cái bị đẩy ra khi quá chỗ luôn là cái cũ nhất.
+  function want(live, symbol) {
+    live.wanted = live.wanted ?? new Set();
+    live.wanted.delete(symbol);
+    live.wanted.add(symbol);
+    while (live.wanted.size > MOST_DETAILS) live.wanted.delete(live.wanted.values().next().value);
   }
 
   /**
@@ -758,15 +781,36 @@ export async function run(token, {
     const closing = String(action?.action?.shut ?? '').toUpperCase();
     if (closing) { live.wanted?.delete(closing); return; }
 
-    const symbol = String(action?.action?.open ?? '').toUpperCase();
-    if (!/^[A-Z0-9]{3,10}$/.test(symbol)) return;
-    if (live.board && !live.board.has(symbol)) return;
+    // Mở tab phân tích kỹ thuật. Qua đúng cái sàng của `open`, rồi mới đi tính — một bài PTKT là
+    // bốn lượt gọi nguồn nến, nên nó chỉ chạy khi có người thật sự mở tab ấy ra xem.
+    const studied = String(action?.action?.ptkt ?? '').toUpperCase();
+    if (studied) {
+      if (!onBoardSymbol(live, studied)) return;
+      want(live, studied);
+      const held = studies.get(studied);
+      if ((!held || Date.now() - held.at > STUDY_TTL_MS) && !studying.has(studied)) {
+        studying.add(studied);
+        live.pushed = null;
+        await pushBoards();   // để trang biết ngay là "đang phân tích", chứ không đứng im
+        technical.card(studied)
+          .then((card) => studies.set(studied, { card, at: Date.now() }))
+          .catch((problem) => console.error(`không phân tích được ${studied}: ${problem}`))
+          .then(() => {
+            studying.delete(studied);
+            live.pushed = null;
+            return pushBoards();
+          })
+          .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
+        return;
+      }
+      live.pushed = null;
+      await pushBoards();
+      return;
+    }
 
-    live.wanted = live.wanted ?? new Set();
-    // Mở lại một mã đang mở thì đưa nó xuống cuối hàng, để cái bị đẩy ra luôn là cái cũ nhất.
-    live.wanted.delete(symbol);
-    live.wanted.add(symbol);
-    while (live.wanted.size > MOST_DETAILS) live.wanted.delete(live.wanted.values().next().value);
+    const symbol = String(action?.action?.open ?? '').toUpperCase();
+    if (!onBoardSymbol(live, symbol)) return;
+    want(live, symbol);
 
     // Hồ sơ hỏi một lần rồi nhớ. `null` cũng là một câu trả lời — "nguồn không có mã này" — và nó
     // được nhớ y như một hồ sơ thật, nếu không thì mỗi lần ai bấm vào mã ấy lại là một lần gọi mạng.

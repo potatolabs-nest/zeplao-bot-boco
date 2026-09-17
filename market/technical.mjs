@@ -39,6 +39,9 @@ const CONFIDENCE = { high: 'CAO', medium: 'TRUNG BÌNH', low: 'THẤP' };
 
 const one = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
 
+/// Bao nhiêu phiên gửi kèm cho trang vẽ chart — chừng ba tháng giao dịch.
+const CARD_SESSIONS = 60;
+
 export function technicalAnalysis({ base = CHART, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now() } = {}) {
   async function daily(symbol) {
     const to = Math.floor(now() / 1000);
@@ -65,23 +68,40 @@ export function technicalAnalysis({ base = CHART, fetchImpl = fetch, timeout = T
     }
   }
 
+  /// Bài phân tích, hoặc `null` khi không phân tích được — kèm lý do, vì "không có mã ấy" và "mã
+  /// mới lên sàn chưa đủ phiên" là hai chuyện người đọc cần phân biệt.
+  async function study(symbol) {
+    const code = String(symbol ?? '').toUpperCase();
+    // VN-Index chỉ là bối cảnh: hỏng thì bỏ hai bước so với thị trường, không bỏ cả bài.
+    const [rows, index, minutes, indexMinutes] = await Promise.all([
+      daily(code),
+      code === INDEX ? null : daily(INDEX).catch(() => null),
+      intraday(code),
+      code === INDEX ? [] : intraday(INDEX),
+    ]);
+    if (!rows.length) return { analysis: null, reason: `${code} — không có dữ liệu` };
+
+    const analysis = analyze(code, withSession(rows, minutes), index && withSession(index, indexMinutes), { at: new Date(now()) });
+    return {
+      analysis,
+      reason: analysis ? '' : `${code} chưa đủ ${MIN_SESSIONS} phiên giao dịch để phân tích kỹ thuật.`,
+    };
+  }
+
   return {
     /// Một tin nhắn có hình khi phân tích được; một dòng chữ khi không có gì để phân tích.
     async report(symbol) {
-      const code = String(symbol ?? '').toUpperCase();
-      // VN-Index chỉ là bối cảnh: hỏng thì bỏ hai bước so với thị trường, không bỏ cả bài.
-      const [rows, index, minutes, indexMinutes] = await Promise.all([
-        daily(code),
-        code === INDEX ? null : daily(INDEX).catch(() => null),
-        intraday(code),
-        code === INDEX ? [] : intraday(INDEX),
-      ]);
-      if (!rows.length) return `${code} — không có dữ liệu`;
+      const { analysis, reason } = await study(symbol);
+      return analysis ? technicalRich(analysis) : reason;
+    },
 
-      const analysis = analyze(code, withSession(rows, minutes), index && withSession(index, indexMinutes), { at: new Date(now()) });
-      return analysis
-        ? technicalRich(analysis)
-        : `${code} chưa đủ ${MIN_SESSIONS} phiên giao dịch để phân tích kỹ thuật.`;
+    /// Cùng bài ấy, dạng dữ liệu — cho trang widget, nơi hình SVG của tin nhắn không dùng được:
+    /// trang tự vẽ lấy để chart theo màu nền người xem đang dùng và co giãn theo khung.
+    async card(symbol) {
+      const { analysis, reason } = await study(symbol);
+      // `none` chứ không phải `reason`: bài phân tích **có** một trường `reason` rồi — lý do của mức
+      // tin cậy — và hai chữ giống nhau mang hai nghĩa là chỗ trang đọc nhầm cái này thành cái kia.
+      return analysis ? technicalCard(analysis) : { none: reason };
     },
   };
 }
@@ -210,6 +230,52 @@ export function technicalRich(analysis) {
     rich: { blocks: [{ type: 'paragraph', text }] },
   };
 }
+
+/**
+ * Bài phân tích dạng dữ liệu, cho trang widget.
+ *
+ * Cùng những con số mà `!ptkt` nói ra, nhưng để trang tự vẽ: hình SVG của tin nhắn là ảnh có nền
+ * sáng cố định, còn widget chạy trong nền tối hay sáng tuỳ người xem và co giãn theo khung. Chuỗi
+ * giá gửi kèm chỉ chừng ba tháng gần nhất — đủ để nhìn ra xu hướng, và mỗi mã thêm chưa tới 2 KB
+ * vào gói đẩy.
+ */
+export function technicalCard(analysis, span = CARD_SESSIONS) {
+  const rows = analysis.series.rows.slice(-span);
+  const from = analysis.series.rows.length - rows.length;
+  const trim = (list) => list.slice(from).map((value) => (Number.isFinite(value) ? round2(value) : null));
+
+  return {
+    day: formatDay(analysis.day),
+    live: analysis.live ? 1 : 0,
+    close: money(analysis.close),
+    change: pct(analysis.change),
+    up: analysis.change > 0 ? 1 : analysis.change < 0 ? -1 : 0,
+    verdict: VERDICT[analysis.verdict],
+    kind: analysis.verdict,
+    confidence: CONFIDENCE[analysis.confidence],
+    reason: analysis.reason,
+    steps: analysis.steps.map((step) => [step.text, step.score]),
+    plan: planLines(analysis.plan),
+    zones: {
+      supports: analysis.zones.supports.map(money),
+      resistances: analysis.zones.resistances.map(money),
+    },
+    // Chuỗi để vẽ: giá đóng cửa và hai đường trung bình, cùng một mốc thời gian, cùng độ dài.
+    chart: {
+      close: rows.map((row) => round2(row.close)),
+      ma20: trim(analysis.series.ma20),
+      ma50: trim(analysis.series.ma50),
+      // Mốc ngày đầu và cuối thôi: trục x của một chart ba tháng không cần nhãn nào khác.
+      first: formatDay(tradingDay(rows[0].time)),
+      last: formatDay(tradingDay(rows.at(-1).time)),
+      // Hỗ trợ và kháng cự gần nhất, vẽ thành hai đường ngang.
+      support: round2(analysis.zones.supports[0]),
+      resistance: round2(analysis.zones.resistances[0]),
+    },
+  };
+}
+
+const round2 = (value) => Math.round(Number(value) * 100) / 100;
 
 export function technicalMessage(analysis) {
   const live = analysis.live ? ' (đang giao dịch)' : '';

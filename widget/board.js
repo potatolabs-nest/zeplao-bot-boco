@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 3;
+  const BUILD = 4;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -40,6 +40,16 @@
     today: document.getElementById('s-today'),
     firm: document.getElementById('s-firm'),
     days: document.getElementById('s-days'),
+    daysTitle: document.getElementById('s-days-title'),
+    all: document.getElementById('s-all'),
+    ptkt: document.getElementById('s-ptkt'),
+    wait: document.getElementById('s-tk-wait'),
+    tk: document.getElementById('s-tk'),
+    verdict: document.getElementById('s-tk-verdict'),
+    conf: document.getElementById('s-tk-conf'),
+    chart: document.getElementById('s-tk-chart'),
+    steps: document.getElementById('s-tk-steps'),
+    plan: document.getElementById('s-tk-plan'),
     about: document.getElementById('s-about'),
   };
 
@@ -48,12 +58,15 @@
   let version = null;        // bố cục đang hiện là của gói nào
   let zoomed = null;         // **tên** nhóm đang xem riêng, null là cả bảng
   let opened = null;         // mã đang mở trang chi tiết, null là đang xem bản đồ
+  let tab = 'all';           // tab đang mở trong trang chi tiết: 'all' hoặc 'ptkt'
   let last = null;           // gói gần nhất, để vẽ lại khi đổi qua lại giữa hai cách xem
 
   const LEAST_LABEL = 7;
   const MOST_LABEL = 30;
   const ASK_AGAIN_MS = 2500;
   let asked = 0;            // lần gần nhất xin bot hồ sơ, để khỏi hỏi dồn
+  let studied = 0;          // lần gần nhất xin bài phân tích kỹ thuật
+  const SVG = 'http://www.w3.org/2000/svg';
   const HELLO_AGAIN_MS = 4000;
   const HELLO_TRIES = 5;
   const KINDS = ['up', 'down', 'flat', 'ceiling', 'floor'];
@@ -274,6 +287,9 @@
   function open(symbol) {
     if (!last || opened === symbol) return;
     opened = symbol;
+    // Mã mới thì về tab đầu: người bấm vào một ô màu đang hỏi "mã này là gì", chưa hỏi "nên mua chưa".
+    tab = 'all';
+    showTab();
     // Bản đồ biến mất khỏi DOM: các ô không còn thì `move()` cũng không còn gì để sửa, và lúc quay
     // lại bảng được dựng lại từ gói mới nhất chứ không phải từ cái khung đã đứng im suốt lúc ấy.
     map.hidden = true;
@@ -372,6 +388,11 @@
     history(detail);
     paper.about.textContent = detail?.a ?? '';
 
+    if (tab === 'ptkt') {
+      technical(detail);
+      if (!detail?.tk) study(opened);
+    }
+
     back.hidden = false;
     back.textContent = `← ${zoomed ?? 'Bản đồ'}`;
     fit();
@@ -386,6 +407,9 @@
   function history(detail) {
     const days = detail?.h ?? [];
     paper.days.replaceChildren();
+    // Tiêu đề đi cùng bảng, không đứng lại một mình: một dòng "10 phiên gần nhất" trên khoảng trống
+    // là một lời hứa không có gì phía sau.
+    paper.daysTitle.hidden = !days.length;
     if (!days.length) return;
 
     const head = document.createElement('tr');
@@ -410,9 +434,138 @@
     }
   }
 
+  /// Đổi tab: chỉ đổi cái gì hiện ra, không đụng tới mã đang mở.
+  function showTab() {
+    for (const button of document.querySelectorAll('#s-tabs .tab')) {
+      button.classList.toggle('on', button.dataset.tab === tab);
+    }
+    paper.all.hidden = tab !== 'all';
+    paper.ptkt.hidden = tab !== 'ptkt';
+  }
+
+  for (const button of document.querySelectorAll('#s-tabs .tab')) {
+    button.addEventListener('click', () => {
+      tab = button.dataset.tab;
+      showTab();
+      if (last) paint(last);
+      // Bài phân tích chỉ được tính khi có người mở tab ấy ra. Xin ngay lúc bấm, và `paint` xin lại
+      // nếu gói về vẫn chưa có — cùng lối với hồ sơ công ty.
+      if (tab === 'ptkt') study(opened);
+    });
+  }
+
+  /// Xin bot bài phân tích kỹ thuật của một mã, thưa thớt như xin hồ sơ.
+  function study(symbol) {
+    if (!symbol || !z || typeof z.send !== 'function') return;
+    const now = Date.now();
+    if (now - studied < ASK_AGAIN_MS) return;
+    studied = now;
+    try { z.send({ ptkt: symbol }); } catch { /* không xin được thì tab ấy báo đang đợi */ }
+  }
+
+  /**
+   * Tab phân tích kỹ thuật: kết luận, chart, các tín hiệu, rồi kế hoạch giá.
+   *
+   * Chart do trang tự vẽ từ chuỗi giá bot gửi, không phải một cái ảnh SVG đúc sẵn: ảnh đúc sẵn có
+   * nền sáng cố định, mà widget chạy trong nền tối hay sáng là tuỳ người xem.
+   */
+  function technical(detail) {
+    const card = detail?.tk ?? null;
+    // Ba trạng thái, ba câu khác nhau: đang tính, tính rồi mà không phân tích được, và có bài.
+    const ready = Boolean(card && !card.none);
+    paper.tk.hidden = !ready;
+    paper.wait.hidden = ready;
+    if (!ready) {
+      paper.wait.textContent = card?.none || 'Đang phân tích…';
+      return;
+    }
+
+    paper.verdict.textContent = card.verdict;
+    paper.verdict.className = card.kind ?? '';
+    paper.conf.textContent = `tin cậy ${card.confidence} · ${card.reason || ''} · phiên ${card.day}${card.live ? ' (đang giao dịch)' : ''}`;
+
+    paper.steps.replaceChildren(...(card.steps ?? []).map(([text, score]) => {
+      const line = document.createElement('li');
+      line.textContent = text;
+      line.className = score > 0 ? 'up' : score < 0 ? 'down' : '';
+      return line;
+    }));
+
+    paper.plan.replaceChildren(...[
+      ...(card.plan ?? []),
+      `Hỗ trợ: ${(card.zones?.supports ?? []).join(' · ')}`,
+      `Kháng cự: ${(card.zones?.resistances ?? []).join(' · ')}`,
+    ].map((text) => {
+      const line = document.createElement('div');
+      line.textContent = text;
+      return line;
+    }));
+
+    paper.chart.replaceChildren(sketch(card.chart));
+  }
+
+  /**
+   * Chart giá ba tháng: một đường giá, hai đường trung bình, hai mức hỗ trợ và kháng cự.
+   *
+   * Vẽ trong một `viewBox` cố định rồi để CSS kéo rộng ra: như thế cùng một hình dùng được cho cả
+   * khung điện thoại lẫn màn hình rộng mà không phải tính lại gì khi đổi cỡ.
+   */
+  function sketch(chart) {
+    const W = 320;
+    const H = 116;
+    const RIGHT = 42;    // chỗ cho nhãn giá
+    const BOTTOM = 11;   // chỗ cho nhãn ngày
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('preserveAspectRatio', 'none');
+
+    const closes = (chart?.close ?? []).filter((value) => Number.isFinite(value));
+    if (closes.length < 2) return svg;
+
+    const marks = [chart.support, chart.resistance].filter(Number.isFinite);
+    const low = Math.min(...closes, ...marks);
+    const high = Math.max(...closes, ...marks);
+    const span = high - low || 1;
+    const x = (index) => (index / (chart.close.length - 1)) * (W - RIGHT);
+    const y = (value) => 6 + ((high - value) / span) * (H - BOTTOM - 10);
+
+    const add = (name, attrs, styles = {}) => {
+      const node = document.createElementNS(SVG, name);
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+      Object.assign(node.style, styles);
+      svg.append(node);
+      return node;
+    };
+    const path = (values, styles) => {
+      const points = values
+        .map((value, index) => (Number.isFinite(value) ? `${x(index).toFixed(1)},${y(value).toFixed(1)}` : null))
+        .filter(Boolean)
+        .join(' ');
+      if (points) add('polyline', { points, fill: 'none' }, styles);
+    };
+
+    for (const [value, label, colour] of [[chart.support, 'HT', 'var(--up)'], [chart.resistance, 'KC', 'var(--down)']]) {
+      if (!Number.isFinite(value)) continue;
+      add('line', { x1: 0, x2: W - RIGHT, y1: y(value), y2: y(value) }, { stroke: colour, strokeWidth: '1', strokeDasharray: '3 3', opacity: '0.7' });
+      add('text', { x: W - RIGHT + 3, y: y(value) + 3, 'font-size': '8' }, { fill: colour }).textContent = `${label} ${vi(value)}`;
+    }
+
+    path(chart.ma50, { stroke: 'var(--muted)', strokeWidth: '1', opacity: '0.7' });
+    path(chart.ma20, { stroke: 'var(--flat)', strokeWidth: '1.2' });
+    path(chart.close, { stroke: 'var(--text)', strokeWidth: '1.6', strokeLinejoin: 'round' });
+
+    add('text', { x: 0, y: H - 2, 'font-size': '8' }, { fill: 'var(--muted)' }).textContent = chart.first ?? '';
+    add('text', { x: W - RIGHT, y: H - 2, 'font-size': '8', 'text-anchor': 'end' }, { fill: 'var(--muted)' }).textContent = chart.last ?? '';
+    add('text', { x: 0, y: 6, 'font-size': '8' }, { fill: 'var(--muted)' }).textContent = `MA20 · MA50 · ${vi(high)} – ${vi(low)}`;
+    return svg;
+  }
+
   /// Số có dấu chấm ngăn nghìn, kiểu Việt Nam. Trang không gọi được `Intl` của bot, mà một con số
   /// bảy chữ số liền nhau thì đọc ra được đúng một điều: "nhiều".
   const dot = (value) => String(Math.round(Number(value) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+  /// Giá: giữ phần thập phân, và dấu phẩy là dấu thập phân — "241,2", không phải "241.2".
+  const vi = (value) => String(Math.round(Number(value) * 100) / 100).replace('.', ',');
 
   /// Một cột nhãn — giá trị. Dòng nào nguồn không có thì không có dòng đó: một dòng "Vốn hoá: —"
   /// trông như số liệu hỏng, trong khi sự thật chỉ là nguồn không nói.

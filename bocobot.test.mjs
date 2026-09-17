@@ -331,6 +331,24 @@ function stubTechnical({ broken = false } = {}) {
         rich: { blocks: [{ type: 'paragraph', text }] },
       };
     },
+
+    /// Cùng bài ấy dạng dữ liệu, cho tab PTKT trong widget.
+    async card(symbol) {
+      calls.push(`card:${symbol}`);
+      if (broken) throw new Error('nến không trả lời');
+      return {
+        day: '11/09/2026',
+        live: 0,
+        verdict: 'TÍCH CỰC',
+        kind: 'positive',
+        confidence: 'TRUNG BÌNH',
+        reason: '4/5 tín hiệu cùng chiều',
+        steps: [['Xu hướng tăng rõ', 2], ['RSI 60: tích cực', 1]],
+        plan: ['Mua: 235,6–241,2', 'Cắt lỗ: 231,5'],
+        zones: { supports: ['235,6'], resistances: ['242'] },
+        chart: { close: [10, 11, 12], ma20: [null, 10.5, 11], ma50: [null, null, 10.8], first: '23/06/2026', last: '11/09/2026', support: 9.5, resistance: 12.5 },
+      };
+    },
   };
 }
 
@@ -1485,6 +1503,26 @@ test('trang gửi về cái gì thì cũng chỉ mở được mã đang có tr�
   assert.ok(pushes.length > 0);
   assert.ok(pushes.every(({ state }) => !state.d), 'không mã nào được mang theo');
   assert.deepEqual(company.calls, []);        // và nguồn hồ sơ không bị gọi lần nào
+});
+
+test('bài phân tích kỹ thuật chỉ chạy khi có người mở tab ấy ra', async () => {
+  // Một bài PTKT là bốn lượt gọi nguồn nến. Chạy nó cho mỗi cú bấm vào một ô màu là nện vào nguồn
+  // vì một tab mà chín trên mười người không mở.
+  const technical = stubTechnical();
+  const chưaMở = await withBot([update({ text: '@bocobot' }), tapped({ open: 'VIC' })], { expect: 0, settle: 400, technical });
+  assert.ok(chưaMở.pushes.some(({ state }) => state.d?.VIC));
+  assert.deepEqual(technical.calls, []);
+  assert.ok(chưaMở.pushes.every(({ state }) => !state.d?.VIC?.tk));
+
+  const mở = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'VIC' }, 2), tapped({ ptkt: 'VIC' }, 3)],
+    { expect: 0, settle: 500, technical: stubTechnical() },
+  );
+  const card = mở.pushes.map(({ state }) => state.d?.VIC?.tk).filter(Boolean).at(-1);
+  assert.ok(card, 'mở tab thì gói phải mang bài phân tích');
+  assert.equal(card.verdict, 'TÍCH CỰC');
+  assert.equal(card.steps.length, 2);
+  assert.ok(card.chart.close.length > 0);
 });
 
 test('đóng trang chi tiết thì gói thôi mang hồ sơ mã ấy', async () => {

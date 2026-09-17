@@ -18,17 +18,40 @@
       <div id="s-name"></div>
       <div id="s-where" class="muted"></div>
     </header>
+    <!-- Hai tab. Mặc định là Tổng quan; PTKT chỉ được tính khi có người bấm vào, vì một bài phân
+         tích là bốn lượt gọi nguồn nến. -->
+    <nav id="s-tabs">
+      <button type="button" class="tab on" data-tab="all">Tổng quan</button>
+      <button type="button" class="tab" data-tab="ptkt">Phân tích kỹ thuật</button>
+    </nav>
+
+    <div id="s-all">
     <div id="s-stats"></div>
-    <!-- Ba cột cạnh nhau: số hôm nay, hồ sơ, rồi mười phiên gần nhất. Trang này rộng hơn cao, nên
-         xếp dọc là bắt người ta cuộn để xem thứ vốn nằm vừa trong một màn hình. -->
     <div id="s-cols">
       <dl id="s-today"></dl>
       <dl id="s-firm"></dl>
-      <!-- Bảng nằm trong một khung riêng: một `<table>` làm flex item thì không giãn theo dòng, nó
-           co về bề rộng tối thiểu và năm cột số dính vào nhau. -->
-      <div id="s-frame"><table id="s-days"></table></div>
     </div>
     <p id="s-about" class="muted"></p>
+
+    <!-- Mười phiên gần nhất nằm cuối trang, dưới cả phần mô tả: nó là thứ để tra khi cần, không
+         phải thứ liếc một cái là xong. Con số tóm tắt của nó — khối lượng bình quân — đã đứng sẵn
+         trên đầu trang cạnh khối lượng hôm nay, nên cuộn xuống đây là việc chủ động. -->
+    <h3 id="s-days-title" class="muted" hidden>10 phiên gần nhất</h3>
+    <table id="s-days"></table>
+    </div>
+
+    <div id="s-ptkt" hidden>
+      <p id="s-tk-wait" class="muted">Đang phân tích…</p>
+      <div id="s-tk">
+        <div id="s-tk-head"><b id="s-tk-verdict"></b><span id="s-tk-conf" class="muted"></span></div>
+        <div id="s-tk-chart"></div>
+        <div id="s-tk-cols">
+          <ul id="s-tk-steps"></ul>
+          <div id="s-tk-plan"></div>
+        </div>
+        <p id="s-tk-note" class="muted">Tín hiệu tự động, không phải khuyến nghị đầu tư.</p>
+      </div>
+    </div>
   </section>
 
   <button id="back" type="button" hidden>← Tất cả</button>

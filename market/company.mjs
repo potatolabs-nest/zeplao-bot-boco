@@ -102,7 +102,9 @@ export function companyCard(profile) {
  * `card` là `null` khi hồ sơ chưa về hoặc mã không có hồ sơ — trang vẫn mở được, chỉ thiếu phần tên
  * và vốn hoá. Số của phiên thì luôn có, vì chúng tới từ chính cái bảng người ta vừa bấm vào.
  */
-export function boardDetail({ symbol, card = null, quote = null, sector = '', pending = false, history = [] }) {
+export function boardDetail({
+  symbol, card = null, quote = null, sector = '', pending = false, history = [], study = null, studying = false,
+}) {
   const code = String(symbol ?? '').toUpperCase();
   if (!code) return null;
 
@@ -157,6 +159,10 @@ export function boardDetail({ symbol, card = null, quote = null, sector = '', pe
     // "KL bình quân tháng" ngay bên cạnh, và hai con số giống tên nhau mà khác nghĩa là chỗ sai.
     hb: average ? [`KLTB ${history.length} phiên`, count(average)] : null,
     a: card?.about ?? '',
+    // Bài phân tích kỹ thuật, chỉ có khi người xem mở tab ấy ra: một bài PTKT là bốn lượt gọi nguồn
+    // nến, quá đắt để chạy cho mỗi cú bấm vào một ô màu.
+    tk: study,
+    tks: studying ? 1 : 0,
     // Hồ sơ chưa về thì trang nói "đang lấy", hồ sơ về mà rỗng thì trang nói "không có" — hai
     // chuyện khác nhau, và một cái quay mãi trong khi thật ra chẳng bao giờ có gì là chuyện thứ ba.
     f: card ? 1 : pending ? 2 : 0,
