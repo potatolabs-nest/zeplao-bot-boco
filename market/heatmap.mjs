@@ -211,14 +211,26 @@ function tileSvg(quote, rect) {
   // Trước đây có sàn 11px: ô bé tới đâu thì chữ vẫn bị kéo lên 11, và hai dòng chữ ăn gần hết ô.
   // Ô không đủ chỗ thì để trống — một ô trống vẫn đọc được màu, còn một ô đặc chữ thì không đọc
   // được gì cả.
-  const size = Math.min(rect.w / 4.3, rect.h / 3.6, MOST_LABEL);
+  // Hai dòng khi ô đủ cao, **một dòng** khi ô rộng mà thấp.
+  //
+  // Cỡ chữ của hai dòng chồng nhau bị chiều cao quyết định, nên một ô 200×28 — thừa bề ngang để
+  // viết `VIC +0,17%` — lại ra cỡ chữ bé hơn mức đọc được và bị bỏ trống, trong khi một ô hẹp mà
+  // cao, diện tích nhỏ hơn hẳn, vẫn được ghi. Nhìn vào bản đồ thì đó là chuyện vô lý thấy ngay.
+  // Nên thử cả hai cách xếp và lấy cách nào cho chữ to hơn.
+  const stacked = Math.min(rect.w / 4.3, rect.h / 3.6, MOST_LABEL);
+  const together = `${quote.symbol} ${signed(quote.percent)}%`;
+  const inline = Math.min(rect.w / (together.length * 0.62), rect.h / 1.9, MOST_LABEL);
+  const size = Math.max(stacked, inline);
+  const oneRow = inline > stacked;
   const label = size >= LEAST_LABEL;
   const percent = signed(quote.percent);
 
   return `<g data-symbol="${escapeXml(quote.symbol)}">
     <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="${TILE_RADIUS}" fill="url(#o-${color})" stroke="${shade(TILE_FILLS[color], EDGE_DARKER)}" stroke-width="1"/>
-    ${label ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - size * 0.18)}" text-anchor="middle" fill="#111827" font-family="${font()}" font-size="${round(size)}" font-weight="700">${escapeXml(quote.symbol)}</text>
-    <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + size * 0.92)}" text-anchor="middle" fill="#111827" font-family="${font()}" font-size="${round(size)}" font-weight="700">${escapeXml(percent)}%</text>` : ''}
+    ${!label ? '' : oneRow
+    ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + size * 0.36)}" text-anchor="middle" fill="#111827" font-family="${font()}" font-size="${round(size)}" font-weight="700">${escapeXml(together)}</text>`
+    : `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - size * 0.18)}" text-anchor="middle" fill="#111827" font-family="${font()}" font-size="${round(size)}" font-weight="700">${escapeXml(quote.symbol)}</text>
+    <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + size * 0.92)}" text-anchor="middle" fill="#111827" font-family="${font()}" font-size="${round(size)}" font-weight="700">${escapeXml(percent)}%</text>`}
   </g>`;
 }
 
