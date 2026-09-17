@@ -642,7 +642,7 @@ test('!vboa -v chỉ gửi bản đồ nhiệt cho người gõ', async () => {
   assert.equal(sent[0].image.fileName, 'vboa-bank-2026-09-07.svg');
 });
 
-test('!vboa lấy tối đa 500 mã thanh khoản lớn nhất', () => {
+test('!vboa giữ mã thanh khoản lớn nhất và gộp phần đuôi thành một ô đọc được', () => {
   const quotes = Array.from({ length: 501 }, (_, index) => normalize({
     ...VIC,
     sym: `X${String(index + 1).padStart(3, '0')}`,
@@ -654,8 +654,22 @@ test('!vboa lấy tối đa 500 mã thanh khoản lớn nhất', () => {
   }));
   const rich = heatmapRich(quotes, { at: new Date('2026-09-07T03:00:00Z') });
 
-  assert.match(rich.image.svg, /data-symbol="X500"/);
-  assert.doesNotMatch(rich.image.svg, /data-symbol="X501"/);
+  assert.match(rich.image.svg, /data-symbol="X001"/);          // thanh khoản lớn nhất: luôn có mặt
+  assert.doesNotMatch(rich.image.svg, /data-symbol="X501"/);   // ngoài 500 mã: không vào bản đồ
+
+  // Phần đuôi nói bằng một con số thay vì vẽ ra hàng trăm hạt vài pixel — không đọc được mã, không
+  // đọc được màu, chỉ làm rối chỗ đáng nhìn.
+  assert.match(rich.image.svg, /\+\d+ mã</);
+
+  // Và ô nhỏ nhất vẫn là một khối nhìn ra được. Đây mới là điều đáng giữ: không phải "vẽ ít ô đi",
+  // mà "đừng vẽ ô nào bé tới mức vô nghĩa".
+  const sides = [...rich.image.svg.matchAll(/data-symbol="[^"]+">\s*<rect [^>]*width="([\d.]+)" height="([\d.]+)"/g)]
+    .map(([, width, height]) => Math.min(Number(width), Number(height)));
+  assert.ok(Math.min(...sides) >= 14, `ô nhỏ nhất ${Math.min(...sides)}px, không còn là một khối`);
+
+  // Và mỗi ô là một khối nổi: màu nền cộng một lớp sáng, không phải mảng phẳng.
+  assert.match(rich.image.svg, /<radialGradient id="glow"/);
+  assert.match(rich.image.svg, /fill="url\(#glow\)"/);
 });
 
 test('!vboa không nhận ngành ngoài danh sách hỗ trợ', async () => {
