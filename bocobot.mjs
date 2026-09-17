@@ -706,9 +706,11 @@ export async function run(token, {
   const STUDY_TTL_MS = 10 * 60 * 1000;
   /// Nhiều nhất bao nhiêu mã được mang theo trong gói của một phòng.
   ///
-  /// Trang chi tiết mỗi lúc chỉ mở **một** mã; giữ thêm vài mã nữa là để mở lại chỗ vừa xem cho
-  /// nhanh. Mỗi mã tốn chừng 5 KB trong một cái gói có trần 64 KB, nên con số này là tiền thật.
-  const MOST_DETAILS = 3;
+  /// Một mã cho mỗi người đang xem, và nhiều nhất hai người — phần dọn theo chỗ ngồi (`tidy`) giữ
+  /// cho gói bình thường chỉ mang **đúng một** mã, nên chỗ thứ hai tốn không byte nào khi chỉ có một
+  /// người mở. Chặn cứng ở một thì hai người trong cùng phòng xem hai mã khác nhau sẽ đá nhau: mỗi
+  /// lần một người mở là mã của người kia bị đẩy ra, trang bên kia hỏi lại, đảo qua đảo lại mãi.
+  const MOST_DETAILS = 2;
   /// Và nhớ chỗ ngồi của nhiều nhất bao nhiêu người xem mỗi phòng.
   const MOST_SEATS = 12;
 

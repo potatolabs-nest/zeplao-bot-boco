@@ -1716,7 +1716,7 @@ test('mở nhiều mã thì gói không phình ra theo: chỉ mang mã còn đan
 
   const mang = Object.keys(pushes.at(-1).state.d ?? {});
   assert.deepEqual(mang, ['DXG'], `chỉ mã đang xem, không phải cả bảy: ${mang.join(',')}`);
-  assert.ok(pushes.every(({ state }) => Object.keys(state.d ?? {}).length <= 3));
+  assert.ok(pushes.every(({ state }) => Object.keys(state.d ?? {}).length <= 2));
 });
 
 test('đóng trang chi tiết thì gói thôi mang hồ sơ mã ấy', async () => {
