@@ -1419,10 +1419,18 @@ test('gói bảng nhiệt mang cả bảng, và bố cục có vân tay riêng �
   const state = boardState(quotes, { sectors, at: new Date('2026-09-07T03:00:00Z') });
 
   assert.equal(state.c.length, 3);
-  assert.deepEqual(state.c[0].length, 7);          // [mã, x, y, w, h, "+4,74%", loại]
+  assert.deepEqual(state.c[0].length, 9);          // [mã, x, y, w, h, "+4,74%", loại, nhóm, tiền]
   assert.match(state.c[0][5], /^[+-]/);
   assert.ok(state.g.some(([name]) => name === 'Bất động sản'));
   assert.ok(state.g.some(([name]) => name === 'Khác'));   // mã không có ngành vẫn có chỗ
+
+  // Mỗi ô nhớ nó thuộc nhóm nào và đáng bao nhiêu tiền: đó là tất cả những gì trang cần để tự chia
+  // lại một nhóm khi người xem bấm vào tên ngành. Chỉ số nhóm sai một bậc là bấm "Ngân hàng" ra
+  // "Thép", nên kiểm đúng cái tên chứ không kiểm mỗi kiểu dữ liệu.
+  for (const [symbol, , , , , , , group, value] of state.c) {
+    assert.equal(state.g[group][0], sectors.get(symbol) ?? 'Khác');
+    assert.ok(value > 0);
+  }
 
   // Vân tay đổi khi bố cục đổi, **không** đổi khi chỉ có giá đổi: trang dựng lại DOM theo nó, và
   // dựng lại mỗi nhịp là chữ nhấp nháy với mất chỗ người ta đang nhìn.

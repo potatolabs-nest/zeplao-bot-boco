@@ -21,9 +21,13 @@
   const clock = document.getElementById('clock');
   const help = document.getElementById('help');
 
+  const back = document.getElementById('back');
+
   const cells = new Map();   // mã -> { box, percent }
   const titles = [];         // tên nhóm, đo lại mỗi lần khung đổi
-  let version = null;
+  let version = null;        // bố cục đang hiện là của gói nào
+  let zoomed = null;         // **tên** nhóm đang xem riêng, null là cả bảng
+  let last = null;           // gói gần nhất, để vẽ lại khi đổi qua lại giữa hai cách xem
 
   const LEAST_LABEL = 7;
   const MOST_LABEL = 30;
@@ -45,11 +49,12 @@
 
   function draw(state) {
     version = state.v ?? null;
+    back.hidden = true;
     map.replaceChildren();
     cells.clear();
     titles.length = 0;
 
-    for (const [name, x, y, w, h, header] of state.g ?? []) {
+    for (const [index, [name, x, y, w, h, header]] of (state.g ?? []).entries()) {
       const box = document.createElement('div');
       box.className = 'group';
       at(box, x, y, w, h);
@@ -60,6 +65,7 @@
       // thể còn chưa có chiều cao thật — card đang được đổi cỡ — và đo lúc ấy ra 0. Đó chính là
       // cách tôi vừa làm mất sạch tên nhóm: 0 pixel thì nhóm nào cũng "quá bé để ghi tên".
       title.dataset.strip = String(header ?? 30);
+      title.addEventListener('click', () => open(index));
       box.append(title);
       titles.push(title);
       map.append(box);
@@ -110,6 +116,11 @@
       map.style.height = `${Math.floor((wide * 9) / 16)}px`;
     }
 
+    // Nút quay lại bám góc **bản đồ**, không bám góc khung bọc: bản đồ căn giữa, nên ở cửa sổ rộng
+    // hai bên còn thừa chỗ và một nút dính mép trái sẽ nằm chơ vơ ngoài bảng.
+    back.style.left = `${map.offsetLeft + 6}px`;
+    back.style.top = `${map.offsetTop + 5}px`;
+
     // Dải tên nhóm: cao đúng bằng khoảng bot đã chừa, và biến mất khi khoảng ấy hẹp quá — chữ nhỏ
     // nhất vẫn tràn ra và đè sang nhóm bên cạnh, mà một nhóm không tên vẫn nhận ra qua các mã.
     for (const title of titles) {
@@ -127,8 +138,129 @@
     }
   }
 
+  /**
+   * Xem riêng một ngành: chỉ các mã của nhóm ấy, chia lại cho kín cả khung.
+   *
+   * Bố cục này do **trang** tính, không phải bot. Một lần `pushState` tới hết mọi người đang mở
+   * bảng của phòng, nên nếu bot dựng bố cục phóng to thì một người bấm là cả phòng bị kéo theo.
+   * Bot chỉ gửi kèm nhóm và tiền giao dịch của từng mã; chia ô thì cùng một thuật toán, ở đây.
+   */
+  function drawOne(state) {
+    const place = placeOf(state);
+    // Nhóm biến mất khỏi gói — hết mã, hoặc bot đổi cách xếp ngành. Về cả bảng còn hơn một khung trắng.
+    if (place < 0) { zoomed = null; draw(state); return; }
+
+    version = state.v ?? null;
+    map.replaceChildren();
+    cells.clear();
+    titles.length = 0;
+
+    const mine = (state.c ?? []).filter((cell) => cell[7] === place);
+    for (const { one, ...box } of treemap(mine.map((cell) => ({ cell, v: cell[8] ?? 1 })), { x: 0, y: 0, w: 1000, h: 1000 })) {
+      const [symbol, , , , , shown, kind] = one.cell;
+      const tile = document.createElement('div');
+      tile.className = `cell ${KINDS[kind] ?? 'flat'}`;
+      at(tile, box.x, box.y, box.w, box.h, 1);
+
+      const name = document.createElement('b');
+      name.textContent = symbol;
+      const percent = document.createElement('span');
+      percent.textContent = shown;
+      tile.append(name, percent);
+
+      map.append(tile);
+      cells.set(symbol, { box: tile, percent });
+    }
+
+    back.hidden = false;
+    back.textContent = `← ${zoomed}`;
+    fit();
+  }
+
+  /**
+   * Nhóm đang xem riêng nằm ở chỗ nào trong gói này.
+   *
+   * Bám theo **tên**, không theo số thứ tự đã bấm: bot xếp nhóm theo tiền giao dịch, nên chỗ thứ ba
+   * nhịp này có thể là ngành khác ở nhịp sau — nhớ số thì đang xem ngân hàng bỗng nhảy sang thép.
+   */
+  const placeOf = (state) => (state.g ?? []).findIndex((group) => group[0] === zoomed);
+
+  /// Chia ô theo tiền giao dịch — cùng thuật toán bot dùng, để bảng phóng to nhìn ra cùng một kiểu.
+  function treemap(items, rect) {
+    const total = items.reduce((sum, one) => sum + Math.max(0, one.v), 0);
+    if (!items.length || total <= 0 || rect.w <= 0 || rect.h <= 0) return [];
+    if (items.length === 1) return [{ one: items[0], ...rect }];
+
+    const sorted = [...items].sort((a, b) => b.v - a.v);
+    const half = total / 2;
+    let taken = sorted[0].v;
+    let split = 1;
+    while (split < sorted.length - 1) {
+      const next = taken + sorted[split].v;
+      if (Math.abs(half - taken) < Math.abs(half - next)) break;
+      taken = next;
+      split += 1;
+    }
+    const ratio = taken / total;
+    const first = sorted.slice(0, split);
+    const rest = sorted.slice(split);
+
+    if (rect.w >= rect.h) {
+      const wide = rect.w * ratio;
+      return [
+        ...treemap(first, { ...rect, w: wide }),
+        ...treemap(rest, { x: rect.x + wide, y: rect.y, w: rect.w - wide, h: rect.h }),
+      ];
+    }
+    const tall = rect.h * ratio;
+    return [
+      ...treemap(first, { ...rect, h: tall }),
+      ...treemap(rest, { x: rect.x, y: rect.y + tall, w: rect.w, h: rect.h - tall }),
+    ];
+  }
+
+  function open(index) {
+    if (!last) return;
+    const name = (last.g?.[index] ?? [])[0];
+    if (!name) return;
+    zoomed = name;
+    drawOne(last);
+    count(last);
+  }
+
+  back.addEventListener('click', () => {
+    zoomed = null;
+    if (!last) return;
+    draw(last);
+    count(last);
+  });
+
+  /**
+   * Hàng chú giải đếm đúng thứ đang hiện trên bảng.
+   *
+   * Xem riêng ngân hàng mà dưới chân vẫn ghi "165 tăng" của cả sàn thì hai con số cạnh nhau nói hai
+   * chuyện khác nhau, và người đọc tin con số hơn tin cái bảng.
+   */
+  function count(state) {
+    const tally = {};
+    if (zoomed === null) Object.assign(tally, state.t ?? {});
+    else {
+      const place = placeOf(state);
+      for (const cell of state.c ?? []) {
+        if (cell[7] !== place) continue;
+        const kind = KINDS[cell[6]] ?? 'flat';
+        tally[kind] = (tally[kind] ?? 0) + 1;
+      }
+    }
+    for (const kind of KINDS) {
+      const shown = document.getElementById(`n-${kind}`);
+      if (shown) shown.textContent = String(tally[kind] ?? 0);
+    }
+  }
+
   function apply(state) {
     if (!state || typeof state !== 'object' || !Array.isArray(state.c)) return;
+    last = state;
 
     // Bảng màu do bot gửi: giữa ô, rìa ô, viền — cùng sắc độ mà bản đồ SVG dùng.
     for (const [kind, shades] of Object.entries(state.p ?? {})) {
@@ -142,15 +274,15 @@
     // mà lời chào tới cùng lúc với dữ liệu đầu tiên. Gọi lúc nạp là gọi vào chỗ chưa có gì.
     fitRoom();
 
-    if (state.v !== version || !cells.size) draw(state);
-    else move(state);
+    // Bố cục cũ thì chỉ sửa giá tại chỗ; bố cục đổi thì vẽ lại — vẽ lại kiểu nào là tuỳ người xem
+    // đang mở cả bảng hay đang xem riêng một ngành, và lựa chọn ấy giữ nguyên qua mỗi nhịp đẩy.
+    if (state.v === version && cells.size) move(state);
+    else if (zoomed === null) draw(state);
+    else drawOne(state);
 
     clock.textContent = state.note ? `${state.note} · ${state.at ?? ''}`.trim() : (state.at ?? '');
     if (state.help) help.textContent = state.help;
-    for (const [kind, count] of Object.entries(state.t ?? {})) {
-      const shown = document.getElementById(`n-${kind}`);
-      if (shown) shown.textContent = String(count);
-    }
+    count(state);
   }
 
   /**
@@ -211,12 +343,12 @@
       v: 0, at: '13:58', note: 'Đang khớp lệnh', help: 'Gõ /vic để xem giá một mã',
       g: [['Ngân hàng', 0, 0, 600, 1000, 60], ['Dầu khí', 610, 0, 390, 1000, 60]],
       c: [
-        ['VPB', 10, 120, 350, 500, '+2,17%', 0],
-        ['TCB', 370, 120, 220, 500, '+0,62%', 0],
-        ['SHB', 10, 630, 580, 350, '+0%', 2],
-        ['BSR', 620, 120, 370, 500, '-1,96%', 1],
-        ['GEL', 620, 630, 180, 350, '+6,99%', 3],
-        ['PVD', 810, 630, 180, 350, '-2,28%', 1],
+        ['VPB', 10, 120, 350, 500, '+2,17%', 0, 0, 900],
+        ['TCB', 370, 120, 220, 500, '+0,62%', 0, 0, 600],
+        ['SHB', 10, 630, 580, 350, '+0%', 2, 0, 500],
+        ['BSR', 620, 120, 370, 500, '-1,96%', 1, 1, 700],
+        ['GEL', 620, 630, 180, 350, '+6,99%', 3, 1, 260],
+        ['PVD', 810, 630, 180, 350, '-2,28%', 1, 1, 240],
       ],
       t: { ceiling: 9, up: 257, flat: 93, down: 150, floor: 1 },
     });

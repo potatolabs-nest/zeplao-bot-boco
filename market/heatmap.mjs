@@ -219,6 +219,7 @@ export function boardState(quotes, { sectors = new Map(), at = new Date(), cells
     // Gửi kèm chiều cao khoảng chừa cho tên nhóm. Trang phải lấy đúng con số này làm chiều cao
     // dòng tiêu đề: bot chừa chỗ theo tỉ lệ, còn CSS thì vẽ theo pixel, và hai cách tính khác nhau
     // vài pixel là tên nhóm nằm đè lên ô đầu tiên.
+    const group = laid.length;
     laid.push([item.group.sector, round(inner.x), round(inner.y), round(inner.w), round(inner.h), round(header)]);
 
     for (const tile of treemap(item.group.quotes.map((quote) => ({ quote, value: quote.value })), body)) {
@@ -231,6 +232,11 @@ export function boardState(quotes, { sectors = new Map(), at = new Date(), cells
         round(cell.x), round(cell.y), round(cell.w), round(cell.h),
         `${signed(held.quote.percent)}%`,
         BOARD_KINDS.indexOf(colorFor(held.quote)),
+        // Nhóm và tiền giao dịch, để trang tự chia lại ô khi người xem bấm phóng to một ngành.
+        // Phóng to là việc riêng của từng người: một lần `pushState` tới hết mọi người đang mở, nên
+        // nếu bot dựng bố cục phóng to thì một người bấm là cả phòng bị kéo theo.
+        group,
+        Math.max(1, Math.round(held.quote.value / 1e6)),
       ]);
     }
   }
