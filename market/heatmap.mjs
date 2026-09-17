@@ -9,10 +9,7 @@ const WIDTH = 1280;
 const HEIGHT = 720;
 const OUTPUT_SCALE = 2;
 const PAD = 14;
-const GAP = 5;
-/// Khe trắng giữa hai ô. Đủ rộng để từng mã tách ra thành một khối riêng thay vì một mảng màu liền
-/// — cùng lý do các đoạn của một cột chồng phải chừa khe: mắt đọc ranh giới, không đọc màu.
-const TILE_GAP = 2.5;
+const GAP = 4;
 const HEADER = 34;
 const FOOTER = 42;
 const MIN_TILE = 36;
@@ -158,26 +155,14 @@ function heatmapSvg(groups, stats, day) {
   const groupRects = treemap(groupItems, area);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH * OUTPUT_SCALE}" height="${HEIGHT * OUTPUT_SCALE}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-  <defs>
-    <!-- Ánh sáng trong lòng mỗi ô: trắng ở giữa, tan dần ra mép. Một mảng màu phẳng lì trông như
-         vệt sơn; cùng màu ấy có ánh sáng thì thành một viên gạch, và mắt tách được từng mã ra khỏi
-         mảng bên cạnh trước cả khi đọc chữ. Độ đục giữ thấp để chữ trắng trên nền đậm không mờ đi. -->
-    <radialGradient id="glow" cx="50%" cy="14%" r="82%">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.34"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.13"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="#f1f5f9"/>
   ${groupRects.map(({ item, ...rect }) => sectorSvg(item.group, rect)).join('')}
   <g transform="translate(${PAD}, ${HEIGHT - FOOTER + 8})">
-    ${legends([
-    { colors: ['#8b1dc9'], text: `Tăng trần: ${stats.ceiling}` },
-    { colors: UP.map((one) => one.fill), text: `Tăng giá: ${stats.up}` },
-    { colors: ['#f0a020'], text: `Đứng giá: ${stats.flat}` },
-    { colors: DOWN.map((one) => one.fill), text: `Giảm giá: ${stats.down}` },
-    { colors: ['#1e88e5'], text: `Giảm sàn: ${stats.floor}` },
-  ])}
+    ${legend('#7e22ce', `Tăng trần: ${stats.ceiling}`, 0)}
+    ${legend('#02b314', `Tăng giá: ${stats.up}`, 138)}
+    ${legend('#f59e0b', `Đứng giá: ${stats.flat}`, 274)}
+    ${legend('#dc1d0f', `Giảm giá: ${stats.down}`, 430)}
+    ${legend('#1e88e5', `Giảm sàn: ${stats.floor}`, 570)}
     <text x="${WIDTH - PAD * 2}" y="22" text-anchor="end" fill="#64748b" font-family="${font()}" font-size="17">Phiên gần nhất · ${escapeXml(formatDay(day))}</text>
   </g>
 </svg>`;
@@ -187,58 +172,21 @@ function sectorSvg(group, rect) {
   const inner = shrink(rect, GAP);
   if (inner.w <= 0 || inner.h <= 0) return '';
   const body = { x: inner.x, y: inner.y + HEADER, w: inner.w, h: Math.max(0, inner.h - HEADER) };
-  const tiles = treemap(packed(group.quotes, body), body);
+  const tiles = treemap(
+    group.quotes.map((quote) => ({ quote, value: quote.value })),
+    body,
+  );
 
   return `<g>
     <rect x="${round(inner.x)}" y="${round(inner.y)}" width="${round(inner.w)}" height="${round(inner.h)}" rx="4" fill="#ffffff"/>
     <text x="${round(inner.x + inner.w / 2)}" y="${round(inner.y + 23)}" text-anchor="middle" fill="#0f172a" font-family="${font()}" font-size="16" font-weight="700">${escapeXml(group.sector)}</text>
-    ${tiles.map(({ item, ...tile }) => (item.quote
-    ? tileSvg(item.quote, shrink(tile, TILE_GAP))
-    : restSvg(item.rest, shrink(tile, TILE_GAP)))).join('')}
-  </g>`;
-}
-
-/**
- * Số ô vừa chỗ này, và phần đuôi gộp lại làm một.
- *
- * Nhồi hết vào thì phần đuôi thành những hạt vài pixel: không đọc được mã, không đọc được màu, chỉ
- * làm rối chỗ đáng nhìn. Giữ những mã giao dịch nhiều nhất cho tới khi hết chỗ tử tế, rồi nói thẳng
- * còn bao nhiêu mã nữa — một con số đọc được vẫn hơn hai trăm chấm không đọc được.
- */
-function packed(quotes, body) {
-  const room = Math.max(1, Math.floor((body.w * body.h) / (MIN_TILE * MIN_TILE * 1.6)));
-  const sorted = [...quotes].sort((a, b) => b.value - a.value);
-  if (sorted.length <= room) return sorted.map((quote) => ({ quote, value: quote.value }));
-
-  const shown = sorted.slice(0, Math.max(1, room - 1));
-  const rest = sorted.slice(shown.length);
-
-  // Ô gộp không lấy chỗ theo tổng giá trị của cả đám, mà cũng không bé bằng ô nhỏ nhất.
-  //
-  // Vẽ đúng tổng thì một khối xám chiếm chỗ đẹp nhất của nhóm để nói điều chẳng ai cần nhìn to đến
-  // thế — nó là lối ra, không phải một mã. Nhưng bé quá thì mất nhãn, và một ô xám không chữ còn tệ
-  // hơn: người xem tưởng có mã nào đó hỏng. Vài phần trăm diện tích nhóm là vừa đủ để đọc con số.
-  const smallest = shown.at(-1)?.value ?? rest[0].value;
-  const readable = shown.reduce((sum, quote) => sum + quote.value, 0) * 0.04;
-  return [
-    ...shown.map((quote) => ({ quote, value: quote.value })),
-    { rest: rest.length, value: Math.max(smallest, readable) },
-  ];
-}
-
-/// Ô cuối của một nhóm đã chật: còn bao nhiêu mã nữa, viết ra chứ không vẽ ra.
-function restSvg(count, rect) {
-  if (rect.w <= 0 || rect.h <= 0) return '';
-  const size = clamp(Math.min(rect.w / 4.6, rect.h / 2.6), 11, 22);
-  return `<g>
-    <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="3" fill="#e2e8f0"/>
-    ${rect.w >= MIN_TILE && rect.h >= 22 ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + size / 3)}" text-anchor="middle" fill="#475569" font-family="${font()}" font-size="${round(size)}" font-weight="700">+${count} mã</text>` : ''}
+    ${tiles.map(({ item, ...tile }) => tileSvg(item.quote, shrink(tile, 1.5))).join('')}
   </g>`;
 }
 
 function tileSvg(quote, rect) {
   if (rect.w <= 0 || rect.h <= 0) return '';
-  const { fill: color, ink } = colorFor(quote);
+  const color = colorFor(quote);
   const label = rect.w >= MIN_TILE && rect.h >= MIN_TILE;
   const symbolSize = clamp(Math.min(rect.w / 4.4, rect.h / 3.2), 13, 31);
   const pctSize = clamp(symbolSize * 0.8, 11, 25);
@@ -246,9 +194,8 @@ function tileSvg(quote, rect) {
 
   return `<g data-symbol="${escapeXml(quote.symbol)}">
     <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="3" fill="${color}"/>
-    <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="3" fill="url(#glow)"/>
-    ${label ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - 3)}" text-anchor="middle" fill="${ink}" font-family="${font()}" font-size="${round(symbolSize)}" font-weight="800">${escapeXml(quote.symbol)}</text>
-    <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + pctSize)}" text-anchor="middle" fill="${ink}" font-family="${font()}" font-size="${round(pctSize)}" font-weight="700">${escapeXml(percent)}%</text>` : ''}
+    ${label ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - 3)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(symbolSize)}" font-weight="800">${escapeXml(quote.symbol)}</text>
+    <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + pctSize)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(pctSize)}" font-weight="700">${escapeXml(percent)}%</text>` : ''}
   </g>`;
 }
 
@@ -298,66 +245,20 @@ function summarize(quotes) {
   }, { ceiling: 0, floor: 0, up: 0, flat: 0, down: 0 });
 }
 
-/**
- * Màu của một ô, và màu chữ đọc được trên nền ấy.
- *
- * Ba nấc mỗi chiều theo biên độ, đậm dần: dưới 1%, 1–3%, từ 3% trở lên. Một màu xanh duy nhất cho
- * mọi mã tăng là bản đồ không nói gì — cả bảng xanh lè như nhau thì mã nhích 0,1% trông y hệt mã
- * tăng 6%, và thứ người ta cần nhìn ra ngay là chỗ nào đang thật sự chạy.
- *
- * Trần, sàn, đứng giá giữ nguyên ba màu của bảng điện — tím, xanh lơ, vàng — vì đó là trạng thái,
- * không phải mức độ, và người xem bảng giá Việt Nam đọc chúng theo phản xạ.
- *
- * Màu chữ chọn theo độ tương phản đo được, không theo cảm giác: nền nhạt thì chữ đen, nền đậm thì
- * chữ trắng, mọi cặp đều trên 4:1.
- */
 function colorFor(quote) {
-  if (quote.ceiling > 0 && quote.price >= quote.ceiling) return { fill: '#8b1dc9', ink: '#ffffff' };
-  if (quote.floor > 0 && quote.price <= quote.floor) return { fill: '#1e88e5', ink: '#ffffff' };
-
-  const size = Math.abs(quote.percent);
-  const step = size >= 3 ? 2 : size >= 1 ? 1 : 0;
-  if (quote.percent > 0) return UP[step];
-  if (quote.percent < 0) return DOWN[step];
-  return { fill: '#f0a020', ink: '#0b1220' };
+  if (quote.ceiling > 0 && quote.price >= quote.ceiling) return '#8b1dc9';
+  if (quote.floor > 0 && quote.price <= quote.floor) return '#1e88e5';
+  if (quote.percent > 0) return '#02cc1a';
+  if (quote.percent < 0) return '#ef2a2f';
+  return '#f6b846';
 }
 
-const UP = [
-  { fill: '#86dfa4', ink: '#0b1220' },
-  { fill: '#2eb85c', ink: '#0b1220' },
-  { fill: '#0b6e30', ink: '#ffffff' },
-];
-
-const DOWN = [
-  { fill: '#f6a9a6', ink: '#0b1220' },
-  { fill: '#e23b35', ink: '#ffffff' },
-  { fill: '#8f1713', ink: '#ffffff' },
-];
-
-/**
- * Chú giải, xếp liền nhau theo bề rộng thật của từng mục.
- *
- * Mục tăng và giảm hiện cả ba nấc màu chứ không một ô mẫu: thang có nấc mà chú giải chỉ cho xem một
- * nấc thì người đọc không biết màu đậm nhạt đang nói điều gì.
- */
-function legends(marks) {
-  let x = 0;
-  return marks.map(({ colors, text }) => {
-    const swatches = colors
-      .map((color, index) => `<rect x="${index * (SWATCH + 2)}" y="3" width="${SWATCH}" height="13" fill="${color}"/>`)
-      .join('');
-    const width = colors.length * (SWATCH + 2) + 8;
-    const drawn = `<g transform="translate(${round(x)}, 0)">
-    ${swatches}
-    <text x="${width}" y="16" fill="#0f172a" font-family="${font()}" font-size="16">${escapeXml(text)}</text>
+function legend(color, text, x) {
+  return `<g transform="translate(${x}, 0)">
+    <rect x="0" y="3" width="26" height="13" fill="${color}"/>
+    <text x="32" y="16" fill="#0f172a" font-family="${font()}" font-size="16">${escapeXml(text)}</text>
   </g>`;
-    // Bề rộng chữ ước lượng theo số ký tự: đủ đúng cho một hàng chú giải, và không cần đo font.
-    x += width + text.length * 8.4 + 26;
-    return drawn;
-  }).join('');
 }
-
-const SWATCH = 15;
 
 function tradingDay(at) {
   return new Intl.DateTimeFormat('en-CA', {
