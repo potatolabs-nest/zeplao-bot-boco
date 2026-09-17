@@ -19,7 +19,7 @@ const LEAST_LABEL = 9;
 /// Khe trắng giữa hai ô, và góc bo của ô. Cả phần "trắng" của bản đồ nằm ở đây: không phủ gì lên
 /// màu, chỉ chừa ra một mạch hở đủ mảnh để mỗi mã thành một viên riêng thay vì một mảng liền.
 const TILE_GAP = 1.5;
-const TILE_RADIUS = 2;
+const TILE_RADIUS = 1;
 const MAX_SYMBOLS = 500;
 
 const FILTERS = {
