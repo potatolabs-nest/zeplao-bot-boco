@@ -97,18 +97,22 @@ const SECTORS = {
   DBD: 'Y tế', DHG: 'Y tế', IMP: 'Y tế', TRA: 'Y tế',
 };
 
+const HEATMAP_WORDS = new Set(['board', 'vboa']);
+
 export function askedHeatmapFor(message) {
   const text = withoutPrivateFlag(message?.text ?? '').trimStart();
   if (!text.startsWith('!')) return null;
   const parts = text.slice(1).trim().split(/\s+/).filter(Boolean);
-  if (parts[0]?.toLowerCase() !== 'vboa') return null;
+  // `vboa` là tên cũ, vẫn nhận: người dùng có trí nhớ ngón tay, và một lệnh im lặng vì vừa đổi tên
+  // thì trông y như một lệnh hỏng.
+  if (!HEATMAP_WORDS.has(parts[0]?.toLowerCase())) return null;
   if (parts.length === 1) return { addressed: true };
 
   const filter = FILTERS[parts[1].toLowerCase()];
   if (filter && parts.length === 2) return { addressed: true, filter };
   return {
     addressed: true,
-    error: 'Chỉ hỗ trợ: !vboa bds, !vboa bank, !vboa oil, !vboa retail, !vboa cn.',
+    error: 'Chỉ hỗ trợ: !board bds, !board bank, !board oil, !board retail, !board cn.',
   };
 }
 

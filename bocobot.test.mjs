@@ -557,7 +557,7 @@ test('gọi bot trống thì trả hướng dẫn', async () => {
 
   // Hướng dẫn đứng trước, dòng trạng thái khai báo lệnh đi sau — nên so bằng `startsWith`.
   assert.ok(sent[0].text.startsWith(HELP));
-  assert.match(sent[0].text, /!vboa bds — bất động sản/);
+  assert.match(sent[0].text, /!board bds — bất động sản/);
   assert.match(sent[0].text, /\/gex 3m — chart 3 tháng/);
   assert.match(sent[0].text, /Gõ \/ thì cả nhóm cùng xem, gõ ! thì chỉ bạn thấy/);
   assert.equal(sent[0].replyToMessageId, 'm1');
@@ -691,7 +691,7 @@ test('!vboa là lệnh bản đồ nhiệt, không phải mã VBOA', () => {
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa retail' })).filter.title, 'Bán lẻ');
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa cn' })).filter.title, 'Công nghiệp');
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa bank -v' })).filter.title, 'Bank chứng');
-  assert.match(askedHeatmapFor(message({ text: '  !vboa hom nay' })).error, /Chỉ hỗ trợ/);
+  assert.match(askedHeatmapFor(message({ text: '  !board hom nay' })).error, /Chỉ hỗ trợ/);
   assert.equal(askedHeatmapFor(message({ text: '!vic' })), null);
 });
 
@@ -750,12 +750,16 @@ test('!vboa lấy tối đa 500 mã thanh khoản lớn nhất', () => {
   assert.doesNotMatch(rich.image.svg, /data-symbol="X501"/);
 });
 
-test('!vboa không nhận ngành ngoài danh sách hỗ trợ', async () => {
+test('!board không nhận ngành ngoài danh sách hỗ trợ, và tên cũ !vboa vẫn chạy', async () => {
   const heatmap = stubHeatmap();
-  const { sent } = await withBot([update({ text: '!vboa thep' })], { heatmap });
+  const { sent } = await withBot([update({ text: '!board thep' })], { heatmap });
 
   assert.equal(heatmap.calls.length, 0);
-  assert.equal(sent[0].text, 'Chỉ hỗ trợ: !vboa bds, !vboa bank, !vboa oil, !vboa retail, !vboa cn.');
+  assert.equal(sent[0].text, 'Chỉ hỗ trợ: !board bds, !board bank, !board oil, !board retail, !board cn.');
+
+  // Tên cũ vẫn nhận: người dùng có trí nhớ ngón tay, và một lệnh im vì vừa đổi tên trông y như một
+  // lệnh hỏng.
+  assert.deepEqual(askedHeatmapFor(message({ text: '!vboa bank' })).filter.title, 'Bank chứng');
 });
 
 test('nguồn bản đồ nhiệt chết thì nói ra', async () => {
@@ -1232,8 +1236,9 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'topbot']);
-  assert.deepEqual(commandsFor(ME).map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot']);
+  const chinh = ['view', 'ptkt', 'tin', 'kq', 'board', 'vboa', 'bang'];
+  assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
+  assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
 });
 
@@ -1272,10 +1277,31 @@ test('máy chủ không nhận hình thì vẫn gửi chữ cho người hỏi, 
   assert.equal(sent[0].onlyForUserId, 'u1');
 });
 
+test('chỉ lệnh luôn luôn mở bảng mới được khai opensWidget', async () => {
+  // Khai chữ ấy là ứng dụng dựng khung ngay lúc tin được gửi, không đợi bot. Nên khai cho một lệnh
+  // khi thì mở bảng khi thì trả lời bằng chữ là những lần sau người ta thấy một cái khung rỗng hiện
+  // ra rồi tắt — nền tảng đã phải gỡ đúng lỗi ấy một lần, và cờ này sinh ra để không ai đoán nữa.
+  const mo = commandsFor(ME).filter((one) => one.opensWidget);
+  assert.deepEqual(mo.map((one) => one.command), ['bang']);
+
+  const { registered } = await withBot([], { expect: 0 });
+  assert.deepEqual(registered.filter((one) => one.opensWidget).map((one) => one.command), ['bang']);
+});
+
+test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', async () => {
+  const { sessions, shown, sent } = await withBot(
+    [update({ text: '!bang', command: 'bang', commandArgs: null, commandPrefix: '!', private: true })],
+    { expect: 0, settle: 400 },
+  );
+  assert.equal(sessions.length, 1);
+  assert.equal(shown[0]?.to, 'u1');
+  assert.deepEqual(sent, []);   // bảng là câu trả lời, không kèm tin nào
+});
+
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'tin', 'kq', 'board', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -2036,7 +2062,7 @@ test('nguồn tin chết thì nói ra', async () => {
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'vboa', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'board', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.

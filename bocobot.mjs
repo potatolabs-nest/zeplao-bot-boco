@@ -124,9 +124,11 @@ const BUDGET_MS = 60 * 1000;
 /// Danh sách niêm yết đi kèm gói trong chừng này sau khi có người đặt con trỏ vào ô tìm mã.
 const TYPING_MS = 3 * 60 * 1000;
 const BOARD_TITLE = 'Bản đồ nhiệt VN';
+/// Lệnh mở bảng sống. Một chữ, và chỉ một chữ — nó là chữ duy nhất được khai `opensWidget`.
+const BOARD_COMMAND = 'bang';
 /// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
 /// cho cả phần hướng dẫn.
-const BOARD_HELP = 'Gõ /vic xem giá · !ptkt vic phân tích · !vboa bản đồ dạng ảnh';
+const BOARD_HELP = 'Gõ /vic xem giá · !ptkt vic phân tích · !board bản đồ dạng ảnh';
 
 export function commandsFor(me, symbols = []) {
   const name = String(me?.username ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32) || 'bocobot';
@@ -135,7 +137,16 @@ export function commandsFor(me, symbols = []) {
     { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
-    { command: 'vboa', description: 'Bản đồ nhiệt: !vboa · theo ngành: !vboa bank, bds, oil, retail, cn' },
+    { command: 'board', description: 'Bản đồ nhiệt dạng ảnh: !board · theo ngành: !board bank, bds, oil, retail, cn' },
+    { command: 'vboa', description: 'Tên cũ của !board' },
+    // Lệnh **luôn luôn** mở bảng sống, và chỉ mình nó được khai `opensWidget`.
+    //
+    // Khai chữ ấy là ứng dụng dựng khung và tải trang ngay lúc tin nhắn được gửi, không đợi bot nói
+    // gì — hai giây bot đi hỏi giá cả sàn rồi mới `createSession` không còn đứng chắn giữa người hỏi
+    // và cái bảng nữa. Nhưng đúng vì thế mà chỉ được khai cho lệnh **lúc nào cũng** mở bảng: khai
+    // cho một lệnh khi thì mở bảng khi thì trả lời bằng chữ là những lần sau người ta thấy một cái
+    // khung rỗng hiện ra rồi tắt. Các lệnh còn lại ở trên đều trả lời bằng chữ hoặc ảnh, nên không.
+    { command: BOARD_COMMAND, description: 'Mở bảng nhiệt sống, cập nhật liên tục', opensWidget: true },
     { command: name, description: 'Hướng dẫn dùng bot' },
   ];
   const commands = [];
@@ -208,14 +219,15 @@ export const HELP = [
   '/gex 4y hoặc /gex 4n — chart 4 năm',
   '',
   'Bản đồ nhiệt:',
-  '!vboa — toàn thị trường',
-  '!vboa bds — bất động sản',
-  '!vboa bank — bank chứng',
-  '!vboa oil — dầu khí',
-  '!vboa retail — bán lẻ',
-  '!vboa cn — công nghiệp',
+  '!bang — bảng nhiệt sống, cập nhật liên tục',
+  '!board — toàn thị trường, dạng ảnh',
+  '!board bds — bất động sản',
+  '!board bank — bank chứng',
+  '!board oil — dầu khí',
+  '!board retail — bán lẻ',
+  '!board cn — công nghiệp',
   '',
-  'Gõ / thì cả nhóm cùng xem, gõ ! thì chỉ bạn thấy — ví dụ /vboa bank hoặc !ptkt vic',
+  'Gõ / thì cả nhóm cùng xem, gõ ! thì chỉ bạn thấy — ví dụ /board bank hoặc !ptkt vic',
 ].join('\n');
 
 export function askedHelpFor(message, me) {
@@ -455,6 +467,18 @@ export function askedResultsFor(message) {
   const period = parseResultsPeriod(words.slice(2));
   if (!period) return { addressed: true, error: 'Không đọc được kỳ báo cáo. Ví dụ: !kq vic q2, !kq vic q2 2025, !kq vic 2025.' };
   return { addressed: true, symbol, period };
+}
+
+/**
+ * `!bang` — mở bảng nhiệt sống. Không tham số, không nhánh nào khác: đây là lệnh đã khai
+ * `opensWidget`, nên ứng dụng dựng sẵn khung cho nó, và một lần nó không mở bảng là một cái khung
+ * rỗng hiện ra trên màn hình người ta.
+ */
+export function askedBoardFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+  const asked = text.slice(CALL.length).trim();
+  return new RegExp(`^${BOARD_COMMAND}(\\s|$)`, 'i').test(asked) ? { addressed: true } : null;
 }
 
 export function askedTechnicalFor(message) {
@@ -1204,6 +1228,20 @@ export async function run(token, {
     // vẫn là chỉ người hỏi thấy.
     const onlyForUserId = message.private ? senderOf(message) : privateRecipientFor(message);
     const replyTo = message.private ? undefined : message.messageId;
+
+    // Lệnh mở bảng đứng trước mọi thứ: ứng dụng đã dựng khung rồi, nên mọi mili giây từ đây tới lúc
+    // `showSession` là một cái khung trống trên màn hình ai đó.
+    if (askedBoardFor(message)) {
+      try {
+        await openBoard(message.conversationId, senderOf(message));
+        return;
+      } catch (problem) {
+        boardTrouble = refusalCode(problem) ?? String(problem).slice(0, 80);
+        console.error(`không mở được bảng: ${problem}`);
+        await say(message.conversationId, `Chưa mở được bảng nhiệt: ${boardTrouble}`, replyTo, onlyForUserId);
+        return;
+      }
+    }
 
     const helpAsked = !message.priceOnly && askedHelpFor(message, me);
     if (helpAsked) {
