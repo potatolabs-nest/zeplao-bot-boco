@@ -66,11 +66,15 @@
        chú giải vì đó là hàng duy nhất còn chỗ — bảng nhiệt sống bằng diện tích. Và đặt **đầu hàng**:
        ở card hẹp, hàng này không đủ chỗ cho mọi thứ, mà một ô nhập bị đẩy văng ra ngoài thì coi như
        không có, còn năm cái thẻ màu bị cắt bớt thì vẫn còn màu trên chính cái bảng phía trên. -->
-  <form id="find">
+  <!-- **Không phải `<form>`.** Trang chạy trong iframe `sandbox="allow-scripts"` mà không có
+       `allow-forms`, nên trình duyệt chặn thẳng việc gửi form: sự kiện `submit` không bao giờ nổ,
+       và cả phím Enter lẫn nút bấm đều im lặng. Nghe phím và nghe cú bấm, từng cái một. -->
+  <div id="find">
     <input id="find-box" type="text" inputmode="text" autocapitalize="characters" autocomplete="off"
-           spellcheck="false" maxlength="10" placeholder="Tìm mã" aria-label="Tìm mã">
-    <button type="submit" id="find-go" aria-label="Tìm">↵</button>
-  </form>
+           spellcheck="false" maxlength="10" placeholder="Tìm mã" aria-label="Tìm mã" list="find-list">
+    <button type="button" id="find-go" aria-label="Tìm">↵</button>
+    <datalist id="find-list"></datalist>
+  </div>
   <div id="tags">
     <span class="tag"><i class="swatch ceiling"></i><span id="n-ceiling">0</span> trần</span>
     <span class="tag"><i class="swatch up"></i><span id="n-up">0</span> tăng</span>

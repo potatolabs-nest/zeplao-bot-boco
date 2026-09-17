@@ -121,6 +121,8 @@ const WARM_GAP_MS = 150;
 /// Hạn mức mã ngoài bảng mỗi phòng mở được trong một phút — xem `budget`.
 const BUDGET_MOST = 20;
 const BUDGET_MS = 60 * 1000;
+/// Danh sách niêm yết đi kèm gói trong chừng này sau khi có người đặt con trỏ vào ô tìm mã.
+const TYPING_MS = 3 * 60 * 1000;
 const BOARD_TITLE = 'Bản đồ nhiệt VN';
 /// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
 /// cho cả phần hướng dẫn.
@@ -737,6 +739,7 @@ export async function run(token, {
     if (!built) return;
     const { base, onBoard, bySymbol, named } = built;
     const names = namesOn(base);
+    const listing = built.listing;
 
     // Mã tìm bằng ô tìm kiếm không nằm trong bảng, nên cũng không có giá trong mớ vừa dựng. Hỏi
     // thêm cho đúng những mã ấy — nguồn giá nhớ năm giây, nên nhiều nhịp đẩy liền nhau chỉ tốn một
@@ -765,6 +768,7 @@ export async function run(token, {
         // tin nhắn hiện tức thì vì số liệu **đi sẵn trong tin**; bắt trang widget đi một vòng hỏi
         // đáp chỉ để lấy một cái tên đã nằm trong bộ nhớ bot là tự làm mình chậm hơn.
         ...(names ? { n: names } : {}),
+        ...(live.typing > Date.now() && listing ? { all: listing } : {}),
       };
       const json = JSON.stringify(state);
       if (live.pushed === json) continue;
@@ -817,6 +821,8 @@ export async function run(token, {
 
     drawn = {
       base,
+      // Danh sách niêm yết, dạng một chuỗi sẵn sàng gửi — để ô tìm mã gợi ý được cả sàn.
+      listing: universe.join(','),
       // Mã nào đang có mặt trên bảng — thứ duy nhất trang được phép xin trang chi tiết. Trang là
       // file ai cũng sửa được, nên `open` gửi về là chữ người lạ gõ vào: nó chỉ mở được thứ đang bày.
       onBoard: new Set(base.c.map(([symbol]) => symbol)),
@@ -1013,6 +1019,16 @@ export async function run(token, {
       // Mã đang mở thì giữ luôn hồ sơ của nó trong gói: lúc người ta quay lại, trang dựng lại chỗ
       // cũ mà số liệu đã nằm sẵn trong gói đầu tiên, không phải đợi thêm một vòng hỏi đáp nữa.
       if (mine[1]) want(live, mine[1]);
+      return;
+    }
+
+    // Con trỏ vừa đặt vào ô tìm mã. Gửi kèm cả danh sách niêm yết cho phòng ấy trong vài phút tới,
+    // để trang gợi ý được cả sàn chứ không chỉ hai trăm sáu mươi mã đang bày. Gửi lúc có người định
+    // gõ chứ không gửi mọi lúc: bảy nghìn ký tự mỗi ba giây là bảy nghìn ký tự không ai đọc.
+    if (action?.action?.typing) {
+      live.typing = Date.now() + TYPING_MS;
+      live.pushed = null;
+      await pushBoards({ stale: true });
       return;
     }
 

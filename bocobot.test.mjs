@@ -1586,6 +1586,18 @@ test('ô tìm mã mở được cả mã không có trên bảng, miễn là nó
   assert.equal(detail.n, 'Công ty Cổ phần TCX');
 });
 
+test('đặt con trỏ vào ô tìm mã thì gói mang theo danh sách niêm yết, lúc khác thì không', async () => {
+  // Bảy nghìn ký tự mỗi ba giây là bảy nghìn ký tự không ai đọc — nên chỉ gửi khi có người định gõ.
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' }), tapped({ typing: 1 })],
+    { expect: 0, settle: 400 },
+  );
+  assert.equal(pushes.map(({ state }) => state.all).filter(Boolean).at(-1), 'VIC,HPG');
+
+  const quiet = await withBot([update({ text: '@bocobot' })], { expect: 0, settle: 300 });
+  assert.ok(quiet.pushes.every(({ state }) => !state.all));
+});
+
 test('gõ một mã không niêm yết thì không có gì xảy ra', async () => {
   const company = stubCompany();
   const { pushes } = await withBot(

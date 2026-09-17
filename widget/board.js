@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 9;
+  const BUILD = 10;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -27,6 +27,8 @@
   const build = document.getElementById('build');
   const finder = document.getElementById('find');
   const finderBox = document.getElementById('find-box');
+  const finderGo = document.getElementById('find-go');
+  const finderList = document.getElementById('find-list');
   if (build) build.textContent = `b${BUILD}`;
 
   const back = document.getElementById('back');
@@ -486,8 +488,7 @@
    * Bảng chỉ bày ra hai trăm sáu mươi ô to nhất, mà sàn có hơn một nghìn năm trăm mã — phần còn lại
    * không có cách nào bấm tới. Ô này là cách ấy.
    */
-  finder?.addEventListener('submit', (event) => {
-    event.preventDefault();
+  function found() {
     const symbol = String(finderBox.value ?? '').trim().toUpperCase();
     finderBox.value = '';
     // Trả bàn phím lại cho màn hình: trên điện thoại nó che mất nửa cái card vừa mở ra.
@@ -496,7 +497,35 @@
     if (opened === symbol) return;
     opened = null;          // để `open` chịu mở lại khi đang đứng ở một mã khác
     open(symbol);
+  }
+
+  finderBox?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    found();
   });
+  finderGo?.addEventListener('click', found);
+
+  // Gõ tới đâu gợi ý tới đó. Bảng chỉ mang theo hai trăm sáu mươi mã, nên lúc con trỏ vào ô này thì
+  // xin bot gửi kèm cả danh sách niêm yết — xin lúc ấy chứ không phải lúc nào cũng gửi, vì bảy nghìn
+  // ký tự mỗi ba giây là bảy nghìn ký tự không ai đọc.
+  finderBox?.addEventListener('focus', () => {
+    if (!z || typeof z.send !== 'function') return;
+    try { z.send({ typing: 1 }); } catch { /* không xin được thì gợi ý chỉ có mã trên bảng */ }
+  });
+
+  /// Danh sách gợi ý: cả sàn nếu bot đã gửi, không thì các mã đang bày trên bảng.
+  function suggest(state) {
+    const all = typeof state.all === 'string' && state.all
+      ? state.all.split(',')
+      : (state.c ?? []).map(([symbol]) => symbol);
+    if (!finderList || finderList.childElementCount === all.length) return;
+    finderList.replaceChildren(...all.map((symbol) => {
+      const item = document.createElement('option');
+      item.value = symbol;
+      return item;
+    }));
+  }
 
   for (const button of document.querySelectorAll('#s-tabs .tab')) {
     button.addEventListener('click', () => {
@@ -786,6 +815,7 @@
     // cú bấm không tới được bot, và đó là chỗ hoàn toàn khác với "bot nhận rồi mà trả lời chậm".
     if (build) build.textContent = state.got ? `b${BUILD}·${state.got}` : `b${BUILD}`;
     count(state);
+    suggest(state);
   }
 
   /**
