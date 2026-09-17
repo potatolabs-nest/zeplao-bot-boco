@@ -644,6 +644,8 @@ export async function run(token, {
   const profiles = new Map();
   /// Mã đang trên đường hỏi nguồn — khác hẳn mã đã hỏi xong và nguồn bảo không có.
   const asking = new Set();
+  /// Bao nhiêu lời gọi nguồn đang bay **vì có người vừa bấm**. Vòng hâm nền nhìn vào đây để nhường.
+  let waitingOn = 0;
   /// Mã -> mười phiên gần nhất. Nguồn tự nhớ mười phút; chỗ này nhớ để gói đẩy khỏi phải `await`.
   const days = new Map();
   /// Mã -> khối ngoại từng phiên, khoá theo ngày.
@@ -698,6 +700,12 @@ export async function run(token, {
   let sendAgain = false;
 
   async function pushBoards(options = {}) {
+    // Gói do cú bấm sinh ra **không** xếp hàng: nó không dựng lại bảng, chỉ gửi đi cái đang có kèm
+    // phần vừa xin. Khoá dưới đây sinh ra để hai lượt **hỏi giá cả sàn** khỏi chồng lên nhau, mà
+    // lượt này thì không hỏi gì — bắt nó đợi là cộng nguyên quãng dựng bảng vào lượt chờ của người
+    // vừa bấm, và đó đúng là kiểu chậm lúc có lúc không.
+    if (options.stale) return sendBoards(options);
+
     if (sending) {
       sendAgain = true;
       return sending;
@@ -890,6 +898,10 @@ export async function run(token, {
       const biggest = [...base.c].sort((a, b) => (b[8] ?? 0) - (a[8] ?? 0)).slice(0, WARM_MOST);
       for (const [symbol] of biggest) {
         if (signal?.aborted) return;
+        // Nhường đường cho người đang đợi. Nguồn hồ sơ thắt cổ chai khi bị gọi song song — đo được
+        // một mã 50ms mà sáu mã cùng lúc mất 3,7 giây — nên một vòng hâm chạy nền mà đè lên đúng cú
+        // bấm của người ta là biến cái nhanh thành cái chậm, và chỉ chậm vào những lúc nó đang chạy.
+        while (waitingOn > 0 && !signal?.aborted) await wait(200);
         if (profiles.has(symbol) || asking.has(symbol)) continue;
         asking.add(symbol);
         try {
@@ -1082,11 +1094,13 @@ export async function run(token, {
     // hai rồi mới đẩy là bắt cái tên công ty đợi một bảng lịch sử mà nó chẳng liên quan gì.
     if (!profiles.has(symbol) && !asking.has(symbol)) {
       asking.add(symbol);
+      waitingOn += 1;
       company.profile(symbol)
         .then((profile) => profiles.set(symbol, companyCard(profile)))
         .catch((problem) => console.error(`không lấy được hồ sơ ${symbol}: ${problem}`))
         .then(() => {
           asking.delete(symbol);
+          waitingOn -= 1;
           live.pushed = null;
           return pushBoards({ stale: true });
         })
