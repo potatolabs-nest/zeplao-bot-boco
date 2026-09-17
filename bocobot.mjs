@@ -46,7 +46,9 @@ import { vndirectSectors } from './market/sectors.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
-import { boardDetail, companyCard, companyCards, vietcapCompany, withCompany } from './market/company.mjs';
+import {
+  boardDetail, companyCard, companyCards, companyName, vietcapCompany, withCompany,
+} from './market/company.mjs';
 import { refusalCode, refusedForViews, withoutViews, withTerms } from './market/glossary.mjs';
 import { publishWidget } from './widget.mjs';
 
@@ -675,7 +677,40 @@ export async function run(token, {
   /// test chạy nhịp 40ms, và ở đó dùng lại là bảng không bao giờ đổi.
   const freshMs = Math.min(BOARD_FRESH_MS, Math.max(0, board.tickMs - 500));
 
-  async function pushBoards({ stale = false } = {}) {
+  /**
+   * Một lượt đẩy tại một thời điểm, và nhiều nhất một lượt đang xếp hàng.
+   *
+   * Không có khoá này thì nhịp ba giây cứ đến giờ là nổ, kể cả khi lượt trước còn đang hỏi giá cả
+   * 1.523 mã. Mạng chậm một chút là các lượt chất đống: cùng hỏi feed, cùng gọi `pushState`, và gói
+   * mang thứ người ta vừa bấm phải xếp hàng sau một đống gói chẳng ai đợi. Nhìn từ ngoài thì đó
+   * đúng là "bấm cái gì cũng lâu", mà nhìn vào từng mảnh thì mảnh nào cũng nhanh.
+   */
+  let sending = null;
+  let sendAgain = false;
+
+  async function pushBoards(options = {}) {
+    if (sending) {
+      sendAgain = true;
+      return sending;
+    }
+    sending = (async () => {
+      try {
+        // Gộp những lời gọi tới trong lúc đang đẩy thành đúng một lượt nữa, và không hơn hai lượt:
+        // lượt thứ hai đã mang theo mọi thứ vừa tới, còn vòng thứ ba chỉ là tự nói chuyện với mình.
+        for (let pass = 0; pass < 2; pass += 1) {
+          sendAgain = false;
+          await sendBoards(options);
+          if (!sendAgain) return;
+        }
+      } finally {
+        sending = null;
+        sendAgain = false;
+      }
+    })();
+    return sending;
+  }
+
+  async function sendBoards({ stale = false } = {}) {
     if (!boards.size) {
       clearInterval(pushing);
       pushing = null;
@@ -694,6 +729,7 @@ export async function run(token, {
     const built = await buildBoard(stale);
     if (!built) return;
     const { base, onBoard, bySymbol, named } = built;
+    const names = namesOn(base);
 
     for (const [conversationId, live] of boards) {
       // Bảng mà phòng này đang thấy — cái sàng cho những gì trang gửi về sau đó.
@@ -705,6 +741,10 @@ export async function run(token, {
         // Ai đang xem gì. Trang tìm đúng dòng của mình trong này lúc nạp, rồi dựng lại chỗ cũ.
         ...(live.seats?.size ? { seats: Object.fromEntries(live.seats) } : {}),
         ...(live.got ? { got: live.got } : {}),
+        // Tên công ty của những mã đã hâm sẵn, gửi kèm luôn. Thẻ bật ra khi bấm mã gạch chân trong
+        // tin nhắn hiện tức thì vì số liệu **đi sẵn trong tin**; bắt trang widget đi một vòng hỏi
+        // đáp chỉ để lấy một cái tên đã nằm trong bộ nhớ bot là tự làm mình chậm hơn.
+        ...(names ? { n: names } : {}),
       };
       const json = JSON.stringify(state);
       if (live.pushed === json) continue;
@@ -790,6 +830,17 @@ export async function run(token, {
     })]));
   }
 
+  /// Tên công ty của các mã trên bảng đã có hồ sơ trong bộ nhớ. `null` khi chưa có mã nào — để gói
+  /// giữ nguyên hình dạng cũ và phép so "gói này y hệt gói vừa đẩy" vẫn đúng.
+  function namesOn(base) {
+    const found = {};
+    for (const [symbol] of base.c) {
+      const name = companyName(profiles.get(symbol), symbol);
+      if (name) found[symbol] = name;
+    }
+    return Object.keys(found).length ? found : null;
+  }
+
   /**
    * Hâm sẵn hồ sơ cho những mã to nhất trên bảng — từng mã một, thong thả.
    *
@@ -836,6 +887,32 @@ export async function run(token, {
     // ta đang đọc trang của nó thì mọi cú bấm tiếp theo sẽ rơi vào im lặng — và im lặng là thứ
     // không ai gỡ ra được, vì trang cứ đợi mãi mà chẳng có gì báo là nó đang đợi vô ích.
     return !live.board || live.board.has(symbol) || Boolean(live.wanted?.has(symbol));
+  }
+
+  /**
+   * Tính bài phân tích kỹ thuật cho một mã, một lần, rồi nhớ mười phút.
+   *
+   * Không đợi: hàm trả về ngay, và khi bài xong thì nó tự đẩy một gói nữa. Người gọi chỉ việc đẩy
+   * cái gói của mình đi trước.
+   */
+  function studyFor(live, symbol) {
+    const held = studies.get(symbol);
+    if ((held && Date.now() - held.at <= STUDY_TTL_MS) || studying.has(symbol)) return;
+
+    studying.add(symbol);
+    const began = Date.now();
+    technical.card(symbol)
+      // Bao lâu thì xong — con số này hiện trên chính tab ấy. Nếu nó ghi 250ms mà người xem đợi năm
+      // giây thì chỗ chậm nằm trên đường đi, không nằm trong phép tính, và hai chỗ ấy sửa ở hai nơi
+      // hoàn toàn khác nhau.
+      .then((card) => studies.set(symbol, { card: { ...card, ms: Date.now() - began }, at: Date.now() }))
+      .catch((problem) => console.error(`không phân tích được ${symbol}: ${problem}`))
+      .then(() => {
+        studying.delete(symbol);
+        live.pushed = null;
+        return pushBoards({ stale: true });
+      })
+      .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
   }
 
   /// Ghi mã vào danh sách phòng ấy đang mở. Mở lại một mã đang mở thì đưa nó xuống cuối hàng, để
@@ -904,27 +981,13 @@ export async function run(token, {
     const closing = String(action?.action?.shut ?? '').toUpperCase();
     if (closing) { live.wanted?.delete(closing); return; }
 
-    // Mở tab phân tích kỹ thuật. Qua đúng cái sàng của `open`, rồi mới đi tính — một bài PTKT là
-    // bốn lượt gọi nguồn nến, nên nó chỉ chạy khi có người thật sự mở tab ấy ra xem.
+    // Mở tab phân tích kỹ thuật. Thường thì bài đã nằm sẵn trong bộ nhớ — nó được tính ngay từ lúc
+    // trang chi tiết mở ra, xem dưới — nên cú bấm này chỉ còn là một lần đẩy.
     const studied = String(action?.action?.ptkt ?? '').toUpperCase();
     if (studied) {
       if (!onBoardSymbol(live, studied)) return;
       want(live, studied);
-      const held = studies.get(studied);
-      if ((!held || Date.now() - held.at > STUDY_TTL_MS) && !studying.has(studied)) {
-        studying.add(studied);
-        // Bắt đầu phân tích **trước** khi đẩy, không phải sau: hai việc này không cần nhau, và xếp
-        // chúng nối đuôi là cộng nguyên quãng dựng bảng vào lượt chờ của người vừa bấm vào tab.
-        technical.card(studied)
-          .then((card) => studies.set(studied, { card, at: Date.now() }))
-          .catch((problem) => console.error(`không phân tích được ${studied}: ${problem}`))
-          .then(() => {
-            studying.delete(studied);
-            live.pushed = null;
-            return pushBoards({ stale: true });
-          })
-          .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
-      }
+      studyFor(live, studied);
       // Đẩy ngay một gói nữa để trang biết là "đang phân tích", chứ không đứng im nhìn chữ cũ.
       live.pushed = null;
       await pushBoards({ stale: true });
@@ -934,6 +997,14 @@ export async function run(token, {
     const symbol = String(action?.action?.open ?? '').toUpperCase();
     if (!onBoardSymbol(live, symbol)) return;
     want(live, symbol);
+
+    // Phân tích kỹ thuật ngay từ lúc mở trang, không đợi tới lúc bấm sang tab ấy.
+    //
+    // Bốn lượt gọi nguồn nến, chừng một phần tư giây — trả trước cái giá ấy thì lúc người ta bấm
+    // sang tab, bài đã nằm sẵn trong gói và tab mở ra tức thì. Đợi cú bấm rồi mới tính là bắt họ
+    // chịu cả một vòng hỏi đáp qua nền tảng **cộng** với quãng tính, cho một thứ mà chín trên mười
+    // người mở trang chi tiết sẽ muốn xem.
+    studyFor(live, symbol);
 
     // Hồ sơ hỏi một lần rồi nhớ. `null` cũng là một câu trả lời — "nguồn không có mã này" — và nó
     // được nhớ y như một hồ sơ thật, nếu không thì mỗi lần ai bấm vào mã ấy lại là một lần gọi mạng.

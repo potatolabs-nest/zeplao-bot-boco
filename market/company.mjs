@@ -141,7 +141,7 @@ export function boardDetail({
   }
 
   return {
-    n: card ? String(card.title).replace(`${code} — `, '') : '',
+    n: companyName(card, code),
     e: card?.subtitle ?? '',
     w: [card?.rows?.find(([label]) => label === 'Sàn')?.[1], sector].filter(Boolean).join(' · '),
     p: quote ? money(quote.price) : '',
@@ -170,6 +170,13 @@ export function boardDetail({
 }
 
 const SHORTER = { 'Cổ phiếu lưu hành': 'CP lưu hành', 'KL bình quân tháng': 'KLTB tháng' };
+
+/// Tên công ty trong thẻ, bỏ phần mã đứng trước. Thẻ ghi "VIC — Tập đoàn Vingroup" vì nó đứng một
+/// mình trong tin nhắn; trên trang chi tiết thì mã đã in to ngay phía trên rồi.
+export function companyName(card, symbol) {
+  if (!card?.title) return '';
+  return String(card.title).replace(`${String(symbol ?? '').toUpperCase()} — `, '');
+}
 
 /// Dấu đi liền số, và số không thì không mang dấu nào.
 function signed(value) {

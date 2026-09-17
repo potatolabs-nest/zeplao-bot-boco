@@ -1508,24 +1508,37 @@ test('trang gửi về cái gì thì cũng chỉ mở được mã đang có tr�
   assert.ok(!company.calls.some((symbol) => !['VIC', 'HPG'].includes(symbol)), company.calls.join(','));
 });
 
-test('bài phân tích kỹ thuật chỉ chạy khi có người mở tab ấy ra', async () => {
-  // Một bài PTKT là bốn lượt gọi nguồn nến. Chạy nó cho mỗi cú bấm vào một ô màu là nện vào nguồn
-  // vì một tab mà chín trên mười người không mở.
+test('bài phân tích tính sẵn từ lúc mở trang, để bấm sang tab là có ngay', async () => {
+  // Đợi cú bấm vào tab rồi mới tính là bắt người ta chịu cả một vòng hỏi đáp qua nền tảng **cộng**
+  // quãng tính. Trả trước cái giá ấy lúc mở trang thì tab mở ra tức thì.
   const technical = stubTechnical();
-  const chưaMở = await withBot([update({ text: '@bocobot' }), tapped({ open: 'VIC' })], { expect: 0, settle: 400, technical });
-  assert.ok(chưaMở.pushes.some(({ state }) => state.d?.VIC));
-  assert.deepEqual(technical.calls, []);
-  assert.ok(chưaMở.pushes.every(({ state }) => !state.d?.VIC?.tk));
-
-  const mở = await withBot(
-    [update({ text: '@bocobot' }), tapped({ open: 'VIC' }, 2), tapped({ ptkt: 'VIC' }, 3)],
-    { expect: 0, settle: 500, technical: stubTechnical() },
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'VIC' })],
+    { expect: 0, settle: 400, technical },
   );
-  const card = mở.pushes.map(({ state }) => state.d?.VIC?.tk).filter(Boolean).at(-1);
-  assert.ok(card, 'mở tab thì gói phải mang bài phân tích');
+
+  const card = pushes.map(({ state }) => state.d?.VIC?.tk).filter(Boolean).at(-1);
+  assert.ok(card, 'mở trang chi tiết là gói đã mang sẵn bài phân tích');
   assert.equal(card.verdict, 'TÍCH CỰC');
   assert.equal(card.steps.length, 2);
   assert.ok(card.chart.close.length > 0);
+  assert.ok(Number.isFinite(card.ms), 'và kể luôn nó tính mất bao lâu');
+
+  // Chỉ mã được mở, và chỉ một lần: bốn lượt gọi nguồn nến cho mỗi cú bấm vào một ô màu thì nguồn
+  // nào chịu nổi.
+  assert.deepEqual(technical.calls, ['card:VIC']);
+  assert.ok(pushes.every(({ state }) => !state.d?.HPG));
+});
+
+test('bấm sang tab PTKT một mã đã tính rồi thì không tính lại', async () => {
+  const technical = stubTechnical();
+  const { pushes } = await withBot(
+    [update({ text: '@bocobot' }), tapped({ open: 'VIC' }, 2), tapped({ ptkt: 'VIC' }, 3)],
+    { expect: 0, settle: 500, technical },
+  );
+
+  assert.deepEqual(technical.calls, ['card:VIC']);
+  assert.ok(pushes.at(-1).state.d?.VIC?.tk);
 });
 
 test('bot nhớ hộ chỗ người xem đang đứng, vì trang không tự nhớ được', async () => {

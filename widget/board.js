@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 5;
+  const BUILD = 6;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -367,7 +367,9 @@
     paper.move.textContent = [cell?.[5], detail?.d && `(${detail.d})`].filter(Boolean).join('  ');
     paper.move.className = kind;
 
-    paper.name.textContent = detail?.n
+    // Tên đi sẵn trong gói cho những mã bot đã hâm hồ sơ, nên bấm vào ô là có tên ngay — không đợi
+    // một vòng hỏi đáp chỉ để lấy một chuỗi chữ.
+    paper.name.textContent = detail?.n || state.n?.[opened]
       || (detail?.f === 0 ? 'Không có hồ sơ công ty' : 'Đang lấy hồ sơ…');
     // Ngành và giá trị giao dịch có sẵn ngay trên chính ô vừa bấm — tên nhóm nó nằm trong, và tiền
     // giao dịch mà bảng dùng để chia ô. Lấp bằng chúng trong lúc chờ gói: một trang trống trơn suốt
@@ -489,7 +491,12 @@
 
     paper.verdict.textContent = card.verdict;
     paper.verdict.className = card.kind ?? '';
-    paper.conf.textContent = `tin cậy ${card.confidence} · ${card.reason || ''} · phiên ${card.day}${card.live ? ' (đang giao dịch)' : ''}`;
+    paper.conf.textContent = [
+      `tin cậy ${card.confidence}`,
+      card.reason,
+      `phiên ${card.day}${card.live ? ' (đang giao dịch)' : ''}`,
+      card.ms ? `tính trong ${card.ms}ms` : '',
+    ].filter(Boolean).join(' · ');
 
     paper.steps.replaceChildren(...(card.steps ?? []).map(([text, score]) => {
       const line = document.createElement('li');
