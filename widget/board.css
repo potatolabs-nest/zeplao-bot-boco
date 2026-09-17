@@ -236,10 +236,11 @@ body {
 #s-tk-verdict.negative { color: var(--down-r, var(--down)); }
 #s-tk-verdict.neutral { color: var(--flat-r, var(--flat)); }
 
-/* Chiều cao ghim bằng pixel, bề ngang kéo hết khung: `viewBox` cộng `height: auto` thì ở màn hình
-   rộng cái chart cao gấp đôi và đẩy hết phần tín hiệu xuống dưới đáy trang. Trục x chỉ là số thứ tự
-   phiên nên kéo giãn ngang không làm sai điều gì. */
-#s-tk-chart svg { display: block; width: 100%; height: 120px; }
+/* Không đặt kích thước ở đây: `board.js` vẽ theo đúng bề ngang thật của khung và ghi thẳng `width`
+   với `height` lên thẻ `svg`. Kéo giãn bằng CSS thì nét dọc mảnh đi, nét ngang dày lên và chữ bị
+   bẹt ngang — cái chart trông như bị ngồi lên. */
+#s-tk-chart { min-width: 0; }
+#s-tk-chart svg { display: block; max-width: 100%; }
 
 #s-tk-cols { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: flex-start; margin-top: 8px; }
 

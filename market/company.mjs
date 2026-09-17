@@ -104,22 +104,31 @@ export function companyCard(profile) {
  */
 export function boardDetail({
   symbol, card = null, quote = null, sector = '', pending = false, history = [], study = null, studying = false,
+  foreign = new Map(),
 }) {
   const code = String(symbol ?? '').toUpperCase();
   if (!code) return null;
 
-  // Mười phiên gần nhất, mỗi phiên một dòng năm cột. Khối lượng bình quân đứng riêng ở chân bảng:
-  // một mã hôm nay khớp mười triệu là nhiều hay ít thì chỉ con số ấy trả lời được.
-  const days = history.map((row) => [
-    // Ngày/tháng thôi: mười phiên gần nhất thì năm là bốn chữ số không nói thêm gì, mà bảng có năm
-    // cột và cột nào cũng đang tranh chỗ.
-    row.day.slice(0, 5),
-    money(row.close),
-    `${signed(row.percent)}%`,
-    count(row.volume),
-    traded(row.close * row.volume),
-    row.change > 0 ? 1 : row.change < 0 ? -1 : 0,
-  ]);
+  // Mười phiên gần nhất, mỗi phiên một dòng. Khối lượng bình quân đứng riêng ở chân bảng: một mã
+  // hôm nay khớp mười triệu là nhiều hay ít thì chỉ con số ấy trả lời được.
+  const days = history.map((row) => {
+    // Ghép khối ngoại vào theo ngày, không theo thứ tự: hai nguồn khác nhau, và một phiên nghỉ giữa
+    // chừng ở nguồn này mà không nghỉ ở nguồn kia sẽ làm cả bảng lệch đi một dòng — kiểu sai mà
+    // nhìn vào không ai ngờ, vì mọi con số đều hợp lý, chỉ đứng nhầm hàng.
+    const nn = foreign.get(dayKey(row.day));
+    return [
+      // Ngày/tháng thôi: mười phiên gần nhất thì năm là bốn chữ số không nói thêm gì, mà bảng đang
+      // có bảy cột và cột nào cũng tranh chỗ.
+      row.day.slice(0, 5),
+      money(row.close),
+      `${signed(row.percent)}%`,
+      count(row.volume),
+      traded(row.close * row.volume),
+      row.change > 0 ? 1 : row.change < 0 ? -1 : 0,
+      nn ? traded(nn.buyValue) : '',
+      nn ? traded(nn.sellValue) : '',
+    ];
+  });
   const average = history.length
     ? Math.round(history.reduce((sum, row) => sum + row.volume, 0) / history.length)
     : 0;
@@ -176,6 +185,12 @@ const SHORTER = { 'Cổ phiếu lưu hành': 'CP lưu hành', 'KL bình quân th
 export function companyName(card, symbol) {
   if (!card?.title) return '';
   return String(card.title).replace(`${String(symbol ?? '').toUpperCase()} — `, '');
+}
+
+/// `17/09/2026` → `2026-09-17`, để tra vào bảng khối ngoại vốn khoá theo ngày kiểu ISO.
+function dayKey(day) {
+  const found = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(day ?? ''));
+  return found ? `${found[3]}-${found[2]}-${found[1]}` : '';
 }
 
 /// Dấu đi liền số, và số không thì không mang dấu nào.

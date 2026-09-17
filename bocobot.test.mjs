@@ -406,6 +406,20 @@ function stubHistory({ broken = false } = {}) {
   };
 }
 
+/// Khối ngoại giả, khoá theo ngày như nguồn thật. Không có nó thì mỗi cú bấm trong bài test là
+/// một lời gọi ra VNDirect.
+function stubForeign({ broken = false } = {}) {
+  return {
+    async rows() {
+      if (broken) throw new Error('khối ngoại không trả lời');
+      return new Map([
+        ['2026-09-07', { buyVolume: 664031, sellVolume: 1425400, buyValue: 160777331, sellValue: 344179900 }],
+        ['2026-09-04', { buyVolume: 928009, sellVolume: 1547409, buyValue: 224201980, sellValue: 373392410 }],
+      ]);
+    },
+  };
+}
+
 /// Bảng ngành giả. Mặc định của `run` gọi ra VNDirect, và một bộ test gọi ra internet là một bộ
 /// test đỏ khi mất mạng.
 function stubSectors() {
@@ -435,7 +449,7 @@ async function withBot(
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
-    history = stubHistory(),
+    history = stubHistory(), foreign = stubForeign(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
     refuseSessions = false,
     // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú. Bài nào cần sàn đóng thì đưa giờ khác vào.
@@ -457,6 +471,7 @@ async function withBot(
     results,
     company,
     history,
+    foreign,
     sectors,
     board,
     statePath,
@@ -1480,6 +1495,11 @@ test('bấm vào một ô thì gói sau mang theo hồ sơ mã ấy, kèm khối
   assert.deepEqual(detail.h[0].slice(0, 5), ['07/09', '256,1', '+4,74%', '7.518.600', '1.926 tỷ']);
   assert.equal(detail.h[0][5], 1);            // phiên tăng, để trang tô đúng màu
   assert.equal(detail.h[1][5], -1);
+
+  // Khối ngoại ghép vào **theo ngày**, không theo thứ tự: hai nguồn khác nhau, và lệch một dòng thì
+  // mọi con số vẫn hợp lý, chỉ đứng nhầm phiên — kiểu sai không ai nhìn ra.
+  assert.deepEqual(detail.h[0].slice(6), ['161 tỷ', '344 tỷ']);
+  assert.deepEqual(detail.h[2].slice(6), ['', '']);   // phiên nguồn kia không có thì để trống
   assert.deepEqual(detail.hb, ['KLTB 3 phiên', '6.272.867']);
 
   // Hỏi nguồn đúng một lần cho mỗi mã rồi nhớ — kể cả khi phần hâm sẵn cũng đang chạy nền.

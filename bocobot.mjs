@@ -43,6 +43,7 @@ import { googleNews, newsMessage } from './market/news.mjs';
 import { dailyHistory, intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
 import { askedHeatmapFor, boardState, marketHeatmap } from './market/heatmap.mjs';
 import { vndirectSectors } from './market/sectors.mjs';
+import { vndirectForeign } from './market/foreign.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
@@ -514,6 +515,7 @@ export async function run(token, {
   results = vietcapResults(),
   company = vietcapCompany(),
   history = dailyHistory(),
+  foreign = vndirectForeign(),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -639,6 +641,8 @@ export async function run(token, {
   const asking = new Set();
   /// Mã -> mười phiên gần nhất. Nguồn tự nhớ mười phút; chỗ này nhớ để gói đẩy khỏi phải `await`.
   const days = new Map();
+  /// Mã -> khối ngoại từng phiên, khoá theo ngày.
+  const foreigns = new Map();
   /// Mã -> bài phân tích kỹ thuật dạng dữ liệu, và mã đang trên đường phân tích.
   const studies = new Map();
   const studying = new Set();
@@ -825,6 +829,7 @@ export async function run(token, {
       quote: bySymbol.get(symbol) ?? null,
       sector: named.get(symbol) ?? '',
       history: days.get(symbol) ?? [],
+      foreign: foreigns.get(symbol) ?? new Map(),
       study: studies.get(symbol)?.card ?? null,
       studying: studying.has(symbol),
     })]));
@@ -1026,10 +1031,23 @@ export async function run(token, {
         .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
     }
 
+    // Mười phiên và khối ngoại: hai nguồn, hỏi song song, và cùng về một bảng. Chờ nhau thì cột
+    // nào chậm hơn sẽ giữ cả bảng lại.
     if (!days.has(symbol)) {
       history.rows(symbol)
         .then((rows) => days.set(symbol, rows))
         .catch((problem) => console.error(`không lấy được mười phiên ${symbol}: ${problem}`))
+        .then(() => {
+          live.pushed = null;
+          return pushBoards({ stale: true });
+        })
+        .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
+    }
+
+    if (!foreigns.has(symbol)) {
+      foreign.rows(symbol)
+        .then((rows) => foreigns.set(symbol, rows))
+        .catch((problem) => console.error(`không lấy được khối ngoại ${symbol}: ${problem}`))
         .then(() => {
           live.pushed = null;
           return pushBoards({ stale: true });

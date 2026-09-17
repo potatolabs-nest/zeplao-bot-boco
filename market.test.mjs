@@ -16,6 +16,7 @@ import {
   boardDetail, companyCard, companyCards, companyEntities, companyOf, plainText, vietcapCompany,
 } from './market/company.mjs';
 import { dailyHistory, dailyRows } from './market/chart.mjs';
+import { foreignOf, vndirectForeign } from './market/foreign.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -549,4 +550,38 @@ test('trang chi tiết gộp hồ sơ, giá hôm nay và mười phiên — thi�
   assert.equal(noDays.hb, null);
   assert.equal(noDays.f, 1);
   assert.ok(noDays.r.some(([label]) => label === 'Vốn hoá'));
+});
+
+test('khối ngoại: bản ghi thô thành bảng khoá theo ngày, giá trị đổi sang nghìn đồng', () => {
+  const rows = foreignOf([
+    { tradingDate: '2026-09-17', buyVol: 664031, sellVol: 1425400, buyVal: 1.607773311e11, sellVal: 3.441799e11 },
+    { tradingDate: '2026-09-17', buyVol: 1, sellVol: 1, buyVal: 1, sellVal: 1 },   // trùng ngày: giữ dòng đầu
+    { tradingDate: 'hôm qua', buyVol: 5 },                                          // ngày không đọc được thì bỏ
+    { buyVol: 7 },
+  ]);
+
+  assert.equal(rows.size, 1);
+  const day = rows.get('2026-09-17');
+  assert.equal(day.buyVolume, 664031);
+  assert.equal(day.sellVolume, 1425400);
+  // Nguồn trả bằng đồng; cả bot nói chuyện bằng nghìn đồng.
+  assert.equal(Math.round(day.buyValue), 160777331);
+  assert.deepEqual([...foreignOf(null).keys()], []);
+});
+
+test('nguồn khối ngoại nhớ lại, và hỏng thì ném để bảng vẫn dựng được mà không có hai cột ấy', async () => {
+  let calls = 0;
+  const answer = { ok: true, json: async () => ({ data: [{ tradingDate: '2026-09-17', buyVol: 1, sellVol: 2, buyVal: 1000, sellVal: 2000 }] }) };
+  let clock = 0;
+  const source = vndirectForeign({ fetchImpl: async () => { calls += 1; return answer; }, ttlMs: 1000, now: () => clock });
+
+  assert.equal((await source.rows('VIC')).size, 1);
+  await source.rows('VIC');
+  assert.equal(calls, 1);
+  clock = 1500;
+  await source.rows('VIC');
+  assert.equal(calls, 2);
+
+  const broken = vndirectForeign({ fetchImpl: async () => ({ ok: false, status: 503 }) });
+  await assert.rejects(() => broken.rows('VIC'), /503/);
 });

@@ -260,9 +260,17 @@ export function technicalCard(analysis, span = CARD_SESSIONS) {
       supports: analysis.zones.supports.map(money),
       resistances: analysis.zones.resistances.map(money),
     },
-    // Chuỗi để vẽ: giá đóng cửa và hai đường trung bình, cùng một mốc thời gian, cùng độ dài.
+    // Chuỗi để vẽ: nến, khối lượng và hai đường trung bình, cùng một mốc thời gian, cùng độ dài.
+    // Gửi cả bốn giá mỗi phiên chứ không riêng giá đóng: một đường gấp khúc không nói được phiên
+    // nào giằng co, phiên nào dứt khoát — mà đó chính là thứ người ta mở chart ra để nhìn.
     chart: {
+      open: rows.map((row) => round2(row.open)),
+      high: rows.map((row) => round2(row.high)),
+      low: rows.map((row) => round2(row.low)),
       close: rows.map((row) => round2(row.close)),
+      // Khối lượng tính bằng nghìn cổ phiếu: chart chỉ cần tỉ lệ giữa các cột, mà số nguyên ngắn
+      // hơn thì gói nhẹ hơn.
+      volume: rows.map((row) => Math.round((row.volume ?? 0) / 1000)),
       ma20: trim(analysis.series.ma20),
       ma50: trim(analysis.series.ma50),
       // Mốc ngày đầu và cuối thôi: trục x của một chart ba tháng không cần nhãn nào khác.

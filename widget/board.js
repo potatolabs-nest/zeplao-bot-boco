@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 6;
+  const BUILD = 8;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -67,7 +67,9 @@
   let asked = 0;            // lần gần nhất xin bot hồ sơ, để khỏi hỏi dồn
   let studied = 0;          // lần gần nhất xin bài phân tích kỹ thuật
   let seated = false;       // đã dựng lại chỗ ngồi cũ chưa
+  let sits = 0;             // đã thử dựng lại mấy lần
   const SEAT_MS = 400;
+  const SIT_TRIES = 6;
   const SVG = 'http://www.w3.org/2000/svg';
   const HELLO_AGAIN_MS = 4000;
   const HELLO_TRIES = 5;
@@ -179,6 +181,11 @@
     // Dòng đầu của trang chi tiết lùi vào đúng bề ngang cái nút — nó nằm đè lên trang, và bề ngang
     // ấy đổi theo tên in trên mặt nút.
     paper.head.style.paddingLeft = opened === null ? '' : `${back.offsetWidth + 10}px`;
+    // Chart vẽ bằng pixel thật, nên đổi cỡ khung là phải vẽ lại — không có cách nào để nó tự co mà
+    // không bẹt chữ, và bẹt chữ chính là thứ vừa phải sửa.
+    if (drawn_ && opened !== null && tab === 'ptkt' && paper.chart.clientWidth > 0) {
+      paper.chart.replaceChildren(sketch(drawn_));
+    }
 
     // Dải tên nhóm: cao đúng bằng khoảng bot đã chừa, và biến mất khi khoảng ấy hẹp quá — chữ nhỏ
     // nhất vẫn tràn ra và đè sang nhóm bên cạnh, mà một nhóm không tên vẫn nhận ra qua các mã.
@@ -420,22 +427,29 @@
     paper.daysTitle.hidden = !days.length;
     if (!days.length) return;
 
+    // Hai cột khối ngoại chỉ hiện khi nguồn có trả lời: một cột rỗng suốt mười dòng trông như số
+    // liệu hỏng, trong khi sự thật chỉ là nguồn kia không nói.
+    const hasForeign = days.some(([, , , , , , buy]) => buy);
     const head = document.createElement('tr');
-    for (const label of ['Ngày', 'Giá', 'Thay đổi', 'Khối lượng', 'Giá trị']) {
+    for (const label of ['Ngày', 'Giá', 'Thay đổi', 'Khối lượng', 'Giá trị', ...(hasForeign ? ['NN mua', 'NN bán'] : [])]) {
       const cell = document.createElement('th');
       cell.textContent = label;
       head.append(cell);
     }
     paper.days.append(head);
 
-    for (const [day, close, percent, volume, value, way] of days) {
+    for (const [day, close, percent, volume, value, way, buy, sell] of days) {
       const line = document.createElement('tr');
-      for (const [index, shown] of [day, close, percent, volume, value].entries()) {
+      const cells = [day, close, percent, volume, value, ...(hasForeign ? [buy, sell] : [])];
+      for (const [index, shown] of cells.entries()) {
         const cell = document.createElement('td');
         cell.textContent = shown;
-        // Chỉ cột giá và cột thay đổi ăn màu: tô cả dòng thì bảng thành một mảng xanh đỏ và không
-        // còn đọc được cột nào.
+        // Cột giá và cột thay đổi ăn màu theo phiên; hai cột khối ngoại ăn màu theo chiều của chính
+        // chúng — mua là mua, dù hôm ấy giá có giảm. Tô cả dòng thì bảng thành một mảng xanh đỏ và
+        // không còn đọc được cột nào.
         if (index === 1 || index === 2) cell.className = way > 0 ? 'up' : way < 0 ? 'down' : '';
+        if (index === 5) cell.className = 'up';
+        if (index === 6) cell.className = 'down';
         line.append(cell);
       }
       paper.days.append(line);
@@ -515,62 +529,113 @@
       return line;
     }));
 
+    drawn_ = card.chart;
     paper.chart.replaceChildren(sketch(card.chart));
   }
 
+  /// Chart vừa vẽ, giữ lại để vẽ lại khi khung đổi cỡ — nó tính theo pixel thật nên không tự co.
+  let drawn_ = null;
+
   /**
-   * Chart giá ba tháng: một đường giá, hai đường trung bình, hai mức hỗ trợ và kháng cự.
+   * Chart giá ba tháng: nến, hai đường trung bình, khối lượng, lưới giá và hai mức hỗ trợ/kháng cự.
    *
-   * Vẽ trong một `viewBox` cố định rồi để CSS kéo rộng ra: như thế cùng một hình dùng được cho cả
-   * khung điện thoại lẫn màn hình rộng mà không phải tính lại gì khi đổi cỡ.
+   * Vẽ theo **pixel thật** của khung chứ không vẽ vào một `viewBox` cố định rồi kéo giãn: kéo giãn
+   * thì nét dọc mảnh đi, nét ngang dày lên và chữ bị bẹt ngang — cái chart trông như bị ai ngồi lên.
+   * Một đơn vị SVG ở đây là một pixel, nên hình vẽ ra sao là đúng như thế.
    */
   function sketch(chart) {
-    const W = 320;
-    const H = 116;
-    const RIGHT = 42;    // chỗ cho nhãn giá
-    const BOTTOM = 11;   // chỗ cho nhãn ngày
-    const svg = document.createElementNS(SVG, 'svg');
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    svg.setAttribute('preserveAspectRatio', 'none');
+    const wide = Math.max(240, Math.round(paper.chart.clientWidth || 320));
+    const RIGHT = 48;                        // chỗ cho thang giá bên phải
+    const PRICE = { top: 10, bottom: 128 };
+    const VOLUME = { top: 140, bottom: 166 };
+    const HIGH = 182;
 
-    const closes = (chart?.close ?? []).filter((value) => Number.isFinite(value));
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${wide} ${HIGH}`);
+    svg.setAttribute('width', wide);
+    svg.setAttribute('height', HIGH);
+
+    const closes = chart?.close ?? [];
     if (closes.length < 2) return svg;
 
-    const marks = [chart.support, chart.resistance].filter(Number.isFinite);
-    const low = Math.min(...closes, ...marks);
-    const high = Math.max(...closes, ...marks);
-    const span = high - low || 1;
-    const x = (index) => (index / (chart.close.length - 1)) * (W - RIGHT);
-    const y = (value) => 6 + ((high - value) / span) * (H - BOTTOM - 10);
-
-    const add = (name, attrs, styles = {}) => {
+    const add = (name, attrs, styles) => {
       const node = document.createElementNS(SVG, name);
       for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-      Object.assign(node.style, styles);
+      if (styles) Object.assign(node.style, styles);
       svg.append(node);
       return node;
     };
-    const path = (values, styles) => {
-      const points = values
-        .map((value, index) => (Number.isFinite(value) ? `${x(index).toFixed(1)},${y(value).toFixed(1)}` : null))
-        .filter(Boolean)
-        .join(' ');
-      if (points) add('polyline', { points, fill: 'none' }, styles);
-    };
+
+    // Thang giá bám theo nến và hai đường trung bình, cộng hai mức hỗ trợ/kháng cự — chúng là lý do
+    // người ta nhìn cái chart này, nên để chúng rơi ra ngoài khung thì vẽ cũng bằng thừa.
+    const marks = [chart.support, chart.resistance].filter(Number.isFinite);
+    const spread = [
+      ...(chart.high ?? closes), ...(chart.low ?? closes), ...closes,
+      ...(chart.ma20 ?? []), ...(chart.ma50 ?? []), ...marks,
+    ].filter(Number.isFinite);
+    const low = Math.min(...spread);
+    const high = Math.max(...spread);
+    const span = high - low || 1;
+
+    const slot = (wide - RIGHT) / closes.length;
+    const bar = Math.max(1.5, slot * 0.6);
+    const mid = (index) => slot * (index + 0.5);
+    const y = (value) => PRICE.top + ((high - value) / span) * (PRICE.bottom - PRICE.top);
+
+    // Lưới ngang và thang giá: bốn mức, đủ để đọc một con số mà không thành cái lồng chim.
+    for (let step = 0; step <= 3; step += 1) {
+      const value = low + (span * step) / 3;
+      add('line', { x1: 0, x2: wide - RIGHT, y1: y(value), y2: y(value) }, { stroke: 'var(--line)', strokeWidth: '1' });
+      add('text', { x: wide - RIGHT + 4, y: y(value) + 3, 'font-size': '9' }, { fill: 'var(--muted)' })
+        .textContent = vi(value);
+    }
 
     for (const [value, label, colour] of [[chart.support, 'HT', 'var(--up)'], [chart.resistance, 'KC', 'var(--down)']]) {
       if (!Number.isFinite(value)) continue;
-      add('line', { x1: 0, x2: W - RIGHT, y1: y(value), y2: y(value) }, { stroke: colour, strokeWidth: '1', strokeDasharray: '3 3', opacity: '0.7' });
-      add('text', { x: W - RIGHT + 3, y: y(value) + 3, 'font-size': '8' }, { fill: colour }).textContent = `${label} ${vi(value)}`;
+      add('line', { x1: 0, x2: wide - RIGHT, y1: y(value), y2: y(value) },
+        { stroke: colour, strokeWidth: '1', strokeDasharray: '4 3', opacity: '0.8' });
+      add('text', { x: wide - RIGHT + 4, y: y(value) - 4, 'font-size': '9', 'font-weight': '700' }, { fill: colour })
+        .textContent = `${label} ${vi(value)}`;
     }
 
-    path(chart.ma50, { stroke: 'var(--muted)', strokeWidth: '1', opacity: '0.7' });
-    path(chart.ma20, { stroke: 'var(--flat)', strokeWidth: '1.2' });
-    path(chart.close, { stroke: 'var(--text)', strokeWidth: '1.6', strokeLinejoin: 'round' });
+    // Nến: phiên tăng thì thân rỗng, phiên giảm thì thân đặc — cùng lối với hình của `!ptkt`.
+    const mostVolume = Math.max(1, ...(chart.volume ?? [0]));
+    for (let index = 0; index < closes.length; index += 1) {
+      const open = chart.open?.[index] ?? closes[index];
+      const close = closes[index];
+      const top = chart.high?.[index] ?? Math.max(open, close);
+      const bottom = chart.low?.[index] ?? Math.min(open, close);
+      const rising = close >= open;
+      const colour = rising ? 'var(--up-r, var(--up))' : 'var(--down-r, var(--down))';
+      const x = mid(index);
 
-    add('text', { x: 0, y: H - 2, 'font-size': '8' }, { fill: 'var(--muted)' }).textContent = chart.first ?? '';
-    add('text', { x: W - RIGHT, y: H - 2, 'font-size': '8', 'text-anchor': 'end' }, { fill: 'var(--muted)' }).textContent = chart.last ?? '';
-    add('text', { x: 0, y: 6, 'font-size': '8' }, { fill: 'var(--muted)' }).textContent = `MA20 · MA50 · ${vi(high)} – ${vi(low)}`;
+      add('line', { x1: x, x2: x, y1: y(top), y2: y(bottom) }, { stroke: colour, strokeWidth: '1' });
+      const bodyTop = y(Math.max(open, close));
+      const bodyHigh = Math.max(1, y(Math.min(open, close)) - bodyTop);
+      add('rect', { x: x - bar / 2, y: bodyTop, width: bar, height: bodyHigh },
+        rising
+          ? { fill: 'var(--panel)', stroke: colour, strokeWidth: '1' }
+          : { fill: colour });
+
+      // Khối lượng ngay dưới, cùng màu với phiên: hai dải đọc cùng một nhịp thì mắt nối được chúng.
+      const tall = ((chart.volume?.[index] ?? 0) / mostVolume) * (VOLUME.bottom - VOLUME.top);
+      add('rect', { x: x - bar / 2, y: VOLUME.bottom - tall, width: bar, height: Math.max(0.5, tall) },
+        { fill: colour, opacity: '0.55' });
+    }
+
+    // Hai đường trung bình vẽ sau cùng, đè lên nến.
+    for (const [values, colour, thick] of [[chart.ma50, 'var(--muted)', 1], [chart.ma20, 'var(--flat)', 1.4]]) {
+      const points = (values ?? [])
+        .map((value, index) => (Number.isFinite(value) ? `${mid(index).toFixed(1)},${y(value).toFixed(1)}` : null))
+        .filter(Boolean)
+        .join(' ');
+      if (points) add('polyline', { points, fill: 'none' }, { stroke: colour, strokeWidth: String(thick) });
+    }
+
+    add('text', { x: 0, y: HIGH - 3, 'font-size': '9' }, { fill: 'var(--muted)' }).textContent = chart.first ?? '';
+    add('text', { x: wide - RIGHT, y: HIGH - 3, 'font-size': '9', 'text-anchor': 'end' }, { fill: 'var(--muted)' })
+      .textContent = chart.last ?? '';
+    add('text', { x: 0, y: VOLUME.top - 3, 'font-size': '9' }, { fill: 'var(--muted)' }).textContent = 'Khối lượng';
     return svg;
   }
 
@@ -705,13 +770,21 @@
    * người ta chỉ dừng ở chỗ cuối cùng.
    */
   let seating = null;
+  let satAt = 0;
 
   function seat() {
     if (!z || typeof z.send !== 'function') return;
-    clearTimeout(seating);
-    seating = setTimeout(() => {
+    const tell = () => {
+      satAt = Date.now();
       try { z.send({ seat: [zoomed, opened, tab] }); } catch { /* không báo được thì thôi */ }
-    }, SEAT_MS);
+    };
+
+    // Lần đổi đầu tiên báo **ngay**, những lần dồn dập sau mới gộp lại. Chờ rồi mới báo là đánh cược
+    // rằng trang còn sống thêm bốn phần mười giây nữa — mà người đóng widget ngay sau khi mở một mã
+    // thì đúng là không: cái hẹn chết theo trang, và bot không bao giờ biết họ đã đứng ở đâu.
+    if (Date.now() - satAt >= SEAT_MS) { tell(); return; }
+    clearTimeout(seating);
+    seating = setTimeout(tell, SEAT_MS);
   }
 
   /**
@@ -721,8 +794,21 @@
    * họ về chỗ ghi trong đó là không ai bấm đi đâu được nữa.
    */
   function sit(state) {
+    // **Chỉ đánh dấu đã dựng khi biết mình là ai.** Trên web, danh tính người xem tới trong lời chào
+    // của ứng dụng, còn gói trạng thái đi bằng một tin nhắn khác — và không có gì bảo đảm lời chào
+    // tới trước. Đốt cờ ngay ở gói đầu tiên nghĩa là hôm nào lời chào tới sau thì mất chỗ ngồi, hôm
+    // nào tới trước thì còn. Đó đúng là kiểu lúc được lúc không.
+    sits += 1;
+    const who = z?.viewer?.id;
+    if (!who) {
+      // Nhưng cũng không đợi mãi: không có danh tính sau vài nhịp thì thôi, chứ dựng lại chỗ cũ vào
+      // giữa lúc người ta đang bấm dở là giật mất cái bảng khỏi tay họ.
+      if (sits >= SIT_TRIES) seated = true;
+      return;
+    }
+
     seated = true;
-    const mine = state.seats?.[z?.viewer?.id];
+    const mine = state.seats?.[who];
     if (!Array.isArray(mine)) return;
 
     const [wasZoom, wasOpen, wasTab] = mine;
