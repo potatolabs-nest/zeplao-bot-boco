@@ -11,6 +11,7 @@ import {
 } from './market/quote.mjs';
 import { withCache } from './market/vps.mjs';
 import { looksLikeCode, tokensIn, makeGuard } from './market/symbols.mjs';
+import { sectorsOf, vndirectSectors } from './market/sectors.mjs';
 import {
   companyCard, companyCards, companyEntities, companyOf, plainText, vietcapCompany,
 } from './market/company.mjs';
@@ -338,6 +339,51 @@ test('mọi nguồn cùng chết thì phải ném, vì im lặng lúc này là n
 
 test('mã không nguồn nào có thì không phải là lỗi', async () => {
   assert.deepEqual(await chain(source('a'), source('b')).quotes(['ZZZ']), []);
+});
+
+// ---- bảng ngành ------------------------------------------------------------------------------
+
+const ICB = [
+  { vietnameseName: 'Dầu khí', codeList: 'BSR,PVC,PVD,PVS,PLX,OIL' },
+  { vietnameseName: 'Bất động sản', codeList: 'VIC,VHM,VGC,VCG' },
+  { vietnameseName: 'Hàng hóa và dịch vụ công nghiệp', codeList: 'PVT,HAH,GEX' },
+  { vietnameseName: 'Dịch vụ tiện ích', codeList: 'GAS,POW' },
+  { vietnameseName: '', codeList: 'ZZZ' },
+];
+
+test('phân ngành ICB thành bảng mã → ngành, mã trùng thì lần đầu thắng', () => {
+  const sectors = sectorsOf([...ICB, { vietnameseName: 'Tài chính', codeList: 'VGC,VCG' }]);
+
+  assert.equal(sectors.get('BSR'), 'Dầu khí');
+  assert.equal(sectors.get('VIC'), 'Bất động sản');
+  assert.equal(sectors.get('VGC'), 'Bất động sản');   // không bị ngành kể sau giành mất
+  assert.equal(sectors.get('ZZZ'), undefined);        // ngành không tên thì không phải một ngành
+  assert.equal(sectors.get('KHONGCO'), undefined);
+});
+
+test('mã mà bảng điện Việt Nam đọc khác ICB thì ghi đè', () => {
+  // ICB nhìn việc doanh nghiệp làm: PVT chở dầu bằng tàu nên thành vận tải, GAS phân phối khí nên
+  // thành tiện ích. Người ngồi trước bảng giá nhìn họ nhà: cả hai lên xuống theo giá dầu.
+  const sectors = sectorsOf(ICB);
+  assert.equal(sectors.get('PVT'), 'Dầu khí');
+  assert.equal(sectors.get('GAS'), 'Dầu khí');
+  assert.equal(sectors.get('HAH'), 'Hàng hóa và dịch vụ công nghiệp');   // không đụng mã khác
+});
+
+test('bảng ngành hỏi một lần rồi nhớ, nguồn chết thì trả bảng rỗng chứ không ném', async () => {
+  let asked = 0;
+  const source = vndirectSectors({
+    async fetchImpl() {
+      asked += 1;
+      return new Response(JSON.stringify({ data: ICB }));
+    },
+  });
+  assert.equal((await source.map()).get('BSR'), 'Dầu khí');
+  await source.map();
+  assert.equal(asked, 1);
+
+  const dead = vndirectSectors({ async fetchImpl() { throw new Error('mạng hỏng'); } });
+  assert.equal((await dead.map()).size, 0);   // bản đồ vẫn vẽ được, cả thị trường vào nhóm "Khác"
 });
 
 // ---- hồ sơ doanh nghiệp ----------------------------------------------------------------------

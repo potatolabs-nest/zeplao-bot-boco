@@ -4,6 +4,7 @@
 // đồ này dùng giá trị giao dịch làm độ lớn ô, và một bảng ngành nhỏ cho các mã vốn hoá/thanh
 // khoản hay được nhìn trước; mã không có trong bảng vẫn hiện trong nhóm "Khác".
 import { money, sessionNote, vietnamNow } from './quote.mjs';
+import { vndirectSectors } from './sectors.mjs';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -29,12 +30,14 @@ const TILE_GAP = 1.5;
 const TILE_RADIUS = 1;
 const MAX_SYMBOLS = 500;
 
+/// Mỗi bộ lọc kể cả tên ngành theo ICB lẫn tên trong bảng viết tay cũ: bảng ngành lấy từ mạng, và
+/// khi nguồn ấy chết thì bot lùi về bảng cũ — lệnh `!vboa bank` phải chạy được ở cả hai đường.
 const FILTERS = {
   bds: { key: 'bds', title: 'Bất động sản', sectors: ['Bất động sản'] },
-  bank: { key: 'bank', title: 'Bank chứng', sectors: ['Tài chính'] },
-  oil: { key: 'oil', title: 'Dầu khí', sectors: ['Năng lượng'] },
-  retail: { key: 'retail', title: 'Bán lẻ', sectors: ['Tiêu dùng không thiết yếu'] },
-  cn: { key: 'cn', title: 'Công nghiệp', sectors: ['Công nghiệp'] },
+  bank: { key: 'bank', title: 'Bank chứng', sectors: ['Ngân hàng', 'Dịch vụ tài chính', 'Bảo hiểm', 'Tài chính'] },
+  oil: { key: 'oil', title: 'Dầu khí', sectors: ['Dầu khí', 'Năng lượng'] },
+  retail: { key: 'retail', title: 'Bán lẻ', sectors: ['Dịch vụ bán lẻ', 'Tiêu dùng không thiết yếu'] },
+  cn: { key: 'cn', title: 'Công nghiệp', sectors: ['Hàng hóa và dịch vụ công nghiệp', 'Công nghiệp'] },
 };
 
 const SECTOR_ORDER = [
@@ -113,23 +116,27 @@ function withoutPrivateFlag(text) {
   return String(text ?? '').replace(/\s+-v\s*$/i, '').trimEnd();
 }
 
-export function marketHeatmap({ maxSymbols = MAX_SYMBOLS, at = () => new Date() } = {}) {
+export function marketHeatmap({ maxSymbols = MAX_SYMBOLS, at = () => new Date(), sectors = vndirectSectors() } = {}) {
   return {
     async rich(market, asked = {}) {
       const universe = await market.universe();
-      const quotes = await market.quotes(universe);
-      return heatmapRich(quotes, { maxSymbols, at: at(), filter: asked.filter });
+      const [quotes, named] = await Promise.all([market.quotes(universe), sectors.map()]);
+      return heatmapRich(quotes, { maxSymbols, at: at(), filter: asked.filter, sectors: named });
     },
   };
 }
 
-export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date(), filter = null } = {}) {
+export function heatmapRich(quotes, {
+  maxSymbols = MAX_SYMBOLS, at = new Date(), filter = null, sectors = new Map(),
+} = {}) {
   const rows = quotes
     .filter((quote) => quote?.reference > 0 && quote.price > 0)
     .map((quote) => ({
       ...quote,
       value: Math.max(quote.price * quote.volume, 1),
-      sector: SECTORS[quote.symbol] ?? 'Khác',
+      // Bảng ngành lấy từ mạng trước, bảng viết tay sau: nguồn phủ cả 1.523 mã, còn bảng tay chỉ
+      // có trăm mã nhưng luôn ở đó khi mạng hỏng.
+      sector: sectors.get(quote.symbol) ?? SECTORS[quote.symbol] ?? 'Khác',
     }))
     .filter((quote) => !filter || filter.sectors.includes(quote.sector))
     .sort((a, b) => b.value - a.value)
@@ -137,11 +144,18 @@ export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date(),
 
   if (!rows.length) return null;
 
+  // Nhóm nào cũng được, miễn có mã: tên ngành giờ tới từ nguồn dữ liệu chứ không từ một danh sách
+  // viết sẵn, nên không thể kể trước tên. Xếp theo tiền giao dịch, riêng "Khác" xuống cuối vì nó
+  // không phải một ngành mà là chỗ chứa những mã chưa biết ngành.
   const groups = filter
     ? [{ sector: filter.title, quotes: rows }]
-    : SECTOR_ORDER
-      .map((sector) => ({ sector, quotes: rows.filter((quote) => quote.sector === sector) }))
-      .filter((group) => group.quotes.length);
+    : [...new Set(rows.map((quote) => quote.sector))]
+      .map((sector) => ({
+        sector,
+        quotes: rows.filter((quote) => quote.sector === sector),
+        value: rows.filter((quote) => quote.sector === sector).reduce((sum, quote) => sum + quote.value, 0),
+      }))
+      .sort((a, b) => (a.sector === 'Khác' ? 1 : b.sector === 'Khác' ? -1 : b.value - a.value));
 
   const stats = summarize(rows);
   const day = tradingDay(at);
@@ -187,6 +201,8 @@ function sectorSvg(group, rect) {
   const inner = shrink(rect, GAP);
   if (inner.w <= 0 || inner.h <= 0) return '';
   const body = { x: inner.x, y: inner.y + HEADER, w: inner.w, h: Math.max(0, inner.h - HEADER) };
+  const titleSize = clamp(inner.w / 11, 11, 16);
+  const title = clipped(group.sector, inner.w - 10, titleSize);
   const tiles = treemap(
     group.quotes.map((quote) => ({ quote, value: quote.value })),
     body,
@@ -194,7 +210,7 @@ function sectorSvg(group, rect) {
 
   return `<g>
     <rect x="${round(inner.x)}" y="${round(inner.y)}" width="${round(inner.w)}" height="${round(inner.h)}" rx="4" fill="#ffffff"/>
-    <text x="${round(inner.x + inner.w / 2)}" y="${round(inner.y + 23)}" text-anchor="middle" fill="#0f172a" font-family="${font()}" font-size="16" font-weight="700">${escapeXml(group.sector)}</text>
+    ${title ? `<text x="${round(inner.x + inner.w / 2)}" y="${round(inner.y + 23)}" text-anchor="middle" fill="#0f172a" font-family="${font()}" font-size="${round(titleSize)}" font-weight="700">${escapeXml(title)}</text>` : ''}
     ${tiles.map(({ item, ...tile }) => tileSvg(item.quote, shrink(tile, gapFor(tile)))).join('')}
   </g>`;
 }
@@ -203,6 +219,20 @@ function sectorSvg(group, rect) {
 /// biến mất khỏi bản đồ, im lặng, chỉ vì cái khe. Ô càng bé thì mạch hở càng mảnh, nhưng vẫn có.
 function gapFor(rect) {
   return Math.min(TILE_GAP, rect.w / 5, rect.h / 5);
+}
+
+/**
+ * Tên nhóm, cắt cho vừa bề ngang của nhóm.
+ *
+ * Tên ngành giờ tới từ nguồn dữ liệu — "Hàng hóa và dịch vụ công nghiệp", "Đồ dùng cá nhân và đồ
+ * gia dụng" — và ô nhóm thì hẹp theo tiền giao dịch, nên chữ tràn ra ngoài và đè lên tên nhóm bên
+ * cạnh. Hai cái tên chồng lên nhau đọc thành một cái tên thứ ba không có thật, tệ hơn là không có
+ * tên. Hẹp quá thì thà bỏ hẳn tên: ô nhóm vẫn nhận ra được qua các mã trong đó.
+ */
+function clipped(text, room, size) {
+  const fits = Math.floor(room / (size * 0.55));
+  if (fits < 4) return '';
+  return text.length <= fits ? text : `${text.slice(0, fits - 1).trimEnd()}…`;
 }
 
 function tileSvg(quote, rect) {
