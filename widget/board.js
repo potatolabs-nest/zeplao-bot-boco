@@ -106,12 +106,36 @@
     }
   }
 
+  /**
+   * Xin đúng cái khung cho một bảng nhiệt: chữ nhật nằm ngang.
+   *
+   * Khung mặc định của phiên là thẻ nổi hơi đứng — web 440×560, điện thoại rộng chừng màn hình trừ
+   * 24 và cao hơn rộng — mà một treemap nhét vào khung đứng thì các ô thành những cột dựng, chữ
+   * không nằm được và mắt không so được diện tích nữa. `z.room` cho biết khung lớn nhất máy này
+   * chịu cho, nên tính ra bề ngang rồi xin đúng 16:9 trong đó.
+   */
+  const CHROME = 76;   // chỗ cho dòng tiêu đề và hàng chú giải
+  function fitRoom() {
+    const room = z?.room;
+    if (!room || typeof z.setSize !== 'function') return;
+    const width = Math.max(200, Math.min(room.width, ((room.height - CHROME) * 16) / 9));
+    z.setSize(Math.round(width), Math.round((width * 9) / 16 + CHROME));
+  }
+
   if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(map);
 
   if (z) {
     if (typeof z.onState === 'function') z.onState(apply);
     if (typeof z.onData === 'function') z.onData(apply);
+    if (typeof z.onRoom === 'function') z.onRoom(fitRoom);
+    fitRoom();
     if (typeof z.ready === 'function') z.ready();
+
+    // Chào một tiếng. Không có tin báo "đã mở" nào cho bot, nên đây là cách duy nhất bot biết bảng
+    // thật sự hiện ra trên máy ai — và biết nó hiện trên web hay điện thoại.
+    if (typeof z.send === 'function') {
+      try { z.send({ hello: 1, host: z.room?.host ?? '?' }); } catch { /* không chào được thì thôi */ }
+    }
   } else {
     // Mở thẳng file trong trình duyệt: vẽ một bảng mẫu, để sửa giao diện mà không cần bot chạy.
     apply({

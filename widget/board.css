@@ -56,10 +56,17 @@ body {
 
 /* Bản đồ là một khung có toạ độ: mỗi nhóm và mỗi ô được đặt bằng phần trăm, nên đổi cỡ cửa sổ thì
    cả bảng co giãn theo mà không phải tính lại bố cục — bố cục do bot gửi sang, tính một lần. */
+/* Bản đồ luôn là chữ nhật nằm ngang, dù ứng dụng cho cái khung hình gì.
+
+   Một treemap co vào khung cao và hẹp thì các ô thành những cột dựng đứng: chữ không nằm được, mắt
+   không so được diện tích, và nó không còn giống bảng người ta quen nhìn. Thà chừa khoảng trống
+   trên dưới còn hơn bóp méo cả bảng. */
 #map {
   position: relative;
-  flex: 1;
-  margin: 0 8px 8px;
+  width: calc(100% - 16px);
+  max-height: calc(100% - 8px);
+  aspect-ratio: 16 / 9;
+  margin: auto;
 }
 
 .group {

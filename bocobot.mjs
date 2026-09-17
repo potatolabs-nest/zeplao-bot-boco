@@ -105,6 +105,9 @@ const COMMANDS_REFRESH_MS = 6 * 60 * 60 * 1000;
  * với một bản đồ nhiệt và còn xa hai cái trần kia.
  */
 const BOARD_TICK_MS = 3000;
+/// Bao nhiêu nhịp liền không còn ai nhận gói thì đóng bảng. Hai mươi nhịp là chừng một phút — đủ
+/// rộng cho người ta đóng rồi mở lại, đủ ngắn để không nuôi một bảng chẳng ai xem suốt phiên.
+const BOARD_IDLE_TICKS = 20;
 const BOARD_TITLE = 'Bản đồ nhiệt VN';
 /// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
 /// cho cả phần hướng dẫn.
@@ -618,6 +621,7 @@ export async function run(token, {
   const boards = new Map();   // phòng -> { sessionId, sent }
   let pushing = null;
   let settled = false;
+  let boardTrouble = null;
 
   // Phiên của lần chạy trước là phiên mồ côi: pod khởi động lại thì bảng vẫn nằm trên màn hình
   // người ta và đứng im mãi, vì không còn ai đẩy nữa. Dọn trước khi mở cái mới.
@@ -641,7 +645,11 @@ export async function run(token, {
   }
 
   async function pushBoards() {
-    if (!boards.size) return;
+    if (!boards.size) {
+      clearInterval(pushing);
+      pushing = null;
+      return;
+    }
 
     // Ngoài giờ khớp lệnh thì đẩy đúng một lần rồi thôi: bảng giữ số của phiên gần nhất, và không
     // ai phải hỏi feed 1.523 mã mỗi ba giây suốt đêm để nhận lại y nguyên con số cũ.
@@ -655,10 +663,19 @@ export async function run(token, {
 
     const json = JSON.stringify(state);
     for (const [conversationId, live] of boards) {
-      if (live.sent === json) continue;
+      if (live.pushed === json) continue;
       try {
-        await call('pushState', { sessionId: live.sessionId, state });
-        live.sent = json;
+        // Câu trả lời kể số người thật sự nhận được gói này. Không có tin báo "đã đóng bảng" nào
+        // cho bot, nên đây là cách duy nhất biết phòng ấy còn ai xem — và một bảng không còn ai
+        // xem mà vẫn đẩy là hỏi feed và tiêu request cho một màn hình đã tắt.
+        const answer = await call('pushState', { sessionId: live.sessionId, state });
+        live.pushed = json;
+        live.idle = Number(answer?.sent) > 0 ? 0 : (live.idle ?? 0) + 1;
+        if (live.idle >= BOARD_IDLE_TICKS) {
+          boards.delete(conversationId);
+          await call('endSession', { sessionId: live.sessionId }).catch(() => {});
+          console.log(`đóng bảng: không còn ai xem (${conversationId})`);
+        }
       } catch (problem) {
         console.error(`không đẩy được bảng: ${problem}`);
         if (String(problem).includes('session_not_found')) boards.delete(conversationId);
@@ -742,19 +759,25 @@ export async function run(token, {
       //
       // Phiên không mở được — máy cũ, lỗi mạng, gói widget chưa lên — thì rơi xuống hướng dẫn: đường
       // cũ vẫn ở đó, và người hỏi vẫn nhận được câu trả lời thay vì im lặng.
-      try {
-        // Chữ `help` có thể đứng sau dấu gọi — `!help`, `!help@bot` — nên nhận cả dấu ở trước.
-        if (/(^|[\s!/@])help(\s|$)/i.test(String(message.text ?? ''))) throw new Error('hỏi hướng dẫn');
-        await openBoard(message.conversationId, senderOf(message));
-        return;
-      } catch (problem) {
-        console.error(`không mở được bảng: ${problem}`);
+      // Chữ `help` có thể đứng sau dấu gọi — `!help`, `!help@bot` — nên nhận cả dấu ở trước.
+      const wantsList = /(^|[\s!/@])help(\s|$)/i.test(String(message.text ?? ''));
+      if (!wantsList) {
+        try {
+          await openBoard(message.conversationId, senderOf(message));
+          return;
+        } catch (problem) {
+          // Mã lỗi đi kèm hướng dẫn, không chỉ nằm trong log: người gõ `@topbot` mà không thấy
+          // bảng đang nhìn vào một câu trả lời không giải thích gì, còn log thì ở trong pod.
+          boardTrouble = refusalCode(problem) ?? String(problem).slice(0, 80);
+          console.error(`không mở được bảng: ${problem}`);
+        }
       }
     }
     if (helpAsked) {
       const help = [
         HELP,
         widgetTrouble ? `(Chú thích thuật ngữ chưa bật được: ${widgetTrouble})` : null,
+        boardTrouble ? `(Chưa mở được bảng nhiệt: ${boardTrouble})` : null,
         `(${commandsNote})`,
       ].filter(Boolean).join('\n\n');
       await say(message.conversationId, help, replyTo, onlyForUserId);
