@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 10;
+  const BUILD = 11;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -835,10 +835,37 @@
   const chrome = () => Math.round((legend?.getBoundingClientRect().height || 24) + 10);
 
   let wanted = null;   // kích thước vừa xin, để không xin đi xin lại y hệt một thứ
+  let askedAt = 0;     // lúc xin, để phân biệt khung đổi vì mình với khung đổi vì người ta
+  let byHand = false;  // người dùng đã tự kéo cỡ card — từ đó thôi xin
+
+  /**
+   * Khung vừa đổi. Vì mình xin, hay vì người ta kéo?
+   *
+   * Card nổi kéo được bằng tay. Mà `fitRoom` thì tính cỡ **từ chính cái khung đang có**, nên người
+   * ta kéo cho cao lên là mình lập tức tính ra một cỡ khác rồi xin đổi — và card giật về chỗ cũ.
+   * Hai bên giằng nhau, và tay người dùng phải thắng.
+   *
+   * Cách phân biệt: câu trả lời cho lời xin của mình tới trong vòng một hai giây; khung đổi sau đó
+   * là do tay người ta. Từ lúc ấy trang chỉ bố trí lại bên trong khung được cho, không xin gì nữa.
+   */
+  function roomChanged() {
+    const room = z?.room;
+    if (!room) return;
+    const moved = !lastRoom
+      || Math.abs(lastRoom.width - room.width) > 2
+      || Math.abs(lastRoom.height - room.height) > 2;
+    lastRoom = { width: room.width, height: room.height };
+    if (moved && askedAt && Date.now() - askedAt > SETTLE_MS) byHand = true;
+    fitRoom();
+  }
+
+  let lastRoom = null;
+  const SETTLE_MS = 1500;
 
   function fitRoom() {
     const room = z?.room;
     if (!room?.width || typeof z.setSize !== 'function') return;
+    if (byHand) return;
 
     const CHROME = chrome();
     // Bản đồ: chữ nhật 16:9 lớn nhất lọt vào phòng. Trang chi tiết: xin hết những gì phòng có —
@@ -857,6 +884,7 @@
     // bằng thứ mình hỏi, và hỏi mãi là một vòng lặp gửi đi mỗi nhịp đẩy.
     if (wanted && wanted.w === wide && wanted.h === tall) return;
     wanted = { w: wide, h: tall };
+    askedAt = Date.now();
     z.setSize(wide, tall);
   }
 
@@ -938,7 +966,7 @@
     // `onRoom` là cả câu chuyện: nó chạy ngay khi khung đã biết (điện thoại ghi sẵn trước cả mã của
     // trang) và chạy lúc ứng dụng chào khi chưa biết (web, nơi khung lúc nạp còn bằng 0). Gọi tay
     // lúc nạp thì trên web rơi đúng vào lúc chưa có gì — đó là lý do lần đầu bảng mở ra vẫn đứng.
-    if (typeof z.onRoom === 'function') z.onRoom(fitRoom);
+    if (typeof z.onRoom === 'function') z.onRoom(roomChanged);
     else fitRoom();
     if (typeof z.ready === 'function') z.ready();
 
