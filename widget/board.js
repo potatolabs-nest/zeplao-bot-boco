@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 11;
+  const BUILD = 12;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -861,6 +861,8 @@
 
   let lastRoom = null;
   const SETTLE_MS = 1500;
+  /// Chiều cao xin cho trang chi tiết: cố tình thừa, để ứng dụng kẹp xuống mức cao nhất nó cho.
+  const TALL_ASK = 4000;
 
   function fitRoom() {
     const room = z?.room;
@@ -868,14 +870,16 @@
     if (byHand) return;
 
     const CHROME = chrome();
-    // Bản đồ: chữ nhật 16:9 lớn nhất lọt vào phòng. Trang chi tiết: xin hết những gì phòng có —
-    // bảng mười phiên, chart và phần hồ sơ cộng lại dài hơn một khung 16:9 rất nhiều.
+    // `z.room` là **cỡ card đang có**, không phải cỡ lớn nhất được phép — đọc trong mã của ứng dụng
+    // mới rõ, và chỗ này trước đây tôi hiểu ngược. Nên muốn card cao lên thì phải xin một con số
+    // thừa thãi rồi để ứng dụng kẹp lại: nó kẹp chiều cao ở 72% cửa sổ, chiều ngang ở bề ngang cửa
+    // sổ trừ 32. Xin đúng `room.height` — như tôi làm trước đây — là xin lại đúng thứ đang có.
     const wide = opened === null
       ? Math.round(Math.max(200, Math.min(room.width, ((room.height - CHROME) * 16) / 9)))
       : Math.round(room.width);
     const tall = opened === null
       ? Math.round((wide * 9) / 16 + CHROME)
-      : Math.round(room.height);
+      : TALL_ASK;
 
     // So với **khung ứng dụng đang cho**, không phải với thứ vừa xin: host báo lại khung thật sự
     // cấp qua đúng đường `onRoom` này, nên xin lại cái khung đang có là một vòng đổi cỡ không dừng.
