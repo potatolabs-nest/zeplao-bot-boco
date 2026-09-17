@@ -27,6 +27,8 @@ const TIMEOUT_MS = 8000;
 /// Bao nhiêu mã một lượt. Đo chứ không đoán: 400 mã là một URL 1.649 ký tự và 465ms, còn cả sàn
 /// trong một URL là thứ không nên thử ở nơi mình không sở hữu.
 const CHUNK = 400;
+/// Danh sách niêm yết đổi nhiều nhất một lần một ngày; nhớ vài phút là đủ và vẫn bắt kịp mã mới.
+const UNIVERSE_TTL_MS = 10 * 60 * 1000;
 
 export function publicFeed({ feed = FEED, fetchImpl = fetch, timeout = TIMEOUT_MS } = {}) {
   async function get(path) {
@@ -90,11 +92,36 @@ export function publicFeed({ feed = FEED, fetchImpl = fetch, timeout = TIMEOUT_M
  * Vài giây, không hơn: một cái giá cũ hơn thế, gửi vào lúc đang khớp lệnh, là một câu trả lời
  * sai — và sai theo kiểu không ai phát hiện ra.
  */
-export function withCache(market, { ttlMs = 5000, now = () => Date.now() } = {}) {
+export function withCache(market, { ttlMs = 5000, universeTtlMs = UNIVERSE_TTL_MS, now = () => Date.now() } = {}) {
   const fresh = new Map();   // mã -> { quote, at }
+  let listing = null;        // { symbols, at } — danh sách niêm yết
+  let asking = null;         // lời gọi đang bay, để hai người hỏi cùng lúc chỉ thành một lượt
 
   return {
     ...market,
+
+    /**
+     * Danh sách niêm yết, nhớ vài phút.
+     *
+     * Ba sàn đổi danh sách nhiều nhất một lần một ngày, mà bảng nhiệt sống hỏi lại nó **mỗi nhịp
+     * đẩy** — ba request mỗi ba giây, cả nghìn request một giờ, để nhận về đúng một danh sách y
+     * nguyên. Và mỗi lần hỏi là thêm một phần tư giây vào quãng chờ của người vừa bấm vào một ô.
+     */
+    async universe() {
+      if (listing && now() - listing.at < universeTtlMs) return listing.symbols;
+      if (!asking) {
+        asking = market.universe()
+          .then((symbols) => {
+            // Danh sách rỗng không được nhớ: đó là nguồn đang hỏng, và nhớ nó là giữ cái hỏng ấy
+            // lại thêm mười phút nữa.
+            if (symbols?.length) listing = { symbols, at: now() };
+            return symbols;
+          })
+          .finally(() => { asking = null; });
+      }
+      return asking;
+    },
+
     async quotes(symbols) {
       const wanted = [...new Set(symbols.map((symbol) => symbol.toUpperCase()))];
       const time = now();

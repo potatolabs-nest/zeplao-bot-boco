@@ -108,6 +108,10 @@ const BOARD_TICK_MS = 3000;
 /// Bao nhiêu nhịp liền không còn ai nhận gói thì đóng bảng. Hai mươi nhịp là chừng một phút — đủ
 /// rộng cho người ta đóng rồi mở lại, đủ ngắn để không nuôi một bảng chẳng ai xem suốt phiên.
 const BOARD_IDLE_TICKS = 20;
+/// Một bảng vừa dựng còn dùng lại được trong chừng này. Cú bấm vào một ô mã cũng đi qua đường đẩy,
+/// và bắt nó hỏi lại giá cả sàn để gửi đi một gói mà phần đổi chỉ là hồ sơ một công ty là gần một
+/// giây chờ, hai lần cho mỗi cú bấm. Ngắn hơn hẳn một nhịp, nên bảng sống vẫn dựng mới mỗi nhịp.
+const BOARD_FRESH_MS = 1200;
 const BOARD_TITLE = 'Bản đồ nhiệt VN';
 /// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
 /// cho cả phần hướng dẫn.
@@ -662,7 +666,11 @@ export async function run(token, {
     startPushing();
   }
 
-  async function pushBoards() {
+  /// Cửa sổ dùng lại thật sự: không bao giờ chạm tới một nhịp đẩy, dù nhịp có ngắn đến đâu — bài
+  /// test chạy nhịp 40ms, và ở đó dùng lại là bảng không bao giờ đổi.
+  const freshMs = Math.min(BOARD_FRESH_MS, Math.max(0, board.tickMs - 500));
+
+  async function pushBoards({ stale = false } = {}) {
     if (!boards.size) {
       clearInterval(pushing);
       pushing = null;
@@ -678,15 +686,9 @@ export async function run(token, {
     const waiting = [...boards.values()].some((live) => live.pushed === null);
     if (note && settled && !waiting) return;
 
-    const universe = await market.universe();
-    const [quotes, named] = await Promise.all([market.quotes(universe), sectors.map()]);
-    const base = boardState(quotes, { sectors: named, at: at(), help: BOARD_HELP });
-    if (!base) return;
-
-    // Mã nào đang có mặt trên bảng — thứ duy nhất trang được phép xin trang chi tiết. Trang là file
-    // ai cũng sửa được, nên `open` gửi về là chữ người lạ gõ vào: nó chỉ mở được thứ đang bày ra.
-    const onBoard = new Set(base.c.map(([symbol]) => symbol));
-    const bySymbol = new Map(quotes.filter(Boolean).map((quote) => [quote.symbol, quote]));
+    const built = await buildBoard(stale);
+    if (!built) return;
+    const { base, onBoard, bySymbol, named } = built;
 
     for (const [conversationId, live] of boards) {
       // Bảng mà phòng này đang thấy — cái sàng cho những gì trang gửi về sau đó.
@@ -713,6 +715,42 @@ export async function run(token, {
       }
     }
     settled = Boolean(note);
+  }
+
+  /**
+   * Bảng vừa dựng gần nhất, và dựng lại khi nó đã quá một nhịp.
+   *
+   * Một cú bấm vào ô mã cũng đi qua đây để đẩy lại — mà dựng bảng là hỏi giá cả 1.523 mã rồi chia
+   * ô cho hai trăm sáu mươi cái: gần một giây, cho một gói mà phần đổi chỉ là hồ sơ một công ty.
+   * Giá cũ nhiều nhất bằng đúng một nhịp đẩy, tức bằng thứ người xem vẫn đang nhìn.
+   */
+  let drawn = null;   // { base, onBoard, bySymbol, named, at }
+
+  async function buildBoard(stale = false) {
+    // `stale`: gói đi vì có người vừa bấm, không phải vì tới nhịp. Người ấy đang nhìn đúng cái bảng
+    // này trên màn hình, nên gửi lại chính nó kèm phần chi tiết là đủ — bắt họ đợi một lượt hỏi giá
+    // cả 1.523 mã để nhận về đúng những con số đang hiện ra là nửa giây chờ không đổi lấy gì.
+    if (stale && drawn) return drawn;
+    // Cửa sổ dùng lại ngắn hơn hẳn một nhịp đẩy, và tính từ lúc **bắt đầu** dựng: nếu nó dài bằng
+    // nhịp thì mỗi nhịp lại rơi đúng vào lúc gói trước còn "mới", và bảng đứng hình.
+    if (drawn && Date.now() - drawn.at < freshMs) return drawn;
+
+    const startedAt = Date.now();
+    const universe = await market.universe();
+    const [quotes, named] = await Promise.all([market.quotes(universe), sectors.map()]);
+    const base = boardState(quotes, { sectors: named, at: at(), help: BOARD_HELP });
+    if (!base) return null;
+
+    drawn = {
+      base,
+      // Mã nào đang có mặt trên bảng — thứ duy nhất trang được phép xin trang chi tiết. Trang là
+      // file ai cũng sửa được, nên `open` gửi về là chữ người lạ gõ vào: nó chỉ mở được thứ đang bày.
+      onBoard: new Set(base.c.map(([symbol]) => symbol)),
+      bySymbol: new Map(quotes.filter(Boolean).map((quote) => [quote.symbol, quote])),
+      named,
+      at: startedAt,
+    };
+    return drawn;
   }
 
   /**
@@ -772,7 +810,7 @@ export async function run(token, {
     // có tiếng chào này thì người mở bảng lúc bảy giờ tối ngồi nhìn "Đang mở…" tới sáng.
     if (action?.action?.hello) {
       live.pushed = null;
-      await pushBoards();
+      await pushBoards({ stale: true });
       return;
     }
 
@@ -790,21 +828,21 @@ export async function run(token, {
       const held = studies.get(studied);
       if ((!held || Date.now() - held.at > STUDY_TTL_MS) && !studying.has(studied)) {
         studying.add(studied);
-        live.pushed = null;
-        await pushBoards();   // để trang biết ngay là "đang phân tích", chứ không đứng im
+        // Bắt đầu phân tích **trước** khi đẩy, không phải sau: hai việc này không cần nhau, và xếp
+        // chúng nối đuôi là cộng nguyên quãng dựng bảng vào lượt chờ của người vừa bấm vào tab.
         technical.card(studied)
           .then((card) => studies.set(studied, { card, at: Date.now() }))
           .catch((problem) => console.error(`không phân tích được ${studied}: ${problem}`))
           .then(() => {
             studying.delete(studied);
             live.pushed = null;
-            return pushBoards();
+            return pushBoards({ stale: true });
           })
           .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
-        return;
       }
+      // Đẩy ngay một gói nữa để trang biết là "đang phân tích", chứ không đứng im nhìn chữ cũ.
       live.pushed = null;
-      await pushBoards();
+      await pushBoards({ stale: true });
       return;
     }
 
@@ -831,7 +869,7 @@ export async function run(token, {
           }
           asking.delete(symbol);
           live.pushed = null;
-          return pushBoards();
+          return pushBoards({ stale: true });
         })
         .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
     }
@@ -839,7 +877,7 @@ export async function run(token, {
     // Đẩy ngay chứ không đợi nhịp sau: trang đã vẽ khung trang chi tiết bằng thứ nó có sẵn, và phần
     // còn trống chỉ đầy lên khi gói tới. Ba giây nhìn một trang nửa vời là ba giây quá dài.
     live.pushed = null;
-    await pushBoards();
+    await pushBoards({ stale: true });
   }
 
   function startPushing() {

@@ -469,6 +469,35 @@ test('nguồn hồ sơ chậm thì câu trả lời vẫn đi, không đợi', a
   assert.equal((await companyCards(stuck, ['VIC'], { waitMs: 20 })).size, 0);
 });
 
+test('danh sách niêm yết hỏi một lần rồi nhớ, và hai người hỏi cùng lúc chỉ thành một lượt gọi', async () => {
+  // Bảng nhiệt sống hỏi danh sách này **mỗi nhịp đẩy**. Không nhớ thì đó là ba request mỗi ba giây
+  // suốt phiên, để nhận về đúng một danh sách y nguyên — và một phần tư giây cộng vào quãng chờ
+  // của người vừa bấm vào một ô mã.
+  let calls = 0;
+  let clock = 0;
+  const source = {
+    async universe() { calls += 1; return ['VIC', 'HPG']; },
+    async quotes() { return []; },
+  };
+  const market = withCache(source, { universeTtlMs: 1000, now: () => clock });
+
+  await Promise.all([market.universe(), market.universe()]);
+  assert.equal(calls, 1, 'hai người hỏi cùng lúc vẫn là một lượt gọi');
+  await market.universe();
+  assert.equal(calls, 1);
+
+  clock = 1500;
+  assert.deepEqual(await market.universe(), ['VIC', 'HPG']);
+  assert.equal(calls, 2);   // đủ lâu thì hỏi lại
+
+  // Danh sách rỗng là nguồn đang hỏng: đừng nhớ nó, nếu không cái hỏng ấy sống thêm mười phút.
+  let broken = 0;
+  const empty = withCache({ async universe() { broken += 1; return []; }, async quotes() { return []; } }, { now: () => 0 });
+  await empty.universe();
+  await empty.universe();
+  assert.equal(broken, 2);
+});
+
 // ---- mười phiên gần nhất ----------------------------------------------------------------------
 
 test('nến ngày thành các phiên, mới nhất trước, mỗi phiên so với phiên liền trước nó', () => {
