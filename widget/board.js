@@ -95,6 +95,10 @@
   function apply(state) {
     if (!state || typeof state !== 'object' || !Array.isArray(state.c)) return;
 
+    // Xin khung ở đây chứ không chỉ lúc nạp trang: trên web, `z.room` chỉ có sau khi ứng dụng chào,
+    // mà lời chào tới cùng lúc với dữ liệu đầu tiên. Gọi lúc nạp là gọi vào chỗ chưa có gì.
+    fitRoom();
+
     if (state.v !== version || !cells.size) draw(state);
     else move(state);
 
@@ -115,11 +119,17 @@
    * chịu cho, nên tính ra bề ngang rồi xin đúng 16:9 trong đó.
    */
   const CHROME = 76;   // chỗ cho dòng tiêu đề và hàng chú giải
+  let asked = '';
   function fitRoom() {
     const room = z?.room;
-    if (!room || typeof z.setSize !== 'function') return;
+    if (!room?.width || typeof z.setSize !== 'function') return;
+
     const width = Math.max(200, Math.min(room.width, ((room.height - CHROME) * 16) / 9));
-    z.setSize(Math.round(width), Math.round((width * 9) / 16 + CHROME));
+    const want = `${Math.round(width)}x${Math.round((width * 9) / 16 + CHROME)}`;
+    if (want === asked) return;   // xin đúng cái khung đang có là cách tự đổi cỡ vô tận
+    asked = want;
+    const [wide, tall] = want.split('x').map(Number);
+    z.setSize(wide, tall);
   }
 
   if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(map);
