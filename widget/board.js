@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 14;
+  const BUILD = 15;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -85,6 +85,11 @@
   const SEAT_MS = 400;
   const SIT_TRIES = 6;
   const SVG = 'http://www.w3.org/2000/svg';
+  /// Lúc nhận gói gần nhất, và bao lâu không nghe thấy gì thì coi là bảng đã đứng.
+  let heardAt = Date.now();
+  let heard = 0;
+  const QUIET_MS = 8000;
+  const LOST_MS = 30000;
   const HELLO_AGAIN_MS = 4000;
   const HELLO_TRIES = 5;
   const KINDS = ['up', 'down', 'flat', 'ceiling', 'floor'];
@@ -874,9 +879,9 @@
     else drawOne(state);
 
     clock.textContent = state.note ? `${state.note} · ${state.at ?? ''}`.trim() : (state.at ?? '');
-    // Số bản dựng, và số cú bấm bot đã nhận được của phòng này. Bấm mà con số sau không tăng thì
-    // cú bấm không tới được bot, và đó là chỗ hoàn toàn khác với "bot nhận rồi mà trả lời chậm".
-    if (build) build.textContent = state.got ? `b${BUILD}·${state.got}` : `b${BUILD}`;
+    heardAt = Date.now();
+    heard = state.got ?? 0;
+    stamp();
     count(state);
     suggest(state);
   }
@@ -954,6 +959,27 @@
     askedAt = Date.now();
     z.setSize(wide, tall);
   }
+
+  /**
+   * Góc bảng: bản dựng, số cú bấm bot đã nhận, và **bao lâu rồi không nghe thấy gói nào**.
+   *
+   * Con số cuối là thứ tôi thiếu suốt mấy lần đi tìm chỗ treo. Bảng đứng im có thể là bot thôi đẩy,
+   * có thể là trang thôi vẽ, có thể là phiên đã chết — ba chuyện khác hẳn nhau mà trên màn hình
+   * trông giống hệt. Có đồng hồ này thì nhìn một cái là biết nên đào ở đâu.
+   */
+  function stamp() {
+    if (!build) return;
+    const gap = Math.round((Date.now() - heardAt) / 1000);
+    build.textContent = `b${BUILD}${heard ? `·${heard}` : ''}${gap * 1000 >= QUIET_MS ? `·⏸${gap}s` : ''}`;
+
+    // Quá lâu thì nói thẳng ra phải làm gì. Một cái bảng đứng im không giải thích gì là thứ người
+    // dùng chỉ có thể đoán, và đoán sai thì họ ngồi chờ một cái sẽ không bao giờ tới.
+    if (Date.now() - heardAt >= LOST_MS && clock) {
+      clock.textContent = 'Mất kết nối — đóng widget rồi gõ lại @bocobot';
+    }
+  }
+
+  setInterval(stamp, 1000);
 
   function hello() {
     if (!z || typeof z.send !== 'function') return;
