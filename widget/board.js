@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 12;
+  const BUILD = 13;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -67,6 +67,9 @@
   let last = null;           // gói gần nhất, để vẽ lại khi đổi qua lại giữa hai cách xem
 
   const LEAST_LABEL = 7;
+  /// Sàn của bậc một dòng. Thấp hơn bậc hai dòng, vì một dòng chữ đậm trong một ô bé vẫn đọc được —
+  /// nhất là trên điện thoại, nơi một pixel CSS là hai ba pixel thật.
+  const LEAST_ALONE = 5.5;
   const MOST_LABEL = 30;
   const ASK_AGAIN_MS = 2500;
   let asked = 0;            // lần gần nhất xin bot hồ sơ, để khỏi hỏi dồn
@@ -152,7 +155,8 @@
       const cell = cells.get(symbol);
       if (!cell) continue;
       if (cell.percent.textContent !== shown) cell.percent.textContent = shown;
-      const want = `cell ${KINDS[kind] ?? 'flat'}${cell.box.classList.contains('hush') ? ' hush' : ''}`;
+      const kept = ['hush', 'lone'].filter((one) => cell.box.classList.contains(one)).join(' ');
+      const want = `cell ${KINDS[kind] ?? 'flat'}${kept ? ` ${kept}` : ''}`;
       if (cell.box.className !== want) cell.box.className = want;
     }
   }
@@ -208,10 +212,29 @@
       title.style.fontSize = `${Math.max(8, Math.min(strip * 0.62, 13))}px`;
     }
 
-    for (const { box } of cells.values()) {
-      const size = Math.min(box.clientWidth / 4.3, box.clientHeight / 3.6, MOST_LABEL);
-      box.classList.toggle('hush', size < LEAST_LABEL);
-      box.style.fontSize = `${Math.max(size, LEAST_LABEL)}px`;
+    // Ba bậc, không phải hai: đủ chỗ cho hai dòng thì mã và phần trăm; không đủ hai dòng mà đủ một
+    // thì **chỉ mã**; nhỏ hơn nữa mới để trống.
+    //
+    // Bậc giữa là chỗ trước đây rơi thẳng xuống trống. Trên điện thoại, phần lớn ô rơi vào đúng
+    // khoảng ấy — nhìn ra một bảng toàn màu không tên. Mà một cái mã đứng một mình vẫn nói được nó
+    // là ai, còn màu thì đã nói phần trăm đại khái rồi.
+    for (const [symbol, { box }] of cells) {
+      const wide = box.clientWidth;
+      const tall = box.clientHeight;
+
+      const two = Math.min(wide / 4.3, tall / 3.6, MOST_LABEL);
+      if (two >= LEAST_LABEL) {
+        box.classList.remove('hush', 'lone');
+        box.style.fontSize = `${two}px`;
+        continue;
+      }
+
+      // Một dòng thì bề ngang tính theo **số chữ của chính mã ấy**: `FPT` và `FUEVFVND` không cần
+      // cùng một chỗ, và lấy chung một hằng số là hoặc cắt mất mã dài, hoặc bỏ phí ô của mã ngắn.
+      const one = Math.min(wide / Math.max(3, symbol.length * 0.72), tall / 1.35, MOST_LABEL);
+      box.classList.toggle('lone', one >= LEAST_ALONE);
+      box.classList.toggle('hush', one < LEAST_ALONE);
+      box.style.fontSize = `${Math.max(one, LEAST_ALONE)}px`;
     }
   }
 

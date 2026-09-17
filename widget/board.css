@@ -168,6 +168,8 @@ body {
 
 .cell > b, .cell > span { display: block; line-height: 1.1; }
 .cell.hush > b, .cell.hush > span { display: none; }
+/* Ô chỉ đủ chỗ cho một dòng: giữ mã, bỏ phần trăm. Màu đã nói tăng giảm rồi. */
+.cell.lone > span { display: none; }
 
 /* Ô phồng lên như cái nệm: giữa sáng hơn, rìa tối hơn, viền tối hơn nữa — và cả ba đều là **sắc độ
    của chính màu ấy**, không phải lớp trắng phủ lên. Phủ trắng thì màu bạc đi và cả bảng nhợt.
