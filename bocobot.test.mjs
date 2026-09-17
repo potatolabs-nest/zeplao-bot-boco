@@ -117,6 +117,7 @@ const hasViewEntity = (body) => [...(body.entities ?? []), ...(body.rich?.blocks
 
 async function stubApi(updates, {
   refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null, refuseSessions = false,
+  quiet = false,
 } = {}) {
   const sent = [];
   const registered = [];
@@ -127,6 +128,8 @@ async function stubApi(updates, {
   /// Phiên bảng nhiệt: mở, cho ai xem, và những gói đã đẩy.
   const sessions = [];
   const shown = [];
+  /// Mọi lần bot sửa hồ sơ của chính nó.
+  const settings = [];
   const pushes = [];
   const widgets = [];
   let queue = [...updates];
@@ -145,7 +148,11 @@ async function stubApi(updates, {
       // `keepCommands` là máy chủ giữ thiếu — đúng thứ đang bị nghi ngoài đời thật.
       if (path === '/getMe') {
         if (declares.length) readBack += 1;
-        return answer({ ...ME, commands: keepCommands === null ? registered : registered.slice(0, keepCommands) });
+        return answer({ ...ME, quietMention: quiet, commands: keepCommands === null ? registered : registered.slice(0, keepCommands) });
+      }
+      if (path === '/setMe') {
+        settings.push(JSON.parse(body));
+        return answer({ ...ME, ...JSON.parse(body) });
       }
       if (path === '/setCommands') {
         const { commands } = JSON.parse(body);
@@ -216,7 +223,7 @@ async function stubApi(updates, {
 
   await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
   return {
-    sent, registered, declares, widgets, sessions, shown, pushes,
+    sent, registered, declares, widgets, sessions, shown, pushes, settings,
     api: `http://127.0.0.1:${server.address().port}`,
     close: () => server.close(),
   };
@@ -451,12 +458,12 @@ async function withBot(
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
     history = stubHistory(), foreign = stubForeign(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
-    refuseSessions = false,
+    refuseSessions = false, quiet = false,
     // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú. Bài nào cần sàn đóng thì đưa giờ khác vào.
     at = () => new Date('2026-09-07T03:00:00Z'),
   } = {},
 ) {
-  const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers, keepCommands, refuseSessions });
+  const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers, keepCommands, refuseSessions, quiet });
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
 
@@ -2057,6 +2064,17 @@ test('nguồn nến chết hẳn thì ném, để bot nói nguồn đang không 
 test('nguồn tin chết thì nói ra', async () => {
   const { sent } = await withBot([update({ text: '!tin vic' })], { news: stubNews({ broken: true }) });
   assert.equal(sent[0].text, SORRY.news);
+});
+
+test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy chỉ xin khi chưa có', async () => {
+  // Với bot này, gõ tên nó là để **mở** bảng chứ không phải nói gì với ai — mỗi lần gõ để lại một
+  // dòng giữa phòng là rác, và trong nhóm đông thì là rác đẩy trôi thứ người ta đang nói.
+  const { settings } = await withBot([], { expect: 0 });
+  assert.deepEqual(settings, [{ quietMention: true }]);
+
+  // Cờ là thuộc tính của bot, không phải của lần chạy: đã bật rồi thì khởi động lại đừng ghi đè.
+  const { settings: lai } = await withBot([], { expect: 0, quiet: true });
+  assert.deepEqual(lai, []);
 });
 
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {

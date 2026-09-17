@@ -564,6 +564,26 @@ export async function run(token, {
   const me = await call('getMe');
   console.log(`@${me.username} đang trực bảng giá`);
 
+  /**
+   * Gõ tên bot thì đừng để lại một dòng trong phòng.
+   *
+   * Với con bot này, gõ tên nó là để **mở** bảng — chứ không phải để nói gì với ai. Mỗi lần gõ mà
+   * để lại một dòng `@bocobot` giữa phòng thì đó là rác, và trong một nhóm đông người thì là rác
+   * đẩy trôi những gì người ta đang nói.
+   *
+   * Nền tảng lo phần này: xin một lần, rồi tin nhắn mà **toàn bộ nội dung** là tên bot sẽ không
+   * được ghi xuống — không phải ghi rồi xoá, mà là không tạo ra. Bot vẫn nhận update như thường,
+   * nên bảng vẫn mở. Còn `@bocobot vic` thì vẫn là một câu hỏi hỏi trước mặt mọi người và ở lại.
+   *
+   * Hỏi trước rồi mới ghi: cờ này là thuộc tính của bot, không phải của lần chạy, nên mỗi lần khởi
+   * động lại ghi đè một giá trị vốn đã đúng là một lượt gọi thừa.
+   */
+  if (me?.quietMention !== true) {
+    call('setMe', { quietMention: true })
+      .then(() => console.log('gọi tên bot sẽ không để lại tin nhắn trong phòng'))
+      .catch((problem) => console.error(`không bật được quietMention: ${problem}`));
+  }
+
   const guard = makeGuard({ market });
 
   // Khai báo đúng `commandsFor(me)`, thay nguyên si danh sách cũ. Lần đầu chỉ các lệnh chính, để
