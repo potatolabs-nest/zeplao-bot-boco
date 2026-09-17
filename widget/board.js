@@ -17,6 +17,7 @@
   const z = window.Zeplao;
   const map = document.getElementById('map');
   const wrap = document.getElementById('wrap');
+  const legend = document.getElementById('legend');
   const clock = document.getElementById('clock');
   const help = document.getElementById('help');
 
@@ -160,11 +161,19 @@
    * không nằm được và mắt không so được diện tích nữa. `z.room` cho biết khung lớn nhất máy này
    * chịu cho, nên tính ra bề ngang rồi xin đúng 16:9 trong đó.
    */
-  const CHROME = 76;   // chỗ cho dòng tiêu đề và hàng chú giải
+  /**
+   * Phần khung ngoài bản đồ: hàng chú giải cộng đệm — **đo**, không phải hằng số.
+   *
+   * Hằng số thì sai ngay lần đầu bố cục đổi: bỏ hàng tiêu đề trên đi mà vẫn xin đúng chiều cao cũ
+   * là chừa lại một dải trắng vô nghĩa đúng bằng hàng vừa bỏ, và người dùng nhìn thấy ngay.
+   */
+  const chrome = () => Math.round((legend?.getBoundingClientRect().height || 24) + 10);
+
   function fitRoom() {
     const room = z?.room;
     if (!room?.width || typeof z.setSize !== 'function') return;
 
+    const CHROME = chrome();
     const width = Math.max(200, Math.min(room.width, ((room.height - CHROME) * 16) / 9));
     const wide = Math.round(width);
     const tall = Math.round((width * 9) / 16 + CHROME);

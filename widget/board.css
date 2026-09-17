@@ -72,9 +72,11 @@ body {
 
 /* Kích thước đặt bằng pixel trong `fit()`, không bằng `aspect-ratio`: tỉ lệ CSS cộng với giới hạn
    cả hai chiều cho ra kết quả khác nhau tuỳ chiều nào bị kẹp trước, và ở khung hẹp nó tràn ngang. */
+/* Căn giữa theo chiều ngang, sát trên theo chiều dọc: khi ứng dụng cấp khung cao hơn mức xin, phần
+   dư dồn xuống dưới thay vì chia đôi — một dải trắng trên đỉnh bảng trông như lỗi, dưới chân thì không. */
 #map {
   position: relative;
-  margin: auto;
+  margin: 0 auto;
 }
 
 .group {
