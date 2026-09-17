@@ -119,26 +119,32 @@
    * chịu cho, nên tính ra bề ngang rồi xin đúng 16:9 trong đó.
    */
   const CHROME = 76;   // chỗ cho dòng tiêu đề và hàng chú giải
-  let asked = '';
   function fitRoom() {
     const room = z?.room;
     if (!room?.width || typeof z.setSize !== 'function') return;
 
     const width = Math.max(200, Math.min(room.width, ((room.height - CHROME) * 16) / 9));
-    const want = `${Math.round(width)}x${Math.round((width * 9) / 16 + CHROME)}`;
-    if (want === asked) return;   // xin đúng cái khung đang có là cách tự đổi cỡ vô tận
-    asked = want;
-    const [wide, tall] = want.split('x').map(Number);
+    const wide = Math.round(width);
+    const tall = Math.round((width * 9) / 16 + CHROME);
+
+    // So với **khung ứng dụng đang cho**, không phải với thứ vừa xin: host báo lại khung thật sự
+    // cấp qua đúng đường `onRoom` này, nên xin lại cái khung đang có là một vòng đổi cỡ không dừng.
+    if (Math.abs(room.width - wide) <= 2 && Math.abs(room.height - tall) <= 2) return;
     z.setSize(wide, tall);
   }
 
   if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(map);
 
   if (z) {
+    // Chỉ `onState`. Doc nói rõ: trong một phiên, `onData` **không bao giờ được gọi** — nó là đường
+    // của thẻ view, nơi dữ liệu đi sẵn trong tin nhắn. Đăng ký nó ở đây chỉ là mã không ai chạy.
+    // Đăng ký trước `ready()`, vì `ready()` mới là lúc nói với app rằng đã sẵn sàng nhận trạng thái.
     if (typeof z.onState === 'function') z.onState(apply);
-    if (typeof z.onData === 'function') z.onData(apply);
+    // `onRoom` là cả câu chuyện: nó chạy ngay khi khung đã biết (điện thoại ghi sẵn trước cả mã của
+    // trang) và chạy lúc ứng dụng chào khi chưa biết (web, nơi khung lúc nạp còn bằng 0). Gọi tay
+    // lúc nạp thì trên web rơi đúng vào lúc chưa có gì — đó là lý do lần đầu bảng mở ra vẫn đứng.
     if (typeof z.onRoom === 'function') z.onRoom(fitRoom);
-    fitRoom();
+    else fitRoom();
     if (typeof z.ready === 'function') z.ready();
 
     // Chào một tiếng. Không có tin báo "đã mở" nào cho bot, nên đây là cách duy nhất bot biết bảng
