@@ -38,12 +38,21 @@
     map.replaceChildren();
     cells.clear();
 
-    for (const [name, x, y, w, h] of state.g ?? []) {
+    for (const [name, x, y, w, h, header] of state.g ?? []) {
       const box = document.createElement('div');
       box.className = 'group';
       at(box, x, y, w, h);
+
       const title = document.createElement('h2');
-      title.textContent = name;
+      // Nhóm quá bé thì bỏ tên hẳn: khoảng chừa chỉ còn vài pixel, chữ nhỏ nhất vẫn tràn ra ngoài
+      // và đè sang ô bên cạnh. Nhóm ấy vẫn nhận ra được qua các mã nằm trong nó.
+      title.textContent = ((header ?? 30) / 1000) * map.clientHeight >= 9 ? name : '';
+      // Chiều cao dòng tiêu đề đúng bằng khoảng bot đã chừa, tính ra pixel theo chiều cao bản đồ
+      // hiện tại. Để CSS tự quyết thì chữ cao hơn khoảng chừa và đè lên ô đầu tiên của nhóm.
+      const tall = ((header ?? 30) / 1000) * map.clientHeight;
+      title.style.height = `${tall}px`;
+      title.style.lineHeight = `${tall}px`;
+      title.style.fontSize = `${Math.max(8, Math.min(tall * 0.62, 13))}px`;
       box.append(title);
       map.append(box);
     }
@@ -156,7 +165,7 @@
     // Mở thẳng file trong trình duyệt: vẽ một bảng mẫu, để sửa giao diện mà không cần bot chạy.
     apply({
       v: 0, at: '13:58', note: 'Đang khớp lệnh', help: 'Gõ /vic để xem giá một mã',
-      g: [['Ngân hàng', 0, 0, 600, 1000], ['Dầu khí', 610, 0, 390, 1000]],
+      g: [['Ngân hàng', 0, 0, 600, 1000, 60], ['Dầu khí', 610, 0, 390, 1000, 60]],
       c: [
         ['VPB', 10, 120, 350, 500, '+2,17%', 0],
         ['TCB', 370, 120, 220, 500, '+0,62%', 0],

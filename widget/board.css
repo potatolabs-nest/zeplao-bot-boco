@@ -76,10 +76,10 @@ body {
   overflow: hidden;
 }
 
+/* Chiều cao và cỡ chữ do `board.js` đặt, theo đúng khoảng bot đã chừa — xem chú thích ở đó. */
 .group > h2 {
   margin: 0;
-  padding: 5px 6px 0;
-  font-size: 12px;
+  padding: 0 6px;
   font-weight: 700;
   text-align: center;
   white-space: nowrap;

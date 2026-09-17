@@ -216,7 +216,10 @@ export function boardState(quotes, { sectors = new Map(), at = new Date(), cells
     // Chừa chỗ cho tên nhóm, theo tỷ lệ chứ không theo pixel: gói này không biết khung sẽ to bao nhiêu.
     const header = Math.min(inner.h * 0.14, 34);
     const body = { x: inner.x, y: inner.y + header, w: inner.w, h: Math.max(0, inner.h - header) };
-    laid.push([item.group.sector, round(inner.x), round(inner.y), round(inner.w), round(inner.h)]);
+    // Gửi kèm chiều cao khoảng chừa cho tên nhóm. Trang phải lấy đúng con số này làm chiều cao
+    // dòng tiêu đề: bot chừa chỗ theo tỉ lệ, còn CSS thì vẽ theo pixel, và hai cách tính khác nhau
+    // vài pixel là tên nhóm nằm đè lên ô đầu tiên.
+    laid.push([item.group.sector, round(inner.x), round(inner.y), round(inner.w), round(inner.h), round(header)]);
 
     for (const tile of treemap(item.group.quotes.map((quote) => ({ quote, value: quote.value })), body)) {
       const { item: held, ...box } = tile;
