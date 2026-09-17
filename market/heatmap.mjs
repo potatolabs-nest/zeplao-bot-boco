@@ -3,7 +3,7 @@
 // VPS trả được danh sách niêm yết và giá hàng loạt, nhưng không có vốn hoá hay ngành. Nên bản
 // đồ này dùng giá trị giao dịch làm độ lớn ô, và một bảng ngành nhỏ cho các mã vốn hoá/thanh
 // khoản hay được nhìn trước; mã không có trong bảng vẫn hiện trong nhóm "Khác".
-import { money } from './quote.mjs';
+import { money, sessionNote, vietnamNow } from './quote.mjs';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -13,6 +13,10 @@ const GAP = 4;
 const HEADER = 34;
 const FOOTER = 42;
 const MIN_TILE = 36;
+/// Khe trắng giữa hai ô, và góc bo của ô. Cả phần "trắng" của bản đồ nằm ở đây: không phủ gì lên
+/// màu, chỉ chừa ra một mạch hở đủ mảnh để mỗi mã thành một viên riêng thay vì một mảng liền.
+const TILE_GAP = 2.5;
+const TILE_RADIUS = 2;
 const MAX_SYMBOLS = 500;
 
 const FILTERS = {
@@ -136,7 +140,7 @@ export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date(),
     text,
     image: {
       fileName: `vboa${filter ? `-${filter.key}` : ''}-${day}.svg`,
-      svg: heatmapSvg(groups, stats, day),
+      svg: heatmapSvg(groups, stats, at),
     },
     rich: {
       blocks: [
@@ -146,7 +150,7 @@ export function heatmapRich(quotes, { maxSymbols = MAX_SYMBOLS, at = new Date(),
   };
 }
 
-function heatmapSvg(groups, stats, day) {
+function heatmapSvg(groups, stats, at) {
   const area = { x: PAD, y: PAD, w: WIDTH - PAD * 2, h: HEIGHT - PAD * 2 - FOOTER };
   const groupItems = groups.map((group) => ({
     group,
@@ -155,6 +159,7 @@ function heatmapSvg(groups, stats, day) {
   const groupRects = treemap(groupItems, area);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH * OUTPUT_SCALE}" height="${HEIGHT * OUTPUT_SCALE}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+  <defs>${tileGradients()}</defs>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="#f1f5f9"/>
   ${groupRects.map(({ item, ...rect }) => sectorSvg(item.group, rect)).join('')}
   <g transform="translate(${PAD}, ${HEIGHT - FOOTER + 8})">
@@ -163,7 +168,7 @@ function heatmapSvg(groups, stats, day) {
     ${legend('#f59e0b', `Đứng giá: ${stats.flat}`, 274)}
     ${legend('#dc1d0f', `Giảm giá: ${stats.down}`, 430)}
     ${legend('#1e88e5', `Giảm sàn: ${stats.floor}`, 570)}
-    <text x="${WIDTH - PAD * 2}" y="22" text-anchor="end" fill="#64748b" font-family="${font()}" font-size="17">Phiên gần nhất · ${escapeXml(formatDay(day))}</text>
+    <text x="${WIDTH - PAD * 2}" y="22" text-anchor="end" fill="#64748b" font-family="${font()}" font-size="17">${escapeXml(stamp(at))}</text>
   </g>
 </svg>`;
 }
@@ -180,8 +185,14 @@ function sectorSvg(group, rect) {
   return `<g>
     <rect x="${round(inner.x)}" y="${round(inner.y)}" width="${round(inner.w)}" height="${round(inner.h)}" rx="4" fill="#ffffff"/>
     <text x="${round(inner.x + inner.w / 2)}" y="${round(inner.y + 23)}" text-anchor="middle" fill="#0f172a" font-family="${font()}" font-size="16" font-weight="700">${escapeXml(group.sector)}</text>
-    ${tiles.map(({ item, ...tile }) => tileSvg(item.quote, shrink(tile, 1.5))).join('')}
+    ${tiles.map(({ item, ...tile }) => tileSvg(item.quote, shrink(tile, gapFor(tile)))).join('')}
   </g>`;
+}
+
+/// Khe của một ô, co lại khi ô quá nhỏ. Khe cố định 2,5px mỗi bên ăn hết một ô rộng 4px — mã ấy
+/// biến mất khỏi bản đồ, im lặng, chỉ vì cái khe. Ô càng bé thì mạch hở càng mảnh, nhưng vẫn có.
+function gapFor(rect) {
+  return Math.min(TILE_GAP, rect.w / 5, rect.h / 5);
 }
 
 function tileSvg(quote, rect) {
@@ -193,7 +204,7 @@ function tileSvg(quote, rect) {
   const percent = signed(quote.percent);
 
   return `<g data-symbol="${escapeXml(quote.symbol)}">
-    <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="3" fill="${color}"/>
+    <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="${TILE_RADIUS}" fill="url(#o-${color})" stroke="${shade(TILE_FILLS[color], EDGE_DARKER)}" stroke-width="1"/>
     ${label ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - 3)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(symbolSize)}" font-weight="800">${escapeXml(quote.symbol)}</text>
     <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + pctSize)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(pctSize)}" font-weight="700">${escapeXml(percent)}%</text>` : ''}
   </g>`;
@@ -245,12 +256,74 @@ function summarize(quotes) {
   }, { ceiling: 0, floor: 0, up: 0, flat: 0, down: 0 });
 }
 
+/**
+ * Màu nền của một ô, theo trạng thái. Trả về **tên** chứ không phải mã màu, vì mỗi trạng thái được
+ * vẽ bằng một dải chuyển sắc riêng khai trong `<defs>` — xem `TILE_FILLS`.
+ */
 function colorFor(quote) {
-  if (quote.ceiling > 0 && quote.price >= quote.ceiling) return '#8b1dc9';
-  if (quote.floor > 0 && quote.price <= quote.floor) return '#1e88e5';
-  if (quote.percent > 0) return '#02cc1a';
-  if (quote.percent < 0) return '#ef2a2f';
-  return '#f6b846';
+  if (quote.ceiling > 0 && quote.price >= quote.ceiling) return 'ceiling';
+  if (quote.floor > 0 && quote.price <= quote.floor) return 'floor';
+  if (quote.percent > 0) return 'up';
+  if (quote.percent < 0) return 'down';
+  return 'flat';
+}
+
+const TILE_FILLS = {
+  ceiling: '#8b1dc9',
+  floor: '#1e88e5',
+  up: '#02cc1a',
+  down: '#ef2a2f',
+  flat: '#f6b846',
+};
+
+/**
+ * Ô phồng lên như cái nệm: giữa sáng hơn, rìa tối hơn, viền tối hơn nữa.
+ *
+ * Ba con số dưới đây không phải tôi chọn — chúng là thông số mặc định của FoamTree, thư viện dựng
+ * bản đồ nhiệt mà bảng điện người ta vẫn nhìn (`groupFillGradientCenterLightnessShift` +20,
+ * `groupFillGradientRimLightnessShift` −5, `groupStrokePlainLightnessShift` −10).
+ *
+ * Điều đáng học ở đó: cả ba đều dịch **độ sáng của chính màu ấy**, không pha trắng lên trên. Phủ
+ * một lớp trắng thì màu bạc đi và cả bản đồ nhợt — tôi đã thử, và nó xấu đúng như vậy.
+ */
+const CENTER_LIGHTER = 20;
+const RIM_DARKER = -5;
+const EDGE_DARKER = -10;
+
+function tileGradients() {
+  return Object.entries(TILE_FILLS).map(([name, hex]) => `<radialGradient id="o-${name}" cx="50%" cy="50%" r="72%">
+      <stop offset="0" stop-color="${shade(hex, CENTER_LIGHTER)}"/>
+      <stop offset="1" stop-color="${shade(hex, RIM_DARKER)}"/>
+    </radialGradient>`).join('');
+}
+
+/// Cùng một màu, dịch độ sáng đi `shift` điểm trong không gian HSL. Giữ nguyên sắc và độ bão hoà —
+/// đó là khác biệt giữa "đậm nhạt của màu xanh" và "xanh pha trắng".
+export function shade(hex, shift) {
+  const [red, green, blue] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255);
+  const high = Math.max(red, green, blue);
+  const low = Math.min(red, green, blue);
+  const spread = high - low;
+  const light = (high + low) / 2;
+  const saturation = spread === 0 ? 0 : spread / (1 - Math.abs(2 * light - 1));
+
+  let hue = 0;
+  if (spread !== 0) {
+    hue = high === red ? ((green - blue) / spread) % 6 : high === green ? (blue - red) / spread + 2 : (red - green) / spread + 4;
+    hue = (hue * 60 + 360) % 360;
+  }
+
+  const lit = clamp(light + shift / 100, 0, 1);
+  const chroma = (1 - Math.abs(2 * lit - 1)) * saturation;
+  const second = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const base = lit - chroma / 2;
+  const [r, g, b] = hue < 60 ? [chroma, second, 0]
+    : hue < 120 ? [second, chroma, 0]
+      : hue < 180 ? [0, chroma, second]
+        : hue < 240 ? [0, second, chroma]
+          : hue < 300 ? [second, 0, chroma]
+            : [chroma, 0, second];
+  return `#${[r, g, b].map((one) => Math.round((one + base) * 255).toString(16).padStart(2, '0')).join('')}`;
 }
 
 function legend(color, text, x) {
@@ -258,6 +331,25 @@ function legend(color, text, x) {
     <rect x="0" y="3" width="26" height="13" fill="${color}"/>
     <text x="32" y="16" fill="#0f172a" font-family="${font()}" font-size="16">${escapeXml(text)}</text>
   </g>`;
+}
+
+/**
+ * Số liệu này là của lúc nào.
+ *
+ * Giữa phiên thì ghi đúng giờ lấy số liệu, vì bản đồ vẽ theo giá khớp đang chạy và người xem cần
+ * biết nó mới tới đâu. Ngoài phiên thì nói thẳng là sàn đã đóng, nghỉ trưa hay cuối tuần.
+ *
+ * Trước đây dòng này luôn ghi "Phiên gần nhất", kể cả lúc mười giờ sáng thứ Ba — số liệu thì mới
+ * từng giây mà chữ lại bảo là của phiên trước, nên cả bản đồ trông như một ảnh chụp cũ.
+ */
+function stamp(at) {
+  const day = formatDay(tradingDay(at));
+  const note = sessionNote(at);
+  if (note) return `${note.split(' · ')[0]} · ${day}`;
+
+  const { minutes } = vietnamNow(at);
+  const clock = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return `Đang khớp lệnh · ${clock} ${day}`;
 }
 
 function tradingDay(at) {
