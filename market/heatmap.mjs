@@ -13,9 +13,16 @@ const GAP = 4;
 const HEADER = 34;
 const FOOTER = 42;
 const MIN_TILE = 36;
-/// Cỡ chữ lớn nhất và nhỏ nhất còn đáng in ra. Dưới mức nhỏ nhất thì ô để trống.
+/**
+ * Cỡ chữ lớn nhất và nhỏ nhất còn đáng in ra. Dưới mức nhỏ nhất thì ô để trống.
+ *
+ * Sàn 9px từng bỏ trống những ô 35×61 của MBS, POW, BVS — mã có đủ giá, đủ phần trăm, đủ khối
+ * lượng, chỉ thiếu vài phần mười pixel. Nhìn vào bản đồ thì một ô trống không đọc ra là "chữ không
+ * vừa", nó đọc ra là "mã này hỏng dữ liệu" — và đó là lời nói dối về chính thứ bot đang có trong
+ * tay. Ảnh được vẽ ở gấp đôi kích thước, nên 7px ở đây là 14px thật trên màn hình.
+ */
 const MOST_LABEL = 30;
-const LEAST_LABEL = 9;
+const LEAST_LABEL = 7;
 /// Khe trắng giữa hai ô, và góc bo của ô. Cả phần "trắng" của bản đồ nằm ở đây: không phủ gì lên
 /// màu, chỉ chừa ra một mạch hở đủ mảnh để mỗi mã thành một viên riêng thay vì một mảng liền.
 const TILE_GAP = 1.5;
