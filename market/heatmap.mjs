@@ -174,6 +174,89 @@ export function heatmapRich(quotes, {
   };
 }
 
+/// Thứ tự loại ô trong gói gửi cho trang phiên. Gửi số thay vì chữ: một bảng năm trăm ô mà mỗi ô
+/// mang chữ "ceiling" là mấy nghìn byte cho một thứ đã biết trước.
+export const BOARD_KINDS = ['up', 'down', 'flat', 'ceiling', 'floor'];
+/// Toạ độ trong gói tính bằng phần nghìn của khung, không phải pixel: trang tự đổi ra phần trăm nên
+/// cửa sổ to nhỏ thế nào bảng cũng vừa, và số nguyên thì gọn hơn số thập phân.
+const BOARD_UNITS = 1000;
+/// Bao nhiêu ô là đủ cho một bảng đang chạy. Mỗi lần đẩy là **cả bảng** — máy chủ chỉ nhớ gói cuối
+/// và ghi đè chứ không gộp, nên gửi phần vừa đổi thì người mở muộn nhận được một nhúm ô rời và
+/// không có bảng nào cả. Cả bảng thì phải gọn: 260 ô vừa trần 64 KB mà vẫn còn chỗ thở.
+const BOARD_CELLS = 260;
+
+/**
+ * Cả bảng nhiệt, đóng gói cho trang phiên.
+ *
+ * Bố cục và giá đi chung một gói, nhưng trang chỉ dựng lại DOM khi `v` đổi — `v` là dấu vân tay của
+ * riêng phần bố cục. Nhờ vậy mỗi nhịp là một gói đầy đủ (đúng thứ máy chủ nhớ được) mà màn hình
+ * người xem không nhấp nháy.
+ */
+export function boardState(quotes, { sectors = new Map(), at = new Date(), cells = BOARD_CELLS, help = '' } = {}) {
+  const rows = quotes
+    .filter((quote) => quote?.reference > 0 && quote.price > 0)
+    .map((quote) => ({
+      ...quote,
+      value: Math.max(quote.price * quote.volume, 1),
+      sector: sectors.get(quote.symbol) ?? SECTORS[quote.symbol] ?? 'Khác',
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, cells);
+  if (!rows.length) return null;
+
+  const groups = [...new Set(rows.map((quote) => quote.sector))]
+    .map((sector) => ({ sector, quotes: rows.filter((quote) => quote.sector === sector) }))
+    .map((group) => ({ ...group, value: group.quotes.reduce((sum, quote) => sum + quote.value, 0) }));
+
+  const area = { x: 0, y: 0, w: BOARD_UNITS, h: BOARD_UNITS };
+  const laid = [];
+  const boxes = [];
+  for (const { item, ...rect } of treemap(groups.map((group) => ({ group, value: group.value })), area)) {
+    const inner = shrink(rect, 3);
+    // Chừa chỗ cho tên nhóm, theo tỷ lệ chứ không theo pixel: gói này không biết khung sẽ to bao nhiêu.
+    const header = Math.min(inner.h * 0.14, 34);
+    const body = { x: inner.x, y: inner.y + header, w: inner.w, h: Math.max(0, inner.h - header) };
+    laid.push([item.group.sector, round(inner.x), round(inner.y), round(inner.w), round(inner.h)]);
+
+    for (const tile of treemap(item.group.quotes.map((quote) => ({ quote, value: quote.value })), body)) {
+      const { item: held, ...box } = tile;
+      const cell = shrink(box, 1);
+      if (cell.w <= 0 || cell.h <= 0) continue;
+      boxes.push([
+        held.quote.symbol,
+        round(cell.x), round(cell.y), round(cell.w), round(cell.h),
+        `${signed(held.quote.percent)}%`,
+        BOARD_KINDS.indexOf(colorFor(held.quote)),
+      ]);
+    }
+  }
+
+  const note = sessionNote(at);
+  const { minutes } = vietnamNow(at);
+  return {
+    v: fingerprint(boxes),
+    at: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
+    note: note ? note.split(' · ')[0] : 'Đang khớp lệnh',
+    help,
+    g: laid,
+    c: boxes,
+    t: summarize(rows),
+  };
+}
+
+/// Dấu vân tay của bố cục: mã và khung của từng ô, không có giá. Giá đổi từng giây mà bố cục thì
+/// không, nên trang dựng lại DOM đúng những lúc cần.
+function fingerprint(boxes) {
+  let hash = 2166136261;
+  for (const [symbol, x, y, w, h] of boxes) {
+    for (const char of `${symbol}|${x},${y},${w},${h};`) {
+      hash ^= char.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+  }
+  return hash >>> 0;
+}
+
 function heatmapSvg(groups, stats, at) {
   const area = { x: PAD, y: PAD, w: WIDTH - PAD * 2, h: HEIGHT - PAD * 2 - FOOTER };
   const groupItems = groups.map((group) => ({

@@ -18,7 +18,7 @@ import {
 } from './bocobot.mjs';
 import { normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession, withSessionData } from './market/chart.mjs';
-import { askedHeatmapFor, heatmapRich } from './market/heatmap.mjs';
+import { askedHeatmapFor, boardState, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
 import { GLOSSARY, TERM_VIEW, termEntities, withTerms } from './market/glossary.mjs';
 import { MOST_SEGMENTS, parseResultsPeriod, resultsMessage, resultsRich, resultsSvg } from './market/results.mjs';
@@ -115,13 +115,19 @@ const hasViewEntity = (body) => [...(body.entities ?? []), ...(body.rich?.blocks
   .some((entity) => entity?.type === 'view')
   || (body.keyboard?.rows ?? []).flat().some((button) => button?.view);
 
-async function stubApi(updates, { refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null } = {}) {
+async function stubApi(updates, {
+  refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null, refuseSessions = false,
+} = {}) {
   const sent = [];
   const registered = [];
   /// Mọi lần khai báo, theo thứ tự — `registered` chỉ giữ lần cuối, mà cái hỏng nằm ở lần đầu.
   const declares = [];
   /// Số lần bot đọc lại danh sách lệnh sau khi khai — mốc để biết nó đã biết kết quả.
   let readBack = 0;
+  /// Phiên bảng nhiệt: mở, cho ai xem, và những gói đã đẩy.
+  const sessions = [];
+  const shown = [];
+  const pushes = [];
   const widgets = [];
   let queue = [...updates];
 
@@ -145,6 +151,24 @@ async function stubApi(updates, { refuseImages = false, refuseViews = false, wid
         const { commands } = JSON.parse(body);
         registered.splice(0, registered.length, ...commands);
         declares.push(commands.map((one) => one.command));
+        return answer({ ok: true });
+      }
+      if (path === '/endSessions') return answer({ ended: 0 });
+      if (path === '/createSession') {
+        if (refuseSessions) {
+          response.writeHead(400, { 'Content-Type': 'application/json' });
+          response.end('{"error":"bot_not_in_conversation","message":"This bot is not in that conversation."}');
+          return undefined;
+        }
+        sessions.push(JSON.parse(body));
+        return answer({ sessionId: `s${sessions.length}` });
+      }
+      if (path === '/showSession') {
+        shown.push(JSON.parse(body));
+        return answer({ ok: true });
+      }
+      if (path === '/pushState') {
+        pushes.push(JSON.parse(body));
         return answer({ ok: true });
       }
       if (path === '/sendMessage') {
@@ -191,7 +215,11 @@ async function stubApi(updates, { refuseImages = false, refuseViews = false, wid
   });
 
   await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
-  return { sent, registered, declares, widgets, api: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
+  return {
+    sent, registered, declares, widgets, sessions, shown, pushes,
+    api: `http://127.0.0.1:${server.address().port}`,
+    close: () => server.close(),
+  };
 }
 
 /// Nguồn giá giả: biết đúng những mã được kể tên, và đếm số lần bị hỏi.
@@ -342,6 +370,12 @@ function stubCompany({ broken = false, quiet = false } = {}) {
   };
 }
 
+/// Bảng ngành giả. Mặc định của `run` gọi ra VNDirect, và một bộ test gọi ra internet là một bộ
+/// test đỏ khi mất mạng.
+function stubSectors() {
+  return { async map() { return new Map([['VIC', 'Bất động sản'], ['HPG', 'Tài nguyên']]); } };
+}
+
 function pickPeriod(period) {
   if (!period) return null;
   return {
@@ -364,11 +398,12 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
-    results = null, company = stubCompany(),
+    results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
+    refuseSessions = false,
   } = {},
 ) {
-  const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers, keepCommands });
+  const platform = await stubApi(updates, { refuseImages, refuseViews, widgetAnswers, keepCommands, refuseSessions });
   const stopping = new AbortController();
   const statePath = join(tmpdir(), `boco-${randomUUID()}.json`);
 
@@ -382,6 +417,8 @@ async function withBot(
     technical,
     results,
     company,
+    sectors,
+    board,
     statePath,
     at: () => new Date('2026-09-07T03:00:00Z'),   // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú
   });
@@ -461,7 +498,7 @@ test('gọi tên mà không có mã nào thì được nói cho biết', async (
 });
 
 test('gọi bot trống thì trả hướng dẫn', async () => {
-  const { sent } = await withBot([update({ text: '@bocobot' })]);
+  const { sent } = await withBot([update({ text: '@bocobot help' })]);
 
   // Hướng dẫn đứng trước, dòng trạng thái khai báo lệnh đi sau — nên so bằng `startsWith`.
   assert.ok(sent[0].text.startsWith(HELP));
@@ -1351,11 +1388,55 @@ test('cả bảng niêm yết đều được khai, mã giao dịch nhiều ti�
   assert.deepEqual(await boardSymbols(market, 2), ['CCC', 'AAA']);   // hết chỗ thì mã ế rơi trước
 });
 
+test('gọi tên bot là mở bảng nhiệt sống, không phải gửi hướng dẫn', async () => {
+  const { sent, sessions, shown, pushes } = await withBot([update({ text: '@bocobot' })], { expect: 0, settle: 400 });
+
+  assert.equal(sessions.length, 1);
+  // `userIds` rỗng: ở một bảng giá thì ai cũng là người xem. Ai được kể tên thành "người chơi" sẽ
+  // bị client hỏi "đóng bảng là bỏ cuộc?", và chỗ cho người chơi thì chỉ có tám.
+  assert.deepEqual(sessions[0].userIds, []);
+  assert.ok(sessions[0].conversationId);
+  assert.equal(shown[0].sessionId, 's1');
+  assert.equal(shown[0].to, 'u1');
+
+  const { state } = pushes[0];
+  assert.ok(state.c.length > 0 && state.g.length > 0);
+  assert.ok(JSON.stringify(state).length < 64 * 1024, 'một lần đẩy tối đa 64 KB');
+  assert.deepEqual(sent, []);   // hướng dẫn nằm dưới chân bảng, không gửi thêm tin
+});
+
+test('không mở được phiên thì vẫn trả hướng dẫn như cũ', async () => {
+  // Máy cũ, lỗi mạng, gói widget chưa lên — đường cũ phải còn đó, chứ im lặng là hỏng.
+  const { sent, sessions } = await withBot([update({ text: '@bocobot' })], { refuseSessions: true });
+  assert.deepEqual(sessions, []);
+  assert.ok(sent[0].text.startsWith(HELP));
+});
+
+test('gói bảng nhiệt mang cả bảng, và bố cục có vân tay riêng để trang khỏi dựng lại mỗi nhịp', () => {
+  // `ZZZ` không có trong bảng ngành lấy từ mạng lẫn bảng viết tay dự phòng — nó phải rơi vào "Khác".
+  const quotes = ['VIC', 'HPG', 'ZZZ'].map((sym) => normalize({ ...VIC, sym }));
+  const sectors = new Map([['VIC', 'Bất động sản'], ['HPG', 'Tài nguyên']]);
+  const state = boardState(quotes, { sectors, at: new Date('2026-09-07T03:00:00Z') });
+
+  assert.equal(state.c.length, 3);
+  assert.deepEqual(state.c[0].length, 7);          // [mã, x, y, w, h, "+4,74%", loại]
+  assert.match(state.c[0][5], /^[+-]/);
+  assert.ok(state.g.some(([name]) => name === 'Bất động sản'));
+  assert.ok(state.g.some(([name]) => name === 'Khác'));   // mã không có ngành vẫn có chỗ
+
+  // Vân tay đổi khi bố cục đổi, **không** đổi khi chỉ có giá đổi: trang dựng lại DOM theo nó, và
+  // dựng lại mỗi nhịp là chữ nhấp nháy với mất chỗ người ta đang nhìn.
+  const again = boardState(quotes.map((quote) => ({ ...quote, percent: quote.percent + 1 })), { sectors, at: new Date('2026-09-07T03:00:00Z') });
+  assert.equal(again.v, state.v);
+  const fewer = boardState(quotes.slice(0, 2), { sectors, at: new Date('2026-09-07T03:00:00Z') });
+  assert.notEqual(fewer.v, state.v);
+});
+
 test('hướng dẫn nói ra bot đã khai báo được bao nhiêu lệnh', async () => {
   // Khai báo lệnh là việc vô hình: nó xong hay hỏng lúc khởi động, còn người dùng chỉ thấy `/vgc`
   // im lặng. Ai đang hỏi giá trong một phòng chat thì không có log của pod trong tay, nên đây là
   // chỗ duy nhất nhìn được vì sao một lệnh không tới nơi.
-  const { sent } = await withBot([update({ text: '@bocobot' })]);
+  const { sent } = await withBot([update({ text: '@bocobot help' })]);
   assert.match(sent[0].text, /\(Gọi thẳng được \d+ mã bằng \/mã\.?\)|\(Chưa /);
 });
 
@@ -1363,7 +1444,7 @@ test('máy chủ giữ thiếu lệnh thì hướng dẫn nói ra, kèm lệnh �
   // Nhận đủ mà giữ thiếu là hai chuyện khác nhau, và chúng cần hai người khác nhau đi sửa. Bot đọc
   // lại danh sách từ `getMe` thay vì tin câu trả lời của chính lệnh ghi, nên nói được đúng chuyện
   // thứ hai — thứ mà `/vgc` im lặng trong khi `/vcg` chạy đang ám chỉ.
-  const { sent } = await withBot([update({ text: '@bocobot' })], { keepCommands: 3, settle: 400 });
+  const { sent } = await withBot([update({ text: '@bocobot help' })], { keepCommands: 3, settle: 400 });
   assert.match(sent[0].text, /máy chủ chỉ giữ 3 — mất \d+, từ "/);
 });
 
@@ -1371,7 +1452,7 @@ test('chú thích bị từ chối thì hướng dẫn nói ra mã lỗi', async
   const { sent } = await withBot(
     [
       update({ text: '/gia vic', command: 'gia', commandArgs: 'vic' }, 1),
-      update({ text: '@bocobot' }, 2),
+      update({ text: '@bocobot help' }, 2),
     ],
     { refuseViews: true, expect: 2 },
   );

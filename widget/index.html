@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bảng nhiệt</title>
+<link rel="stylesheet" href="board.css">
+
+<body class="board">
+<header id="head">
+  <span id="title">Bản đồ nhiệt VN</span>
+  <span id="clock" class="muted">Đang mở…</span>
+</header>
+
+<main id="map"></main>
+
+<footer id="legend">
+  <span class="tag"><i class="swatch ceiling"></i><span id="n-ceiling">0</span> trần</span>
+  <span class="tag"><i class="swatch up"></i><span id="n-up">0</span> tăng</span>
+  <span class="tag"><i class="swatch flat"></i><span id="n-flat">0</span> đứng</span>
+  <span class="tag"><i class="swatch down"></i><span id="n-down">0</span> giảm</span>
+  <span class="tag"><i class="swatch floor"></i><span id="n-floor">0</span> sàn</span>
+  <span id="help" class="muted"></span>
+</footer>
+
+<!-- zeplao.js do nền tảng ghi vào gói lúc tải lên; xem term.html. Trang này là trang của **phiên**
+     (`index.html` ở gốc gói), nên nó nhận được `onState` mỗi lần bot đẩy — khác thẻ view, vốn chỉ
+     nhận đúng một lần dữ liệu đi kèm tin nhắn. -->
+<script src="zeplao.js"></script>
+<script src="board.js"></script>
+</body>
+</html>

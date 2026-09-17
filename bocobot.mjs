@@ -34,14 +34,15 @@ import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { MAX_SYMBOLS, reply } from './market/quote.mjs';
+import { MAX_SYMBOLS, reply, sessionNote } from './market/quote.mjs';
 import { publicFeed, withCache } from './market/vps.mjs';
 import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
 import { looksLikeCode, makeGuard, tokensIn } from './market/symbols.mjs';
 import { googleNews, newsMessage } from './market/news.mjs';
 import { intradayChart, parseChartPeriod, withRich } from './market/chart.mjs';
-import { askedHeatmapFor, marketHeatmap } from './market/heatmap.mjs';
+import { askedHeatmapFor, boardState, marketHeatmap } from './market/heatmap.mjs';
+import { vndirectSectors } from './market/sectors.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
@@ -93,6 +94,21 @@ export const MOST_COMMANDS = 2000;
 /// Khai báo lại sau chừng này: danh sách mã thanh khoản đổi theo thị trường, và một trần mới ở máy
 /// chủ được dùng tới mà không phải đợi lần khởi động sau.
 const COMMANDS_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Nhịp đẩy bảng nhiệt sống.
+ *
+ * Không phải một giây, và cái chặn không phải mắt người. Hai cái trần: cửa trước của nền tảng cho
+ * 30 request mỗi giây tính chung mọi phương thức — mà một phiên là một phòng, nên bốn mươi phòng ở
+ * nhịp một giây là bốn mươi request mỗi giây — và feed giá miễn phí phải trả lời 1.523 mã mỗi lần
+ * hỏi. Ba giây cộng với bộ nhớ đệm năm giây của feed cho ra bảng mới chừng mỗi năm giây, đủ sống
+ * với một bản đồ nhiệt và còn xa hai cái trần kia.
+ */
+const BOARD_TICK_MS = 3000;
+const BOARD_TITLE = 'Bản đồ nhiệt VN';
+/// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
+/// cho cả phần hướng dẫn.
+const BOARD_HELP = 'Gõ /vic xem giá · !ptkt vic phân tích · !vboa bản đồ dạng ảnh';
 
 export function commandsFor(me, symbols = []) {
   const name = String(me?.username ?? '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32) || 'bocobot';
@@ -479,7 +495,9 @@ export async function run(token, {
   chart = intradayChart(),
   statePath = STATE,
   at = () => new Date(),
-  heatmap = marketHeatmap({ at }),
+  sectors = vndirectSectors(),
+  heatmap = marketHeatmap({ at, sectors }),
+  board = { tickMs: BOARD_TICK_MS },
   technical = technicalAnalysis(),
   results = vietcapResults(),
   company = vietcapCompany(),
@@ -587,6 +605,78 @@ export async function run(token, {
   again.unref?.();
   signal?.addEventListener?.('abort', () => clearInterval(again));
 
+  // ---- bảng nhiệt sống ------------------------------------------------------------------------
+  //
+  // `@topbot` mở một **phiên**: trang HTML trong gói widget, bot đẩy số vào bằng `pushState`. Một
+  // lần đẩy tới hết mọi người đang mở bảng của phòng ấy, nên trăm người xem vẫn là một lần bot
+  // tính và một request. Trang widget không tự lấy được gì — nền tảng chặn bằng header
+  // `connect-src 'none'`, sandbox không cho cùng nguồn — nên đẩy là đường duy nhất.
+  //
+  // Mỗi lần đẩy là **cả bảng**, không phải phần vừa đổi: máy chủ chỉ nhớ gói cuối cùng, ghi đè chứ
+  // không gộp, và người mở muộn được đưa đúng gói ấy. Đẩy phần vừa đổi thì họ nhận một nhúm ô rời
+  // và không có bảng nào cả — lỗi này không lộ ra khi tự thử, vì máy mình luôn có gói đầu tiên.
+  const boards = new Map();   // phòng -> { sessionId, sent }
+  let pushing = null;
+  let settled = false;
+
+  // Phiên của lần chạy trước là phiên mồ côi: pod khởi động lại thì bảng vẫn nằm trên màn hình
+  // người ta và đứng im mãi, vì không còn ai đẩy nữa. Dọn trước khi mở cái mới.
+  await call('endSessions', {}).catch((problem) => console.error(`không dọn được phiên cũ: ${problem}`));
+
+  async function openBoard(conversationId, userId) {
+    let live = boards.get(conversationId);
+    if (!live) {
+      // `userIds` rỗng: ở đây ai cũng là người xem. Được kể tên là thành "người chơi", và client sẽ
+      // hỏi "đóng bảng là bỏ cuộc?" — vô nghĩa với một bảng giá — lại chỉ nhận tối đa tám người.
+      const made = await call('createSession', { conversationId, title: BOARD_TITLE, userIds: [] });
+      const sessionId = made?.sessionId ?? made?.id ?? made?.session?.id;
+      if (!sessionId) throw new Error(`createSession không trả sessionId: ${JSON.stringify(made).slice(0, 160)}`);
+      live = { sessionId, sent: null };
+      boards.set(conversationId, live);
+      settled = false;
+      await pushBoards();   // có số sẵn trước khi người ta kịp nhìn vào
+    }
+    await call('showSession', { sessionId: live.sessionId, ...(userId ? { to: userId } : {}) });
+    startPushing();
+  }
+
+  async function pushBoards() {
+    if (!boards.size) return;
+
+    // Ngoài giờ khớp lệnh thì đẩy đúng một lần rồi thôi: bảng giữ số của phiên gần nhất, và không
+    // ai phải hỏi feed 1.523 mã mỗi ba giây suốt đêm để nhận lại y nguyên con số cũ.
+    const note = sessionNote(at());
+    if (note && settled) return;
+
+    const universe = await market.universe();
+    const [quotes, named] = await Promise.all([market.quotes(universe), sectors.map()]);
+    const state = boardState(quotes, { sectors: named, at: at(), help: BOARD_HELP });
+    if (!state) return;
+
+    const json = JSON.stringify(state);
+    for (const [conversationId, live] of boards) {
+      if (live.sent === json) continue;
+      try {
+        await call('pushState', { sessionId: live.sessionId, state });
+        live.sent = json;
+      } catch (problem) {
+        console.error(`không đẩy được bảng: ${problem}`);
+        if (String(problem).includes('session_not_found')) boards.delete(conversationId);
+      }
+    }
+    settled = Boolean(note);
+  }
+
+  function startPushing() {
+    if (pushing || !boards.size) return;
+    pushing = setInterval(
+      () => pushBoards().catch((problem) => console.error(`không đẩy được bảng: ${problem}`)),
+      board.tickMs,
+    );
+    pushing.unref?.();
+    signal?.addEventListener?.('abort', () => clearInterval(pushing));
+  }
+
   // Danh sách niêm yết tải ngay nhưng không đợi: câu hỏi đầu tiên có thể tới trước khi ba sàn
   // trả lời xong, và lúc ấy cái sàng vẫn làm việc được — bằng cách dò thay vì tra.
   guard.universe().then(() => console.log(`biết ${guard.size} mã niêm yết`)).catch(() => {});
@@ -643,6 +733,24 @@ export async function run(token, {
     const replyTo = message.private ? undefined : message.messageId;
 
     const helpAsked = !message.priceOnly && askedHelpFor(message, me);
+    if (helpAsked) {
+      // Gọi tên trống là mở bảng nhiệt sống; hỏi thẳng chữ `help` thì vẫn nhận phần hướng dẫn.
+      //
+      // Hai câu hỏi khác nhau: "cho tôi xem thị trường" và "bot này gõ được gì". Bảng có một dòng
+      // hướng dẫn dưới chân, nhưng ai gõ `help` là đang muốn đọc cả danh sách lệnh, và mở ra một
+      // bảng màu thay cho câu trả lời ấy là không trả lời.
+      //
+      // Phiên không mở được — máy cũ, lỗi mạng, gói widget chưa lên — thì rơi xuống hướng dẫn: đường
+      // cũ vẫn ở đó, và người hỏi vẫn nhận được câu trả lời thay vì im lặng.
+      try {
+        // Chữ `help` có thể đứng sau dấu gọi — `!help`, `!help@bot` — nên nhận cả dấu ở trước.
+        if (/(^|[\s!/@])help(\s|$)/i.test(String(message.text ?? ''))) throw new Error('hỏi hướng dẫn');
+        await openBoard(message.conversationId, senderOf(message));
+        return;
+      } catch (problem) {
+        console.error(`không mở được bảng: ${problem}`);
+      }
+    }
     if (helpAsked) {
       const help = [
         HELP,

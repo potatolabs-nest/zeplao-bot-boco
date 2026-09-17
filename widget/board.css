@@ -1,0 +1,140 @@
+/* Bảng nhiệt của phiên. Không tải gì từ bên ngoài — trang widget bị chặn mạng bằng header
+   `connect-src 'none'`, nên một font hay một stylesheet từ CDN sẽ không bao giờ tới nơi. */
+
+:root {
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+
+  --up: #02cc1a;
+  --down: #ef2a2f;
+  --flat: #f6b846;
+  --ceiling: #8b1dc9;
+  --floor: #1e88e5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1220;
+    --panel: #111a2b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --line: #1e293b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.3 Arial, Helvetica, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px 6px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.muted { color: var(--muted); font-weight: 400; }
+
+/* Bản đồ là một khung có toạ độ: mỗi nhóm và mỗi ô được đặt bằng phần trăm, nên đổi cỡ cửa sổ thì
+   cả bảng co giãn theo mà không phải tính lại bố cục — bố cục do bot gửi sang, tính một lần. */
+#map {
+  position: relative;
+  flex: 1;
+  margin: 0 8px 8px;
+}
+
+.group {
+  position: absolute;
+  background: var(--panel);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.group > h2 {
+  margin: 0;
+  padding: 5px 6px 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1px;
+  color: #111827;
+  font-weight: 700;
+  text-align: center;
+  overflow: hidden;
+  /* Đổi màu thì chuyển dần, đổi số thì đổi ngay: một ô nhấp nháy giữa hai màu mỗi giây làm người
+     xem chóng mặt, còn một con số đổi chậm là một con số sai trong lúc nó đang đổi. */
+  transition: background-color 240ms ease;
+}
+
+.cell > b, .cell > span { display: block; line-height: 1.1; }
+.cell.hush > b, .cell.hush > span { display: none; }
+
+/* Cùng công thức với bản đồ SVG: giữa ô sáng hơn, rìa tối hơn, viền tối hơn nữa — dịch độ sáng của
+   chính màu ấy, không pha trắng. */
+.cell.up { background: var(--up); }
+.cell.down { background: var(--down); }
+.cell.flat { background: var(--flat); }
+.cell.ceiling { background: var(--ceiling); color: #ffffff; }
+.cell.floor { background: var(--floor); color: #ffffff; }
+
+.cell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0.06));
+  pointer-events: none;
+}
+
+#legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 0 12px 8px;
+  font-size: 12px;
+}
+
+.tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+
+.swatch {
+  width: 13px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.swatch.up { background: var(--up); }
+.swatch.down { background: var(--down); }
+.swatch.flat { background: var(--flat); }
+.swatch.ceiling { background: var(--ceiling); }
+.swatch.floor { background: var(--floor); }
