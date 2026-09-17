@@ -15,7 +15,7 @@ const FOOTER = 42;
 const MIN_TILE = 36;
 /// Khe trắng giữa hai ô, và góc bo của ô. Cả phần "trắng" của bản đồ nằm ở đây: không phủ gì lên
 /// màu, chỉ chừa ra một mạch hở đủ mảnh để mỗi mã thành một viên riêng thay vì một mảng liền.
-const TILE_GAP = 2.5;
+const TILE_GAP = 1.5;
 const TILE_RADIUS = 2;
 const MAX_SYMBOLS = 500;
 
@@ -199,14 +199,17 @@ function tileSvg(quote, rect) {
   if (rect.w <= 0 || rect.h <= 0) return '';
   const color = colorFor(quote);
   const label = rect.w >= MIN_TILE && rect.h >= MIN_TILE;
-  const symbolSize = clamp(Math.min(rect.w / 4.4, rect.h / 3.2), 13, 31);
-  const pctSize = clamp(symbolSize * 0.8, 11, 25);
+  // Mã và phần trăm **cùng một cỡ**. Hai dòng ấy là một thông tin, không phải một cái tên với một
+  // ghi chú: người ta liếc bản đồ để đọc mức tăng giảm, nên thu nhỏ con số đi là thu nhỏ đúng thứ
+  // đáng nhìn. Cỡ chữ vì thế tính theo chỗ cho **hai dòng bằng nhau**: bề ngang đủ cho `-3,02%`,
+  // bề dọc đủ cho hai dòng chồng lên nhau.
+  const size = clamp(Math.min(rect.w / 4.2, rect.h / 2.9), 11, 30);
   const percent = signed(quote.percent);
 
   return `<g data-symbol="${escapeXml(quote.symbol)}">
     <rect x="${round(rect.x)}" y="${round(rect.y)}" width="${round(rect.w)}" height="${round(rect.h)}" rx="${TILE_RADIUS}" fill="url(#o-${color})" stroke="${shade(TILE_FILLS[color], EDGE_DARKER)}" stroke-width="1"/>
-    ${label ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - 3)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(symbolSize)}" font-weight="800">${escapeXml(quote.symbol)}</text>
-    <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + pctSize)}" text-anchor="middle" fill="#020617" font-family="${font()}" font-size="${round(pctSize)}" font-weight="700">${escapeXml(percent)}%</text>` : ''}
+    ${label ? `<text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 - size * 0.18)}" text-anchor="middle" fill="#111827" font-family="${font()}" font-size="${round(size)}" font-weight="700">${escapeXml(quote.symbol)}</text>
+    <text x="${round(rect.x + rect.w / 2)}" y="${round(rect.y + rect.h / 2 + size * 0.92)}" text-anchor="middle" fill="#111827" font-family="${font()}" font-size="${round(size)}" font-weight="700">${escapeXml(percent)}%</text>` : ''}
   </g>`;
 }
 
@@ -290,9 +293,18 @@ const CENTER_LIGHTER = 20;
 const RIM_DARKER = -5;
 const EDGE_DARKER = -10;
 
+/**
+ * Đỏ và tím chỉ sáng lên nửa mức.
+ *
+ * Cùng cộng 20 độ sáng, nhưng hai màu ấy vốn đã sáng hơn màu xanh, nên cộng xong đỏ ngả hồng và tím
+ * ngả tử đinh hương — nhìn đúng như bị phủ trắng, thứ vừa phải bỏ đi. Độ sáng là thang tuyệt đối,
+ * còn chỗ trống phía trên mỗi màu thì khác nhau, nên một con số chung không dùng được cho cả năm.
+ */
+const CENTER_SHIFT = { up: CENTER_LIGHTER, flat: CENTER_LIGHTER, floor: CENTER_LIGHTER, down: 10, ceiling: 10 };
+
 function tileGradients() {
   return Object.entries(TILE_FILLS).map(([name, hex]) => `<radialGradient id="o-${name}" cx="50%" cy="50%" r="72%">
-      <stop offset="0" stop-color="${shade(hex, CENTER_LIGHTER)}"/>
+      <stop offset="0" stop-color="${shade(hex, CENTER_SHIFT[name] ?? CENTER_LIGHTER)}"/>
       <stop offset="1" stop-color="${shade(hex, RIM_DARKER)}"/>
     </radialGradient>`).join('');
 }
@@ -384,8 +396,16 @@ function round(value) {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * Chữ của bản đồ.
+ *
+ * Arial trước, không phải `system-ui`: ảnh này được **máy của người đọc** vẽ, nên `system-ui` nghĩa
+ * là mỗi máy một kiểu chữ — máy này ra SF Pro tròn mềm, máy kia ra Roboto, máy khác ra thứ gì không
+ * ai biết. Một bảng điện thì chữ phải chắc và giống nhau ở mọi nơi, và Arial/Helvetica có sẵn khắp
+ * nơi. `system-ui` vẫn đứng cuối hàng, cho máy nào không có cả hai.
+ */
 function font() {
-  return 'system-ui, -apple-system, Segoe UI, sans-serif';
+  return 'Arial, Helvetica, system-ui, sans-serif';
 }
 
 function escapeXml(value) {
