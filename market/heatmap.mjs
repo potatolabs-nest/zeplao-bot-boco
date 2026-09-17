@@ -238,6 +238,12 @@ export function boardState(quotes, { sectors = new Map(), at = new Date(), cells
   const note = sessionNote(at);
   const { minutes } = vietnamNow(at);
   return {
+    // Bảng màu đi kèm gói, không viết lại trong CSS của trang: sắc độ giữa ô, rìa ô và viền được
+    // tính bằng đúng hàm `shade` mà bản đồ SVG dùng, nên hai bảng không bao giờ lệch màu nhau.
+    p: Object.fromEntries(Object.entries(TILE_FILLS).map(([name, hex]) => [
+      name,
+      [shade(hex, CENTER_SHIFT[name] ?? CENTER_LIGHTER), shade(hex, RIM_DARKER), shade(hex, EDGE_DARKER)],
+    ])),
     v: fingerprint(boxes),
     at: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
     note: note ? note.split(' · ')[0] : 'Đang khớp lệnh',

@@ -16,6 +16,7 @@
 (function () {
   const z = window.Zeplao;
   const map = document.getElementById('map');
+  const wrap = document.getElementById('wrap');
   const clock = document.getElementById('clock');
   const help = document.getElementById('help');
 
@@ -100,6 +101,14 @@
    * đọc được màu, còn một ô đặc chữ thì không đọc được gì.
    */
   function fit() {
+    // Bản đồ là chữ nhật 16:9 lớn nhất lọt vào chỗ còn trống, đo bằng pixel thật của khung bọc.
+    const room = wrap.getBoundingClientRect();
+    if (room.width > 0 && room.height > 0) {
+      const wide = Math.min(room.width, (room.height * 16) / 9);
+      map.style.width = `${Math.floor(wide)}px`;
+      map.style.height = `${Math.floor((wide * 9) / 16)}px`;
+    }
+
     // Dải tên nhóm: cao đúng bằng khoảng bot đã chừa, và biến mất khi khoảng ấy hẹp quá — chữ nhỏ
     // nhất vẫn tràn ra và đè sang nhóm bên cạnh, mà một nhóm không tên vẫn nhận ra qua các mã.
     for (const title of titles) {
@@ -119,6 +128,14 @@
 
   function apply(state) {
     if (!state || typeof state !== 'object' || !Array.isArray(state.c)) return;
+
+    // Bảng màu do bot gửi: giữa ô, rìa ô, viền — cùng sắc độ mà bản đồ SVG dùng.
+    for (const [kind, shades] of Object.entries(state.p ?? {})) {
+      const [middle, rim, edge] = shades;
+      document.documentElement.style.setProperty(`--${kind}-c`, middle);
+      document.documentElement.style.setProperty(`--${kind}-r`, rim);
+      document.documentElement.style.setProperty(`--${kind}-e`, edge);
+    }
 
     // Xin khung ở đây chứ không chỉ lúc nạp trang: trên web, `z.room` chỉ có sau khi ứng dụng chào,
     // mà lời chào tới cùng lúc với dữ liệu đầu tiên. Gọi lúc nạp là gọi vào chỗ chưa có gì.
@@ -158,7 +175,9 @@
     z.setSize(wide, tall);
   }
 
-  if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(map);
+  // Theo dõi khung bọc, không theo dõi bản đồ: chính `fit()` đặt kích thước bản đồ, nên nghe ngóng
+  // bản đồ là nghe lại tiếng của mình và quay vòng.
+  if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(wrap);
 
   if (z) {
     // Chỉ `onState`. Doc nói rõ: trong một phiên, `onData` **không bao giờ được gọi** — nó là đường

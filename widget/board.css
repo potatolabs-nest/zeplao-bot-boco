@@ -40,17 +40,14 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Đệm đặt ở đây, **không** ở khung bọc bản đồ: `fit()` đo khung bọc để biết chỗ trống, mà phép đo
+     ấy tính cả đệm — nên bản đồ nhận đúng phần đệm làm chiều cao thừa và thò xuống đè hàng chú giải. */
+  padding: 8px 8px 0;
 }
 
-#head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px 6px;
-  font-weight: 700;
-  font-size: 14px;
-}
+/* Giờ đứng cuối hàng, đẩy sát mép phải: nó là thứ người ta liếc để biết số này mới tới đâu, nên
+   phải luôn ở một chỗ cố định thay vì trôi theo độ dài phần hướng dẫn. */
+#clock { margin-left: auto; white-space: nowrap; }
 
 .muted { color: var(--muted); font-weight: 400; }
 
@@ -69,16 +66,14 @@ body {
 #wrap {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
-  padding: 0 8px 6px;
 }
 
+/* Kích thước đặt bằng pixel trong `fit()`, không bằng `aspect-ratio`: tỉ lệ CSS cộng với giới hạn
+   cả hai chiều cho ra kết quả khác nhau tuỳ chiều nào bị kẹp trước, và ở khung hẹp nó tràn ngang. */
 #map {
   position: relative;
-  width: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 16 / 9;
   margin: auto;
 }
 
@@ -119,30 +114,41 @@ body {
 .cell > b, .cell > span { display: block; line-height: 1.1; }
 .cell.hush > b, .cell.hush > span { display: none; }
 
-/* Cùng công thức với bản đồ SVG: giữa ô sáng hơn, rìa tối hơn, viền tối hơn nữa — dịch độ sáng của
-   chính màu ấy, không pha trắng. */
-.cell.up { background: var(--up); }
-.cell.down { background: var(--down); }
-.cell.flat { background: var(--flat); }
-.cell.ceiling { background: var(--ceiling); color: #ffffff; }
-.cell.floor { background: var(--floor); color: #ffffff; }
+/* Ô phồng lên như cái nệm: giữa sáng hơn, rìa tối hơn, viền tối hơn nữa — và cả ba đều là **sắc độ
+   của chính màu ấy**, không phải lớp trắng phủ lên. Phủ trắng thì màu bạc đi và cả bảng nhợt.
 
-.cell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0.06));
-  pointer-events: none;
-}
+   Ba màu cho mỗi loại do bot gửi trong gói (`state.p`) và `board.js` đặt vào các biến dưới đây, nên
+   bảng sống và bản đồ SVG luôn cùng một màu. Viền vẽ bằng `box-shadow: inset` chứ không phải
+   `border`: border ăn thêm chỗ và làm ô lệch khỏi khung đã tính. */
+.cell.up { background: radial-gradient(circle at 50% 50%, var(--up-c, var(--up)), var(--up-r, var(--up))); box-shadow: inset 0 0 0 1px var(--up-e, transparent); }
+.cell.down { background: radial-gradient(circle at 50% 50%, var(--down-c, var(--down)), var(--down-r, var(--down))); box-shadow: inset 0 0 0 1px var(--down-e, transparent); }
+.cell.flat { background: radial-gradient(circle at 50% 50%, var(--flat-c, var(--flat)), var(--flat-r, var(--flat))); box-shadow: inset 0 0 0 1px var(--flat-e, transparent); }
+.cell.ceiling { background: radial-gradient(circle at 50% 50%, var(--ceiling-c, var(--ceiling)), var(--ceiling-r, var(--ceiling))); box-shadow: inset 0 0 0 1px var(--ceiling-e, transparent); color: #ffffff; }
+.cell.floor { background: radial-gradient(circle at 50% 50%, var(--floor-c, var(--floor)), var(--floor-r, var(--floor))); box-shadow: inset 0 0 0 1px var(--floor-e, transparent); color: #ffffff; }
 
+/* Một dòng, không xuống hàng: chú giải, hướng dẫn, rồi giờ. Cho xuống hàng thì đồng hồ rơi xuống
+   dòng hai và lại ăn mất chừng ấy chiều cao của bản đồ — đúng thứ vừa dọn đi. Phần hướng dẫn là
+   phần co được, và cụt bớt một câu hướng dẫn thì không mất gì. */
+/* `min-width: 0` cho phép hàng này hẹp hơn nội dung của nó. Thiếu nó, bề rộng tối thiểu của hàng
+   chú giải — năm thẻ không xuống dòng cộng đồng hồ — kéo giãn cả cột, và bản đồ rộng theo rồi tràn
+   ra ngoài khung. */
 #legend {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
   align-items: center;
-  gap: 4px 14px;
+  gap: 14px;
   padding: 0 12px 8px;
   font-size: 12px;
+}
+
+#help {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }

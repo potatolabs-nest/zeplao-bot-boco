@@ -6,13 +6,11 @@
 <link rel="stylesheet" href="board.css">
 
 <body class="board">
-<header id="head">
-  <span id="title">Bản đồ nhiệt VN</span>
-  <span id="clock" class="muted">Đang mở…</span>
-</header>
-
 <main id="wrap"><div id="map"></div></main>
 
+<!-- Một hàng duy nhất dưới chân: chú giải, hướng dẫn, rồi giờ. Bảng nhiệt sống bằng diện tích, mà
+     một dòng tiêu đề riêng trên đỉnh ăn mất cả chục phần trăm chiều cao để nói một điều người mở
+     nó đã biết — thanh tiêu đề của chính cái card đã ghi tên bot rồi. -->
 <footer id="legend">
   <span class="tag"><i class="swatch ceiling"></i><span id="n-ceiling">0</span> trần</span>
   <span class="tag"><i class="swatch up"></i><span id="n-up">0</span> tăng</span>
@@ -20,6 +18,7 @@
   <span class="tag"><i class="swatch down"></i><span id="n-down">0</span> giảm</span>
   <span class="tag"><i class="swatch floor"></i><span id="n-floor">0</span> sàn</span>
   <span id="help" class="muted"></span>
+  <span id="clock" class="muted">Đang mở…</span>
 </footer>
 
 <!-- zeplao.js do nền tảng ghi vào gói lúc tải lên; xem term.html. Trang này là trang của **phiên**
