@@ -61,10 +61,23 @@ body {
    Một treemap co vào khung cao và hẹp thì các ô thành những cột dựng đứng: chữ không nằm được, mắt
    không so được diện tích, và nó không còn giống bảng người ta quen nhìn. Thà chừa khoảng trống
    trên dưới còn hơn bóp méo cả bảng. */
+/* Lớp bọc nhận phần cao còn lại, bản đồ tự vừa vào trong nó theo cả hai chiều.
+
+   Ép tỉ lệ chỉ theo bề ngang thì ở cửa sổ thấp, bản đồ cao hơn chỗ còn trống và phần dưới bị cắt
+   mất — mất luôn hàng chú giải. `min-height: 0` là chỗ dễ quên: thiếu nó thì một flex item không
+   chịu co xuống dưới kích thước nội dung, và mọi ràng buộc chiều cao thành vô nghĩa. */
+#wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 0 8px 6px;
+}
+
 #map {
   position: relative;
-  width: calc(100% - 16px);
-  max-height: calc(100% - 8px);
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
   aspect-ratio: 16 / 9;
   margin: auto;
 }

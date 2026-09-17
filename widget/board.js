@@ -20,23 +20,32 @@
   const help = document.getElementById('help');
 
   const cells = new Map();   // mã -> { box, percent }
+  const titles = [];         // tên nhóm, đo lại mỗi lần khung đổi
   let version = null;
 
   const LEAST_LABEL = 7;
   const MOST_LABEL = 30;
   const KINDS = ['up', 'down', 'flat', 'ceiling', 'floor'];
 
-  const at = (box, x, y, w, h) => {
-    box.style.left = `${x / 10}%`;
-    box.style.top = `${y / 10}%`;
-    box.style.width = `${w / 10}%`;
-    box.style.height = `${h / 10}%`;
+  /**
+   * Đặt một khối theo toạ độ phần nghìn, chừa khe bằng **pixel thật**.
+   *
+   * Khe tính theo tỉ lệ thì ở khung nhỏ nó biến mất: một phần nghìn của bản đồ rộng 700px là 0,7
+   * pixel, và các ô dính liền thành một mảng — nhìn đúng như chúng đè lên nhau. Một pixel mỗi bên
+   * thì ở khung nào cũng là một pixel.
+   */
+  const at = (box, x, y, w, h, gap = 0) => {
+    box.style.left = `calc(${x / 10}% + ${gap}px)`;
+    box.style.top = `calc(${y / 10}% + ${gap}px)`;
+    box.style.width = `calc(${w / 10}% - ${gap * 2}px)`;
+    box.style.height = `calc(${h / 10}% - ${gap * 2}px)`;
   };
 
   function draw(state) {
     version = state.v ?? null;
     map.replaceChildren();
     cells.clear();
+    titles.length = 0;
 
     for (const [name, x, y, w, h, header] of state.g ?? []) {
       const box = document.createElement('div');
@@ -44,23 +53,20 @@
       at(box, x, y, w, h);
 
       const title = document.createElement('h2');
-      // Nhóm quá bé thì bỏ tên hẳn: khoảng chừa chỉ còn vài pixel, chữ nhỏ nhất vẫn tràn ra ngoài
-      // và đè sang ô bên cạnh. Nhóm ấy vẫn nhận ra được qua các mã nằm trong nó.
-      title.textContent = ((header ?? 30) / 1000) * map.clientHeight >= 9 ? name : '';
-      // Chiều cao dòng tiêu đề đúng bằng khoảng bot đã chừa, tính ra pixel theo chiều cao bản đồ
-      // hiện tại. Để CSS tự quyết thì chữ cao hơn khoảng chừa và đè lên ô đầu tiên của nhóm.
-      const tall = ((header ?? 30) / 1000) * map.clientHeight;
-      title.style.height = `${tall}px`;
-      title.style.lineHeight = `${tall}px`;
-      title.style.fontSize = `${Math.max(8, Math.min(tall * 0.62, 13))}px`;
+      title.textContent = name;
+      // Chiều cao dải tiêu đề tính ở `fit()`, **không** tính ở đây: lúc dựng DOM thì khung bảng có
+      // thể còn chưa có chiều cao thật — card đang được đổi cỡ — và đo lúc ấy ra 0. Đó chính là
+      // cách tôi vừa làm mất sạch tên nhóm: 0 pixel thì nhóm nào cũng "quá bé để ghi tên".
+      title.dataset.strip = String(header ?? 30);
       box.append(title);
+      titles.push(title);
       map.append(box);
     }
 
     for (const [symbol, x, y, w, h, shown, kind] of state.c ?? []) {
       const box = document.createElement('div');
       box.className = `cell ${KINDS[kind] ?? 'flat'}`;
-      at(box, x, y, w, h);
+      at(box, x, y, w, h, 1);
 
       const name = document.createElement('b');
       name.textContent = symbol;
@@ -94,6 +100,16 @@
    * đọc được màu, còn một ô đặc chữ thì không đọc được gì.
    */
   function fit() {
+    // Dải tên nhóm: cao đúng bằng khoảng bot đã chừa, và biến mất khi khoảng ấy hẹp quá — chữ nhỏ
+    // nhất vẫn tràn ra và đè sang nhóm bên cạnh, mà một nhóm không tên vẫn nhận ra qua các mã.
+    for (const title of titles) {
+      const strip = (Number(title.dataset.strip) / 1000) * map.clientHeight;
+      title.hidden = strip < 9;
+      title.style.height = `${strip}px`;
+      title.style.lineHeight = `${strip}px`;
+      title.style.fontSize = `${Math.max(8, Math.min(strip * 0.62, 13))}px`;
+    }
+
     for (const { box } of cells.values()) {
       const size = Math.min(box.clientWidth / 4.3, box.clientHeight / 3.6, MOST_LABEL);
       box.classList.toggle('hush', size < LEAST_LABEL);

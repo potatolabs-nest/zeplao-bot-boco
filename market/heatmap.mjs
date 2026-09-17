@@ -222,8 +222,9 @@ export function boardState(quotes, { sectors = new Map(), at = new Date(), cells
     laid.push([item.group.sector, round(inner.x), round(inner.y), round(inner.w), round(inner.h), round(header)]);
 
     for (const tile of treemap(item.group.quotes.map((quote) => ({ quote, value: quote.value })), body)) {
-      const { item: held, ...box } = tile;
-      const cell = shrink(box, 1);
+      // Không chừa khe ở đây: khe của bảng sống tính bằng pixel ngay trên trang, vì một phần nghìn
+      // ở khung nhỏ chỉ là nửa pixel và biến mất. Gửi nguyên ô, trang tự chừa.
+      const { item: held, ...cell } = tile;
       if (cell.w <= 0 || cell.h <= 0) continue;
       boxes.push([
         held.quote.symbol,
