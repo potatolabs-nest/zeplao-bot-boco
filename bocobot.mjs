@@ -118,6 +118,8 @@ const BOARD_FRESH_MS = 1200;
 /// Hâm sẵn hồ sơ cho bao nhiêu ô to nhất, và cách nhau bao lâu — xem `warmProfiles`.
 const WARM_MOST = 60;
 const WARM_GAP_MS = 150;
+/// Trần của nền tảng là 64 KB một gói; cắt ở 56 để còn chỗ cho chính chữ `state` và phần bao ngoài.
+const BOARD_SAFE_BYTES = 56 * 1024;
 /// Hạn mức mã ngoài bảng mỗi phòng mở được trong một phút — xem `budget`.
 const BUDGET_MOST = 20;
 const BUDGET_MS = 60 * 1000;
@@ -703,7 +705,10 @@ export async function run(token, {
   /// Bài phân tích cũ đi theo phiên, không theo phút. Hỏi lại sau chừng này thì đủ mới.
   const STUDY_TTL_MS = 10 * 60 * 1000;
   /// Nhiều nhất bao nhiêu mã được mang theo trong gói của một phòng.
-  const MOST_DETAILS = 6;
+  ///
+  /// Trang chi tiết mỗi lúc chỉ mở **một** mã; giữ thêm vài mã nữa là để mở lại chỗ vừa xem cho
+  /// nhanh. Mỗi mã tốn chừng 5 KB trong một cái gói có trần 64 KB, nên con số này là tiền thật.
+  const MOST_DETAILS = 3;
   /// Và nhớ chỗ ngồi của nhiều nhất bao nhiêu người xem mỗi phòng.
   const MOST_SEATS = 12;
 
@@ -825,13 +830,13 @@ export async function run(token, {
         ...(names ? { n: names } : {}),
         ...(live.typing > Date.now() && listing ? { all: listing } : {}),
       };
-      const json = JSON.stringify(state);
+      const json = fits(state, conversationId);
       if (live.pushed === json) continue;
       try {
         // Câu trả lời kể số người thật sự nhận được gói này. Không có tin báo "đã đóng bảng" nào
         // cho bot, nên đây là cách duy nhất biết phòng ấy còn ai xem — và một bảng không còn ai
         // xem mà vẫn đẩy là hỏi feed và tiêu request cho một màn hình đã tắt.
-        const answer = await call('pushState', { sessionId: live.sessionId, state });
+        const answer = await call('pushState', { sessionId: live.sessionId, state: JSON.parse(json) });
         live.pushed = json;
 
         // Đóng bảng tính theo **thời gian**, không theo số lần đẩy.
@@ -908,9 +913,13 @@ export async function run(token, {
   function detailsFor(live, onBoard, bySymbol, named) {
     // Không lọc lại theo bảng: mã nào vào được `wanted` cũng đã qua cái sàng rồi, và một mã tìm bằng
     // ô tìm kiếm thì vốn không có trên bảng — lọc ở đây là vứt đi đúng thứ vừa được hỏi.
+    tidy(live);
     const wanted = [...(live.wanted ?? [])];
     if (!wanted.length) return null;
 
+    // Bài phân tích chỉ đi kèm mã **mở gần nhất**: nó là phần nặng nhất của một chi tiết (chừng 3 KB
+    // trong 5 KB), mà tab PTKT thì mỗi lúc cũng chỉ xem được một mã.
+    const newest = wanted.at(-1);
     return Object.fromEntries(wanted.map((symbol) => [symbol, boardDetail({
       symbol,
       card: profiles.get(symbol) ?? null,
@@ -920,9 +929,47 @@ export async function run(token, {
       sector: named.get(symbol) ?? '',
       history: days.get(symbol) ?? [],
       foreign: foreigns.get(symbol) ?? new Map(),
-      study: studies.get(symbol)?.card ?? null,
-      studying: studying.has(symbol),
+      study: symbol === newest ? studies.get(symbol)?.card ?? null : null,
+      studying: symbol === newest && studying.has(symbol),
     })]));
+  }
+
+  /**
+   * Gói, đã cắt cho vừa trần của nền tảng.
+   *
+   * Một gói quá 64 KB bị chối thẳng, và gói bị chối thì trang **không nhận được gì nữa** — bảng
+   * đứng im, mọi cú bấm rơi vào im lặng. Nhìn từ ngoài thì đó là "treo hẳn", và không có gì trên
+   * màn hình nói vì sao.
+   *
+   * Nên đo trước khi gửi, và nếu chạm ngưỡng thì bỏ bớt theo thứ tự đáng bỏ: danh sách gợi ý trước
+   * (chỉ để gõ tìm), rồi tên công ty (trang tự xin lại được), rồi chi tiết của những mã mở lâu nhất
+   * — mã đang xem nằm cuối hàng nên bỏ sau cùng. Bảng thì không bao giờ bỏ: nó là cả cái widget.
+   */
+  function fits(state, conversationId) {
+    let json = JSON.stringify(state);
+    if (json.length <= BOARD_SAFE_BYTES) return json;
+
+    const trimmed = { ...state };
+    const cut = [];
+    if (trimmed.all) { delete trimmed.all; cut.push('gợi ý'); }
+    json = JSON.stringify(trimmed);
+
+    if (json.length > BOARD_SAFE_BYTES && trimmed.n) {
+      delete trimmed.n;
+      cut.push('tên công ty');
+      json = JSON.stringify(trimmed);
+    }
+
+    while (json.length > BOARD_SAFE_BYTES && Object.keys(trimmed.d ?? {}).length > 1) {
+      const oldest = Object.keys(trimmed.d)[0];
+      trimmed.d = { ...trimmed.d };
+      delete trimmed.d[oldest];
+      cut.push(oldest);
+      json = JSON.stringify(trimmed);
+    }
+
+    console.error(`gói ${JSON.stringify(state).length} byte quá lớn (${conversationId}), đã bỏ: ${cut.join(', ')}`);
+    return json;
   }
 
   /// Tên công ty của các mã trên bảng đã có hồ sơ trong bộ nhớ. `null` khi chưa có mã nào — để gói
@@ -1049,6 +1096,26 @@ export async function run(token, {
         return pushBoards({ stale: true });
       })
       .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
+  }
+
+  /**
+   * Bỏ khỏi gói những mã **không còn ai mở**.
+   *
+   * Mỗi gói đẩy là một ảnh chụp đầy đủ — máy chủ không gộp — nên thứ gì muốn trang có thì phải nằm
+   * trong **mọi** gói. Giữ lại vài mã vừa xem để mở lại cho nhanh nghe thì tiện, nhưng trang chi
+   * tiết mỗi lúc chỉ xem được một mã, và cái giá phải trả nằm trong một hạn mức cứng 64 KB: sáu mã
+   * là năm mươi ba nghìn byte, và chạm trần thì gói bị chối — bảng đứng im, không một lời giải thích.
+   *
+   * Chỗ ngồi của từng người nói họ đang xem gì, nên chỉ cần giữ đúng chừng ấy. Mã mở gần nhất luôn
+   * được giữ, vì chỗ ngồi của người vừa bấm có thể chưa kịp về.
+   */
+  function tidy(live) {
+    if (!live.wanted?.size || !live.seats?.size) return;
+    const open = new Set([...live.seats.values()].map(([, symbol]) => symbol).filter(Boolean));
+    const newest = [...live.wanted].at(-1);
+    for (const symbol of [...live.wanted]) {
+      if (symbol !== newest && !open.has(symbol)) live.wanted.delete(symbol);
+    }
   }
 
   /// Ghi mã vào danh sách phòng ấy đang mở. Mở lại một mã đang mở thì đưa nó xuống cuối hàng, để

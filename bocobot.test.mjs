@@ -1698,6 +1698,27 @@ test('chỗ ngồi cũng là chữ người lạ gõ vào: mã lạ bị bỏ, t
   assert.equal(seat[2], 'all');
 });
 
+test('mở nhiều mã thì gói không phình ra theo: chỉ mang mã còn đang xem', async () => {
+  // Mỗi gói là một ảnh chụp đầy đủ và có trần cứng 64 KB. Mang theo mọi mã vừa xem thì tới mã thứ
+  // bảy là gói chạm trần, bị chối, và bảng đứng im không một lời giải thích — người dùng phải tắt
+  // widget bật lại mới đi tiếp được sáu mã nữa.
+  const market = stubMarket({ listed: ['VIC', 'HPG', 'SSI', 'MBB', 'FPT', 'GEX', 'DXG'] });
+  const { pushes } = await withBot(
+    [
+      update({ text: '@bocobot' }),
+      ...['VIC', 'HPG', 'SSI', 'MBB', 'FPT', 'GEX', 'DXG'].flatMap((symbol, index) => [
+        tapped({ open: symbol }, index * 2 + 2),
+        tapped({ seat: [null, symbol, 'all'] }, index * 2 + 3),
+      ]),
+    ],
+    { expect: 0, settle: 600, market },
+  );
+
+  const mang = Object.keys(pushes.at(-1).state.d ?? {});
+  assert.deepEqual(mang, ['DXG'], `chỉ mã đang xem, không phải cả bảy: ${mang.join(',')}`);
+  assert.ok(pushes.every(({ state }) => Object.keys(state.d ?? {}).length <= 3));
+});
+
 test('đóng trang chi tiết thì gói thôi mang hồ sơ mã ấy', async () => {
   // Gói đẩy đi là gói chung cả phòng. Giữ lại hồ sơ của một mã không ai còn nhìn là bắt mọi người
   // tải nó mỗi ba giây, suốt cả phiên.
