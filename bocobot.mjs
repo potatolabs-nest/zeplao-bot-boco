@@ -922,6 +922,9 @@ export async function run(token, {
     const wanted = [...(live.wanted ?? [])];
     if (!wanted.length) return null;
 
+    // Mã nào đang được mang theo mà chưa ai đi lấy dữ liệu thì đi lấy ngay bây giờ.
+    for (const symbol of wanted) fetchFor(live, symbol);
+
     // Bài phân tích chỉ đi kèm mã **mở gần nhất**: nó là phần nặng nhất của một chi tiết (chừng 3 KB
     // trong 5 KB), mà tab PTKT thì mỗi lúc cũng chỉ xem được một mã.
     const newest = wanted.at(-1);
@@ -1242,6 +1245,25 @@ export async function run(token, {
     // người mở trang chi tiết sẽ muốn xem.
     studyFor(live, symbol);
 
+    fetchFor(live, symbol);
+
+    // Đẩy ngay chứ không đợi nhịp sau: trang đã vẽ khung trang chi tiết bằng thứ nó có sẵn, và phần
+    // còn trống chỉ đầy lên khi gói tới. Ba giây nhìn một trang nửa vời là ba giây quá dài.
+    live.pushed = null;
+    await pushBoards({ stale: true });
+  }
+
+  /**
+   * Đi lấy mọi thứ cho một mã: hồ sơ, mười phiên, khối ngoại. Gọi bao nhiêu lần cũng được — mỗi
+   * nguồn tự biết nó đã có hay đang trên đường.
+   *
+   * Gọi từ **cả hai** chỗ: lúc có người bấm mở, và lúc dựng gói. Chỗ thứ hai mới là chỗ quan trọng.
+   * Một mã lọt vào gói mà không ai đi lấy dữ liệu cho nó — chuyện xảy ra khi trang báo chỗ ngồi còn
+   * lời "mở mã" đi trước bị rơi — sẽ ra `f: 0`, mà `f: 0` nghĩa là "nguồn nói mã này không có hồ
+   * sơ". Đó là một câu trả lời **dứt khoát**, nên trang thôi hỏi lại và ngồi mãi với một trang trống,
+   * không có gì báo là nó đang đợi vô ích. Thứ gì đã nằm trong gói thì phải có người đi lấy cho nó.
+   */
+  function fetchFor(live, symbol) {
     // Hồ sơ hỏi một lần rồi nhớ. `null` cũng là một câu trả lời — "nguồn không có mã này" — và nó
     // được nhớ y như một hồ sơ thật, nếu không thì mỗi lần ai bấm vào mã ấy lại là một lần gọi mạng.
     //
@@ -1290,11 +1312,6 @@ export async function run(token, {
         })
         .catch((problem) => console.error(`không đẩy được bảng: ${problem}`));
     }
-
-    // Đẩy ngay chứ không đợi nhịp sau: trang đã vẽ khung trang chi tiết bằng thứ nó có sẵn, và phần
-    // còn trống chỉ đầy lên khi gói tới. Ba giây nhìn một trang nửa vời là ba giây quá dài.
-    live.pushed = null;
-    await pushBoards({ stale: true });
   }
 
   function startPushing() {

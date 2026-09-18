@@ -1734,6 +1734,27 @@ test('mở nhiều mã thì gói không phình ra theo: chỉ mang mã còn đan
   assert.ok(pushes.every(({ state }) => Object.keys(state.d ?? {}).length <= 2));
 });
 
+test('mã vào gói bằng đường chỗ ngồi vẫn được đi lấy hồ sơ', async () => {
+  // Trang báo chỗ ngồi cũng đưa mã vào gói. Nếu không ai đi lấy dữ liệu cho nó thì gói ra `f: 0` —
+  // mà `f: 0` nghĩa là "nguồn nói mã này không có hồ sơ", một câu trả lời dứt khoát, nên trang thôi
+  // hỏi lại và ngồi mãi với một trang trống. Thứ gì đã nằm trong gói thì phải có người đi lấy cho nó.
+  // Mã phải nằm **ngoài** nhóm được hâm sẵn, nếu không thì vòng hâm nền lấy hộ và cái lỗ không lộ
+  // ra. Bảy mươi mã, và mã cuối bảng thì vòng hâm — mỗi mã cách nhau 150ms — chưa kịp tới.
+  const nhieu = Array.from({ length: 70 }, (_, i) => `M${String(i).padStart(2, '0')}`);
+  const company = stubCompany();
+  const { pushes } = await withBot(
+    // Chỉ có chỗ ngồi, **không** có lời "mở mã" — đúng cảnh lời ấy bị rơi giữa đường.
+    [update({ text: '@bocobot' }), tapped({ seat: [null, 'M69', 'all'] }, 2)],
+    { expect: 0, settle: 500, company, market: stubMarket({ listed: nhieu }) },
+  );
+
+  const detail = pushes.map(({ state }) => state.d?.M69).filter(Boolean).at(-1);
+  assert.ok(detail, 'mã ấy phải có mặt trong gói');
+  assert.equal(detail.f, 1, `phải đi lấy hồ sơ chứ không báo "không có hồ sơ" (f=${detail.f})`);
+  assert.equal(detail.n, 'Công ty Cổ phần M69');
+  assert.ok(company.calls.includes('M69'));
+});
+
 test('đóng trang chi tiết thì gói thôi mang hồ sơ mã ấy', async () => {
   // Gói đẩy đi là gói chung cả phòng. Giữ lại hồ sơ của một mã không ai còn nhìn là bắt mọi người
   // tải nó mỗi ba giây, suốt cả phiên.
