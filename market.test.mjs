@@ -17,6 +17,7 @@ import {
 } from './market/company.mjs';
 import { dailyHistory, dailyRows } from './market/chart.mjs';
 import { foreignOf, vndirectForeign } from './market/foreign.mjs';
+import { eased } from './market/heatmap.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -584,4 +585,23 @@ test('nguồn khối ngoại nhớ lại, và hỏng thì ném để bảng vẫ
 
   const broken = vndirectForeign({ fetchImpl: async () => ({ ok: false, status: 503 }) });
   await assert.rejects(() => broken.rows('VIC'), /503/);
+});
+
+test('nắn ô trong một ngành: đầu bảng nhường 10% cho đuôi, tổng diện tích không đổi', () => {
+  // Treemap chia đúng theo tiền thì vài mã đầu ngốn gần hết ô và hai phần ba số mã còn lại nhỏ tới
+  // mức không ghi nổi cái tên. Nắn lại chỉ đổi **cách vẽ**, không đổi số liệu.
+  const nhom = [900, 600, 300, 120, 60, 40, 30, 20, 10, 10].map((value, i) => ({ symbol: `M${i}`, value }));
+  const sau = eased(nhom);
+
+  const truoc = nhom.reduce((sum, one) => sum + one.value, 0);
+  assert.equal(Math.round(sau.reduce((sum, one) => sum + one.value, 0)), truoc);
+
+  // Đầu bảng là tiền tố nhỏ nhất đủ chạm 60% diện tích — ở đây là hai mã lớn nhất.
+  assert.equal(sau[0].value, 810);
+  assert.equal(sau[1].value, 540);
+  assert.ok(sau.slice(2).every((one, i) => one.value > nhom[i + 2].value), 'đuôi phải to lên');
+
+  // Ngành chỉ có một mã, hoặc toàn mã đầu bảng, thì không có ai để nhường.
+  assert.deepEqual(eased([{ symbol: 'A', value: 5 }]).map((one) => one.value), [5]);
+  assert.deepEqual(eased([{ symbol: 'A', value: 0 }, { symbol: 'B', value: 0 }]).map((one) => one.value), [0, 0]);
 });

@@ -184,6 +184,9 @@ export const BOARD_KINDS = ['up', 'down', 'flat', 'ceiling', 'floor'];
 /// Toạ độ trong gói tính bằng phần nghìn của khung, không phải pixel: trang tự đổi ra phần trăm nên
 /// cửa sổ to nhỏ thế nào bảng cũng vừa, và số nguyên thì gọn hơn số thập phân.
 const BOARD_UNITS = 1000;
+/// Nắn ô trong một ngành: phần đầu bảng chiếm chừng này diện tích, và nhường lại chừng này của nó.
+export const EASE_SHARE = 0.6;
+export const EASE_GIVE = 0.1;
 /// Bao nhiêu ô là đủ cho một bảng đang chạy. Mỗi lần đẩy là **cả bảng** — máy chủ chỉ nhớ gói cuối
 /// và ghi đè chứ không gộp, nên gửi phần vừa đổi thì người mở muộn nhận được một nhúm ô rời và
 /// không có bảng nào cả. Cả bảng thì phải gọn: 260 ô vừa trần 64 KB mà vẫn còn chỗ thở.
@@ -196,6 +199,47 @@ const BOARD_CELLS = 260;
  * riêng phần bố cục. Nhờ vậy mỗi nhịp là một gói đầy đủ (đúng thứ máy chủ nhớ được) mà màn hình
  * người xem không nhấp nháy.
  */
+
+/**
+ * Nắn lại tỉ lệ ô **trong một ngành**: đầu bảng nhường bớt cho đuôi.
+ *
+ * Một treemap chia theo tiền giao dịch thì đúng về số nhưng khó đọc: vài mã đầu ngốn gần hết ô, và
+ * hai phần ba số mã còn lại nhỏ tới mức không ghi nổi cái tên. Nên những mã lớn nhất — cộng lại vừa
+ * đủ `share` diện tích của ngành — co lại `give`, và đúng phần diện tích ấy chia cho các mã còn lại
+ * theo tỉ lệ của chính chúng.
+ *
+ * Chỉ đụng tới **cách vẽ**, không đụng tới số: `value` thật vẫn đi trong gói để trang hiện giá trị
+ * giao dịch và để xếp thứ tự. Và chỉ nắn trong từng ngành — tỉ lệ giữa các ngành với nhau vẫn là
+ * tiền thật, vì đó là thứ người ta đọc đầu tiên khi nhìn cả bảng.
+ */
+export function eased(quotes, share = EASE_SHARE, give = EASE_GIVE) {
+  const total = quotes.reduce((sum, quote) => sum + Math.max(0, quote.value), 0);
+  if (total <= 0 || quotes.length < 2) return quotes.map((quote) => ({ quote, value: quote.value }));
+
+  const sorted = [...quotes].sort((a, b) => b.value - a.value);
+  const head = new Set();
+  let big = 0;
+  for (const quote of sorted) {
+    if (big >= total * share) break;
+    head.add(quote);
+    big += Math.max(0, quote.value);
+  }
+
+  const small = total - big;
+  // Cả ngành chỉ có mấy mã đầu bảng thì không có ai để nhường: giữ nguyên.
+  if (small <= 0 || head.size === quotes.length) {
+    return quotes.map((quote) => ({ quote, value: quote.value }));
+  }
+
+  const moved = big * give;
+  return quotes.map((quote) => ({
+    quote,
+    value: head.has(quote)
+      ? quote.value * (1 - give)
+      : quote.value + (moved * Math.max(0, quote.value)) / small,
+  }));
+}
+
 export function boardState(quotes, { sectors = new Map(), at = new Date(), cells = BOARD_CELLS, help = '' } = {}) {
   const rows = quotes
     .filter((quote) => quote?.reference > 0 && quote.price > 0)
@@ -226,7 +270,7 @@ export function boardState(quotes, { sectors = new Map(), at = new Date(), cells
     const group = laid.length;
     laid.push([item.group.sector, round(inner.x), round(inner.y), round(inner.w), round(inner.h), round(header)]);
 
-    for (const tile of treemap(item.group.quotes.map((quote) => ({ quote, value: quote.value })), body)) {
+    for (const tile of treemap(eased(item.group.quotes), body)) {
       // Không chừa khe ở đây: khe của bảng sống tính bằng pixel ngay trên trang, vì một phần nghìn
       // ở khung nhỏ chỉ là nửa pixel và biến mất. Gửi nguyên ô, trang tự chừa.
       const { item: held, ...cell } = tile;
@@ -307,7 +351,7 @@ function sectorSvg(group, rect) {
   const titleSize = clamp(inner.w / 11, 11, 16);
   const title = clipped(group.sector, inner.w - 10, titleSize);
   const tiles = treemap(
-    group.quotes.map((quote) => ({ quote, value: quote.value })),
+    eased(group.quotes),
     body,
   );
 

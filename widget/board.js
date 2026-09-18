@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 16;
+  const BUILD = 17;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -71,6 +71,9 @@
   const LEAST_TITLE = 5.5;
   /// Tên nhóm cần chừng này pixel để ngón tay bấm trúng; thiếu bao nhiêu thì mượn xuống dưới bấy nhiêu.
   const TITLE_REACH = 11;
+  /// Cùng hai con số bot dùng để nắn ô trong một ngành.
+  const EASE_SHARE = 0.6;
+  const EASE_GIVE = 0.1;
   /// Sàn của bậc một dòng. Thấp hơn bậc hai dòng, vì một dòng chữ đậm trong một ô bé vẫn đọc được —
   /// nhất là trên điện thoại, nơi một pixel CSS là hai ba pixel thật.
   const LEAST_ALONE = 5.5;
@@ -293,7 +296,7 @@
     titles.length = 0;
 
     const mine = (state.c ?? []).filter((cell) => cell[7] === place);
-    for (const { one, ...box } of treemap(mine.map((cell) => ({ cell, v: cell[8] ?? 1 })), { x: 0, y: 0, w: 1000, h: 1000 })) {
+    for (const { one, ...box } of treemap(eased(mine), { x: 0, y: 0, w: 1000, h: 1000 })) {
       const [symbol, , , , , shown, kind] = one.cell;
       const drawn = tile(symbol, shown, kind);
       at(drawn, box.x, box.y, box.w, box.h, 1);
@@ -314,6 +317,36 @@
    * nhịp này có thể là ngành khác ở nhịp sau — nhớ số thì đang xem ngân hàng bỗng nhảy sang thép.
    */
   const placeOf = (state) => (state.g ?? []).findIndex((group) => group[0] === zoomed);
+
+  /**
+   * Nắn tỉ lệ ô trong một ngành: đầu bảng nhường bớt cho đuôi — **cùng luật bot dùng**.
+   *
+   * Chép lại ở đây vì bảng phóng to do trang tự chia ô, và hai cách chia khác nhau thì cùng một
+   * ngành nhìn ra hai kiểu tuỳ đang xem cả bảng hay xem riêng.
+   */
+  function eased(cells, share = EASE_SHARE, give = EASE_GIVE) {
+    const value = (cell) => Math.max(0, cell[8] ?? 1);
+    const total = cells.reduce((sum, cell) => sum + value(cell), 0);
+    if (total <= 0 || cells.length < 2) return cells.map((cell) => ({ cell, v: value(cell) || 1 }));
+
+    const sorted = [...cells].sort((a, b) => value(b) - value(a));
+    const head = new Set();
+    let big = 0;
+    for (const cell of sorted) {
+      if (big >= total * share) break;
+      head.add(cell);
+      big += value(cell);
+    }
+
+    const small = total - big;
+    if (small <= 0 || head.size === cells.length) return cells.map((cell) => ({ cell, v: value(cell) || 1 }));
+
+    const moved = big * give;
+    return cells.map((cell) => ({
+      cell,
+      v: head.has(cell) ? value(cell) * (1 - give) : value(cell) + (moved * value(cell)) / small,
+    }));
+  }
 
   /// Chia ô theo tiền giao dịch — cùng thuật toán bot dùng, để bảng phóng to nhìn ra cùng một kiểu.
   function treemap(items, rect) {
