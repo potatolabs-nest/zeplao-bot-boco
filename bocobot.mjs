@@ -143,6 +143,7 @@ export function commandsFor(me, symbols = []) {
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
     { command: 'board', description: 'Bản đồ nhiệt dạng ảnh: !board · theo ngành: !board bank, bds, oil, retail, cn' },
+    { command: 'bangdien', description: 'Tên khác của !board' },
     { command: 'vboa', description: 'Tên cũ của !board' },
     // Lệnh **luôn luôn** mở bảng sống, và chỉ mình nó được khai `opensWidget`.
     //

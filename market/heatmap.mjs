@@ -97,7 +97,7 @@ const SECTORS = {
   DBD: 'Y tế', DHG: 'Y tế', IMP: 'Y tế', TRA: 'Y tế',
 };
 
-const HEATMAP_WORDS = new Set(['board', 'vboa']);
+const HEATMAP_WORDS = new Set(['board', 'bangdien', 'vboa']);
 
 export function askedHeatmapFor(message) {
   const text = withoutPrivateFlag(message?.text ?? '').trimStart();

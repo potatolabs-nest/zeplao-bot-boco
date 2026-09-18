@@ -697,6 +697,8 @@ test('!vboa là lệnh bản đồ nhiệt, không phải mã VBOA', () => {
     filter: { key: 'bds', title: 'Bất động sản', sectors: ['Bất động sản'] },
   });
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa bank' })).filter.title, 'Bank chứng');
+  assert.deepEqual(askedHeatmapFor(message({ text: '!bangdien' })), { addressed: true });
+  assert.deepEqual(askedHeatmapFor(message({ text: '!bangdien oil' })).filter.title, 'Dầu khí');
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa oil' })).filter.title, 'Dầu khí');
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa retail' })).filter.title, 'Bán lẻ');
   assert.deepEqual(askedHeatmapFor(message({ text: '!vboa cn' })).filter.title, 'Công nghiệp');
@@ -1246,7 +1248,7 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  const chinh = ['view', 'ptkt', 'tin', 'kq', 'board', 'vboa', 'bang'];
+  const chinh = ['view', 'ptkt', 'tin', 'kq', 'board', 'bangdien', 'vboa', 'bang'];
   assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
   assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
@@ -1311,7 +1313,7 @@ test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', asyn
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'tin', 'kq', 'board', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'tin', 'kq', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -2160,7 +2162,7 @@ test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy ch�
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'board', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.
