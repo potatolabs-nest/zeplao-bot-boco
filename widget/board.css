@@ -98,8 +98,11 @@ body {
 
 /* Bấm vào tên nhóm là xem riêng nhóm ấy. Con trỏ và màu nền lúc rê chuột là hai dấu hiệu duy nhất
    nói rằng chỗ này bấm được — không có chúng thì không ai biết để thử. */
-.group > h2 { cursor: pointer; }
+/* `z-index` để tên nhóm nằm **trên** các ô: ô là con của bản đồ chứ không phải của nhóm, nên theo
+   thứ tự DOM chúng vẽ sau và nuốt mất cú chạm rơi vào vùng nới dưới đây. */
+.group > h2 { cursor: pointer; position: relative; z-index: 4; touch-action: manipulation; }
 .group > h2:hover { background: var(--line); }
+
 
 /* Nút nằm đè lên ô ở góc — bảng phóng to chiếm hết khung, không còn chỗ nào khác để đặt. Nên nó
    phải nhỏ và hơi trong: một khối đặc ở góc trông như một ô mã bị mất dữ liệu. */

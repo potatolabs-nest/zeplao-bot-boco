@@ -16,7 +16,7 @@
 (function () {
   /// Đánh số tay, tăng mỗi lần gói đổi. Phiên ghim phiên bản gói lúc được tạo, nên một cái bảng
   /// đang mở có thể là gói của hôm qua — và nhìn vào nó thì không cách nào biết.
-  const BUILD = 15;
+  const BUILD = 16;
 
   const z = window.Zeplao;
   const map = document.getElementById('map');
@@ -67,6 +67,10 @@
   let last = null;           // gói gần nhất, để vẽ lại khi đổi qua lại giữa hai cách xem
 
   const LEAST_LABEL = 7;
+  /// Sàn cỡ chữ của tên nhóm. Bé, vì thà bé mà còn đọc được khi phóng to còn hơn không có.
+  const LEAST_TITLE = 5.5;
+  /// Tên nhóm cần chừng này pixel để ngón tay bấm trúng; thiếu bao nhiêu thì mượn xuống dưới bấy nhiêu.
+  const TITLE_REACH = 11;
   /// Sàn của bậc một dòng. Thấp hơn bậc hai dòng, vì một dòng chữ đậm trong một ô bé vẫn đọc được —
   /// nhất là trên điện thoại, nơi một pixel CSS là hai ba pixel thật.
   const LEAST_ALONE = 5.5;
@@ -132,8 +136,8 @@
       map.append(box);
     }
 
-    for (const [symbol, x, y, w, h, shown, kind] of state.c ?? []) {
-      const box = tile(symbol, shown, kind);
+    for (const [symbol, x, y, w, h, shown, kind, group] of state.c ?? []) {
+      const box = tile(symbol, shown, kind, group ?? -1);
       at(box, x, y, w, h, 1);
       map.append(box);
     }
@@ -143,7 +147,7 @@
 
   /// Một ô: mã, phần trăm, màu, và bấm được để mở trang chi tiết. Cả bảng lẫn bảng phóng to đều
   /// dựng ô bằng đây, nên một ô ở hai chỗ không bao giờ khác nhau.
-  function tile(symbol, shown, kind) {
+  function tile(symbol, shown, kind, group = -1) {
     const box = document.createElement('div');
     box.className = `cell ${KINDS[kind] ?? 'flat'}`;
 
@@ -152,7 +156,24 @@
     const percent = document.createElement('span');
     percent.textContent = shown;
     box.append(name, percent);
-    box.addEventListener('click', () => open(symbol));
+    box.addEventListener('click', (event) => {
+      // Chạm sát ngay dưới dải tên nhóm thì hiểu là bấm vào tên nhóm.
+      //
+      // Trên điện thoại dải ấy chỉ cao năm sáu pixel: nhìn thì thấy, mà ngón tay bấm mười lần trúng
+      // hai. Nới vùng chạm bằng CSS không ăn — ô là con của bản đồ chứ không phải của nhóm, nên nó
+      // vẽ sau và nuốt mất cú chạm dù tên nhóm có `z-index` cao hơn. Đo bằng toạ độ thì chắc chắn.
+      if (group >= 0 && titles[group] && !titles[group].hidden) {
+        const strip = titles[group].getBoundingClientRect();
+        // Dải nới chỉ bù đúng phần còn thiếu: dải tên nhóm đã đủ dày thì không nới gì cả. Nới cố
+        // định thì trên điện thoại nó ăn mất nửa hàng ô đầu tiên, và bấm vào mã ở đó hoá ra zoom.
+        const band = Math.max(0, TITLE_REACH - strip.height);
+        if (strip.height > 0 && event.clientY <= strip.bottom + band) {
+          zoom(group);
+          return;
+        }
+      }
+      open(symbol);
+    });
 
     cells.set(symbol, { box, percent });
     return box;
@@ -211,14 +232,21 @@
       paper.chart.replaceChildren(sketch(drawn_));
     }
 
-    // Dải tên nhóm: cao đúng bằng khoảng bot đã chừa, và biến mất khi khoảng ấy hẹp quá — chữ nhỏ
-    // nhất vẫn tràn ra và đè sang nhóm bên cạnh, mà một nhóm không tên vẫn nhận ra qua các mã.
+    // Dải tên nhóm: cao đúng bằng khoảng bot đã chừa, và **luôn hiện**, dù chữ có bé.
+    //
+    // Trước đây nó biến mất khi dải hẹp dưới 9 pixel — mà trên khung điện thoại thì dải nào cũng hẹp
+    // hơn thế, nên cả bảng không còn một tên nhóm nào và không còn chỗ nào bấm để xem riêng một
+    // ngành. Giấu đi cũng chẳng dọn được chỗ: bot đã chừa sẵn dải ấy trong bố cục rồi, nên một dải
+    // trống vừa mất chữ vừa phí chỗ. Chữ bé thì phóng to lên mà đọc, còn chữ không có thì chịu.
+    //
+    // Không tràn được sang ô bên dưới: chiều cao và chiều cao dòng đều bằng đúng dải, và `overflow`
+    // trong CSS cắt phần thừa.
     for (const title of titles) {
       const strip = (Number(title.dataset.strip) / 1000) * map.clientHeight;
-      title.hidden = strip < 9;
+      title.hidden = false;
       title.style.height = `${strip}px`;
       title.style.lineHeight = `${strip}px`;
-      title.style.fontSize = `${Math.max(8, Math.min(strip * 0.62, 13))}px`;
+      title.style.fontSize = `${Math.max(LEAST_TITLE, Math.min(strip * 0.7, 13))}px`;
     }
 
     // Ba bậc, không phải hai: đủ chỗ cho hai dòng thì mã và phần trăm; không đủ hai dòng mà đủ một
