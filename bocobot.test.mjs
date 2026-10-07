@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedScreenFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedScreenFor, askedSuggestFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
   privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
@@ -25,6 +25,7 @@ import { MOST_SEGMENTS, parseResultsPeriod, resultsMessage, resultsRich, results
 import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResults } from './market/vietcap.mjs';
 import { COMPANY_VIEW } from './market/company.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
+import { MIN_MARKET_CAP, suggestions, suggestMessage, withQuote } from './market/suggest.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
 } from './market/technical.mjs';
@@ -327,6 +328,18 @@ function stubHeatmap({ broken = false, rich = null } = {}) {
   };
 }
 
+function stubSuggest({ broken = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async top(market, company) {
+      calls.push({ market, company });
+      if (broken) throw new Error('nến không trả lời');
+      return { at: new Date('2026-09-07T03:00:00Z'), scanned: 0, picks: [] };
+    },
+  };
+}
+
 function stubTechnical({ broken = false } = {}) {
   const calls = [];
   return {
@@ -473,6 +486,7 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
+    suggest = stubSuggest(),
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
     history = stubHistory(), foreign = stubForeign(), screens = stubScreens(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
@@ -493,6 +507,7 @@ async function withBot(
     chart,
     heatmap,
     technical,
+    suggest,
     results,
     company,
     history,
@@ -1310,7 +1325,7 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  const chinh = ['view', 'ptkt', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
+  const chinh = ['view', 'ptkt', 'sugg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
   assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
   assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
@@ -1375,7 +1390,7 @@ test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', asyn
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'sugg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -2236,7 +2251,7 @@ test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy ch�
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.
@@ -2246,4 +2261,101 @@ test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao
   // hạng hỏng là im cho tới lần sau. Danh sách của lần chạy trước vẫn phục vụ được trong lúc đợi.
   assert.equal(declares.length, 1);
   assert.ok(declares[0].includes('vic'), 'lần khai báo duy nhất phải có mã, không phải danh sách trống');
+});
+
+// ---- !sugg ---------------------------------------------------------------------------------------
+
+test('!sugg đọc được, kể cả có chữ thừa phía sau; chữ khác thì không', () => {
+  assert.deepEqual(askedSuggestFor(message({ text: '!sugg' })), { addressed: true });
+  assert.deepEqual(askedSuggestFor(message({ text: '!SUGG hôm nay' })), { addressed: true });
+  assert.equal(askedSuggestFor(message({ text: '!suggest' })), null);
+  assert.equal(askedSuggestFor(message({ text: 'sugg' })), null);
+});
+
+test('/sugg trả lời một tin, đi qua đúng nguồn giá và nguồn hồ sơ của bot', async () => {
+  const suggest = stubSuggest();
+  const { sent } = await withBot([update({ text: '/sugg', command: 'sugg', commandArgs: null, commandPrefix: '/' })], { suggest });
+  assert.equal(suggest.calls.length, 1);
+  assert.ok(suggest.calls[0].company?.profile);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /^MÃ ĐÁNG MUA · .+ · quét 0 mã\nChưa có mã/);
+});
+
+test('nguồn nến chết khi !sugg thì nói ra', async () => {
+  const { sent } = await withBot([update({ text: '!sugg' })], { suggest: stubSuggest({ broken: true }) });
+  assert.equal(sent[0].text, SORRY.source);
+});
+
+/// Tăng, và phiên cuối vừa chỉnh về sát vùng mua — mua được ngay chứ không phải mua đuổi.
+const BUYABLE = candles(260, (i) => 20 * 1.004 ** i * (1 + 0.02 * Math.sin((i + 1) / 3)));
+
+function suggestWorld({ caps = {}, ceiling = [], deadCompany = false } = {}) {
+  const series = { VNINDEX: INDEX_ROWS, AAA: BUYABLE, BBB: BUYABLE, CCC: BUYABLE, DDD: FALLING, EEE: RISING };
+  const asked = [];
+  const market = {
+    async universe() { return [...Object.keys(series), 'E1VFVN30']; },
+    async quotes(symbols) {
+      return symbols.filter((symbol) => series[symbol]).map((symbol) => {
+        const close = series[symbol].at(-1).close;
+        return normalize({
+          sym: symbol, r: close, c: ceiling.includes(symbol) ? close : close * 1.07, f: close * 0.93,
+          lastPrice: close, lot: 1000,
+        });
+      });
+    },
+  };
+  const company = {
+    async profile(symbol) {
+      if (deadCompany) throw new Error('Vietcap trả lời 503');
+      return { symbol, marketCap: caps[symbol] ?? null };
+    },
+  };
+  const daily = async (symbol) => {
+    asked.push(symbol);
+    return series[symbol] ?? [];
+  };
+  return { market, company, asked, suggest: suggestions({ daily, now: () => SATURDAY.getTime() }) };
+}
+
+test('!sugg chỉ đưa mã tích cực, vốn hoá từ 1.000 tỷ, không đứng giá trần — chứng chỉ quỹ thì không quét', async () => {
+  const world = suggestWorld({
+    caps: { AAA: 5000e9, BBB: MIN_MARKET_CAP - 1, CCC: 2000e9, DDD: 9000e9, EEE: 9000e9 },
+    ceiling: ['CCC'],
+  });
+  const { picks, scanned } = await world.suggest.top(world.market, world.company);
+  // BBB nhỏ, CCC đứng trần, DDD giảm, EEE tăng nhưng đã chạy xa vùng mua.
+  assert.deepEqual(picks.map((pick) => pick.symbol), ['AAA']);
+  assert.equal(scanned, 5);
+  assert.ok(!world.asked.includes('E1VFVN30'));
+
+  const text = suggestMessage({ at: SATURDAY, scanned, picks });
+  assert.match(text, /^TOP 1 MÃ ĐÁNG MUA · /);
+  assert.match(text, /\n1\. AAA .+ · vốn hoá 5\.000 tỷ · tin cậy /);
+  assert.match(text, /\n   Mua .+ · chốt .+ · cắt lỗ .+ · R:R /);
+  assert.match(text, /không phải khuyến nghị đầu tư/);
+});
+
+test('!sugg mã không rõ vốn hoá thì bỏ, nguồn hồ sơ chết hẳn thì báo lỗi chứ không trả danh sách rỗng', async () => {
+  const unknown = suggestWorld();
+  assert.deepEqual((await unknown.suggest.top(unknown.market, unknown.company)).picks, []);
+
+  const dead = suggestWorld({ deadCompany: true });
+  await assert.rejects(dead.suggest.top(dead.market, dead.company), /vốn hoá/);
+});
+
+test('!sugg hỏi lại trong hai phút thì dùng lại lần quét trước, không quét lại cả sàn', async () => {
+  const world = suggestWorld({ caps: { AAA: 5000e9 } });
+  await Promise.all([world.suggest.top(world.market, world.company), world.suggest.top(world.market, world.company)]);
+  await world.suggest.top(world.market, world.company);
+  assert.equal(world.asked.filter((symbol) => symbol === 'AAA').length, 1);
+});
+
+test('!sugg trong phiên nối cây nến hôm nay từ bảng giá; ngoài phiên thì không đụng', () => {
+  const rows = candles(40, () => 10);
+  const quote = normalize({ sym: 'AAA', r: 10, c: 10.7, f: 9.3, lastPrice: 10.5, lot: 100, openPrice: '10', highPrice: '10.6', lowPrice: '9.9' });
+  const monday = new Date('2026-09-14T03:00:00Z');
+  const joined = withQuote(rows, quote, monday);
+  assert.equal(joined.length, 41);
+  assert.deepEqual([joined.at(-1).open, joined.at(-1).high, joined.at(-1).low, joined.at(-1).close], [10, 10.6, 9.9, 10.5]);
+  assert.equal(withQuote(rows, quote, SATURDAY), rows);
 });

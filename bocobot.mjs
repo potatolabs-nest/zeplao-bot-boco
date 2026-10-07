@@ -46,6 +46,7 @@ import { vndirectSectors } from './market/sectors.mjs';
 import { vndirectForeign } from './market/foreign.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { marketScreens } from './market/screens.mjs';
+import { suggestMessage, suggestions } from './market/suggest.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
 import {
@@ -141,6 +142,7 @@ export function commandsFor(me, symbols = []) {
   const base = [
     { command: PRICE_COMMAND, description: 'Giá mọi mã: /view vic cho cả nhóm, !view vic chỉ bạn thấy' },
     { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
+    { command: 'sugg', description: 'Quét cả sàn, 10 mã đáng mua nhất lúc này theo PTKT: !sugg' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
     { command: 'manh', description: 'Mã dẫn dắt và điểm mua swing trong VN30 + VNMID: !manh, !manh hientai' },
@@ -220,6 +222,7 @@ export const HELP = [
   '/view xyz hoặc !view xyz — dùng được cho mọi mã, kể cả mã không có sẵn lệnh riêng',
   '!tin vic — 5 tin gần nhất về VIC',
   '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
+  '!sugg — quét cả sàn, 10 mã đáng mua nhất lúc này theo PTKT, kèm lý do',
   '!kq vic — cơ cấu doanh thu, lợi nhuận quý gần nhất; !kq vic q2, !kq vic 2025',
   '',
   'Lọc cả rổ (thêm chữ hientai để chấm cả phiên đang chạy):',
@@ -546,6 +549,14 @@ export function askedScreenFor(message) {
   return { addressed: true, kind: SCREENS[command], live, sector: rest };
 }
 
+/// `!sugg` — mười mã đáng mua nhất lúc này. Không tham số; chữ thừa phía sau thì bỏ qua, vì không
+/// có cách đọc nào khác cho người đã gõ `!sugg`.
+export function askedSuggestFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+  return /^sugg(\s|$)/i.test(text.slice(CALL.length).trim()) ? { addressed: true } : null;
+}
+
 /**
  * `!gex 1n` vẫn là hỏi giá GEX, nhưng chart đi kèm dùng khung 1 năm.
  *
@@ -589,6 +600,7 @@ export async function run(token, {
   heatmap = marketHeatmap({ at, sectors }),
   board = { tickMs: BOARD_TICK_MS, idleMs: BOARD_IDLE_MS },
   technical = technicalAnalysis(),
+  suggest = suggestions(),
   results = vietcapResults(),
   company = vietcapCompany(),
   history = dailyHistory(),
@@ -1572,6 +1584,17 @@ export async function run(token, {
         // Lần đầu là vài trăm lượt hỏi nến, có khi mươi giây; những lần sau trong nửa giờ là tức thì.
         const text = await screens[screenAsked.kind]({ live: screenAsked.live, sector: screenAsked.sector });
         await say(message.conversationId, text, replyTo, onlyForUserId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
+      }
+      return;
+    }
+
+    if (!message.priceOnly && askedSuggestFor(message)) {
+      try {
+        // Quét cả sàn mất vài giây; kết quả được nhớ hai phút nên người hỏi sau không phải đợi.
+        await say(message.conversationId, suggestMessage(await suggest.top(market, company)), replyTo, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);

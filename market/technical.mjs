@@ -42,8 +42,10 @@ const one = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
 /// Bao nhiêu phiên gửi kèm cho trang vẽ chart — chừng ba tháng giao dịch.
 const CARD_SESSIONS = 60;
 
-export function technicalAnalysis({ base = CHART, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now() } = {}) {
-  async function daily(symbol) {
+/// Khoảng 300 nến ngày của một mã — đủ cho mọi bước của bài phân tích. Dùng chung cho `!ptkt` và
+/// cho `!sugg`, nơi cùng hàm này chạy cho cả sàn.
+export function dailyCandles({ base = CHART, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now() } = {}) {
+  return async function daily(symbol) {
     const to = Math.floor(now() / 1000);
     const from = to - LOOKBACK_DAYS * 24 * 60 * 60;
     const url = `${base}/${kindOf(symbol)}?from=${from}&to=${to}&symbol=${symbol}&resolution=1D`;
@@ -53,7 +55,11 @@ export function technicalAnalysis({ base = CHART, fetchImpl = fetch, timeout = T
     if (response.status >= 400 && response.status < 500) return [];
     if (!response.ok) throw new Error(`nến ${symbol} trả lời ${response.status}`);
     return rowsFrom(await response.json());
-  }
+  };
+}
+
+export function technicalAnalysis({ base = CHART, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now() } = {}) {
+  const daily = dailyCandles({ base, fetchImpl, timeout, now });
 
   /// Nến 5 phút gần nhất. Chỉ để dựng cây nến của phiên đang chạy, nên hỏng thì coi như không có.
   async function intraday(symbol) {

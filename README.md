@@ -24,6 +24,7 @@ dài đúng một dòng.
 | `!manh`, `!manh hientai` | Mã dẫn dắt trong VN30 + VNMID, kèm điểm vào và cắt lỗ |
 | `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
+| `/sugg`, `!sugg` | Quét cả sàn, 10 mã đáng mua nhất lúc gõ theo PTKT, mỗi mã kèm lý do ngắn và điểm mua / chốt / cắt lỗ |
 | `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
 
@@ -53,6 +54,14 @@ chiều nhau tới đâu thì độ tin cậy **cao / trung bình / thấp** t�
 khoản mỏng luôn kéo về thấp. Điểm mua, chốt lời, cắt lỗ đặt theo hỗ trợ/kháng cự từ đỉnh đáy 120
 phiên và ATR(14). Không có mô hình ngôn ngữ nào: cùng dữ liệu thì ra cùng nhận định, và đây là tín
 hiệu tự động, không phải khuyến nghị.
+
+`!sugg` chạy đúng bài phân tích ấy cho **mọi cổ phiếu có khớp lệnh trong phiên** (chừng 800 mã,
+vài giây), nên mã nào nó đưa ra thì `!ptkt` mã ấy ra cùng đánh giá. Được vào danh sách khi: đánh
+giá tích cực với tin cậy từ trung bình trở lên; vốn hoá từ 1.000 tỷ (Vietcap; không rõ vốn hoá thì
+loại); giá trị giao dịch bình quân 20 phiên từ 3 tỷ; không đứng giá trần; giá chưa chạy quá vùng
+mua 5% và lời/lỗ tính từ giá hiện tại từ 1 trở lên — để "mua lúc này" là mua được, không phải mua
+đuổi. Xếp theo điểm, rồi độ tin cậy, rồi lời/lỗ. Kết quả nhớ hai phút; ít hơn mười mã đạt thì đưa
+ít hơn, không lấp bằng mã bình thường.
 
 Kỳ hạn chart nhận từ `1d` tới tối đa `20y`: `d` là ngày, `m` là tháng, `y` là năm. Chữ `n` vẫn
 được hiểu là năm, nên `!gex 5n` và `!gex 5y` đều chạy.
@@ -283,6 +292,7 @@ phải chỗ để cắt cho nhanh.
 | `market/vps.mjs` | Nguồn 1 — feed công khai, kèm bộ nhớ vài giây |
 | `market/dnse.mjs` | Nguồn 2 và 3 — nến ngày, và tầng có khoá |
 | `market/chain.mjs` | Xếp các nguồn thành một hàng |
+| `market/suggest.mjs` | Quét cả sàn cho `!sugg`: lọc, xếp hạng, câu chữ |
 | `market/symbols.mjs` | Cái sàng: cái gì là mã, cái gì là lệnh của bot bên cạnh |
 | `market/strength.mjs` | Bộ lọc `!manh`, và nến phiên đang chạy dựng từ nến 5 phút |
 | `market/rebound.mjs` | Bộ lọc `!hoiphuc` |
