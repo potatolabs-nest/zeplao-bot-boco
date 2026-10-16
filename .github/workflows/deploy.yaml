@@ -1,0 +1,52 @@
+name: image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          ZEPLAO_BOT_TOKEN: ${{ secrets.ZEPLAO_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Setup SSH private key
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          # Connect to server and deploy
+          {
+            printf 'set -euo pipefail\n'
+            printf 'cd %q\n' "$DEPLOY_PATH"
+            printf 'git pull --ff-only origin main\n'
+            printf 'export ZEPLAO_BOT_TOKEN=%q\n' "$ZEPLAO_BOT_TOKEN"
+            printf 'pm2 restart bot-boco --update-env\n'
+            printf 'pm2 status\n'
+          } | ssh \
+            -i ~/.ssh/id_ed25519 \
+            -p "${SSH_PORT:-22}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" \
+            bash -se
+
+          echo "Deployment completed successfully!"
