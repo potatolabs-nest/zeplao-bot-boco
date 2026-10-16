@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: image-${{ github.ref }}
+  group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  image:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
