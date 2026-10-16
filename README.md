@@ -76,6 +76,14 @@ là đúng, và tin nhắn phải nói ra điều đó.
   riêng thành "có thể đang bị bán ra". Mã VN30 + VNMID được ghi kèm trạng thái `!manh` / `!hoiphuc`.
   `!dongtien ngân hàng` (một phần tên ngành, có dấu hay không) kể mọi mã đủ thanh khoản của ngành.
 
+Câu trả lời là **một hình kèm chữ**, trong cùng một tin như `!ptkt`. Hình `!dongtien` là mọi ngành
+xếp hạng, mỗi ngành một thanh dài theo mức đổi tỷ trọng: đặc xanh là hút tiền, sọc cam là giao
+dịch tăng mà giá giảm, nhạt là rút tiền — ba kiểu thanh khác nhau, không chỉ khác màu. Chữ thì phải
+cắt còn vài ngành cho vừa 2000 ký tự, còn hình có đủ cả sàn. Hình `!manh` / `!hoiphuc` là lưới tối đa
+8 ô, mỗi mã một chart giá 60 phiên với vạch pivot (đứt), cắt lỗ (liền đỏ) và, với `!hoiphuc`, mức bán
+(chấm xanh) — nhìn là thấy mã nào đang sát pivot, mã nào cắt lỗ sâu. Không có mã nào để vẽ thì chỉ
+gửi chữ. `!dongtien <ngành>` là danh sách mã, chỉ có chữ.
+
 Mặc định là **bản cuối ngày**, chỉ dùng nến đã đóng. Thêm `hientai` là chấm cả cây nến của phiên đang
 chạy, khối lượng ước cả phiên theo nhịp cùng giờ 20 phiên trước; `!manh` / `!hoiphuc` khi đó in thêm
 mã nào mới lọt, mã nào rớt so với bản cuối ngày. Chưa có phiên hôm nay thì bot nói ra và trả bản
@@ -281,6 +289,7 @@ phải chỗ để cắt cho nhanh.
 | `market/flow.mjs` | Dòng tiền theo ngành cho `!dongtien` |
 | `market/pulse.mjs` | Nhịp thị trường: phiên phân phối, ngày xác nhận |
 | `market/screens.mjs` | Phần mạng của ba bộ lọc trên: đi lấy nến cả rổ, giữ lại, chờ chung |
+| `market/screens-chart.mjs` | Hình SVG của ba bộ lọc: thanh dòng tiền theo ngành, lưới chart nhỏ cho từng mã |
 | `try-*.mjs` | Chạy thử một lệnh với dữ liệu thật, không cần bot; `*-backtest.mjs` để chỉnh ngưỡng |
 
 `market/quote.mjs` không biết gì về mạng và `bocobot.mjs` không biết gì về nguồn nào đang chạy.

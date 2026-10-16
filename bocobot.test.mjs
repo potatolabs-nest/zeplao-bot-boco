@@ -432,11 +432,15 @@ function stubForeign({ broken = false } = {}) {
 
 /// Bảng ngành giả. Mặc định của `run` gọi ra VNDirect, và một bộ test gọi ra internet là một bộ
 /// test đỏ khi mất mạng.
-function stubScreens({ broken = false, long = 0 } = {}) {
+function stubScreens({ broken = false, long = 0, picture = false } = {}) {
   const calls = [];
   const answer = (name) => async (asked) => {
     calls.push({ name, ...asked });
     if (broken) throw new Error('nến không trả lời');
+    if (picture) {
+      const text = `${name.toUpperCase()} · phiên 16/10/2026`;
+      return { text, image: { fileName: `${name}-2026-10-16.svg`, svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' }, rich: { blocks: [{ type: 'paragraph', text }] } };
+    }
     if (long) return Array.from({ length: long }, (_, i) => `dòng ${i} ${'x'.repeat(40)}`).join('\n');
     return `${name.toUpperCase()}${asked.live ? ' hiện tại' : ''}${asked.sector ? ` · ${asked.sector}` : ''}`;
   };
@@ -1241,6 +1245,14 @@ test('!manh kèm mã thì nhắc cú pháp, không chấm rổ', async () => {
   assert.deepEqual(screens.calls, []);
   assert.match(sent[0].text, /^Gõ !manh hoặc !manh hientai/);
   assert.equal(askedScreenFor(message({ text: '!manhxyz' })), null);
+});
+
+test('!dongtien có hình thì hình và chữ đi cùng một tin, như !ptkt', async () => {
+  const { sent } = await withBot([update({ text: '!dongtien' })], { screens: stubScreens({ picture: true }) });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].image.fileName, 'dongtien-2026-10-16.svg');
+  assert.match(sent[0].text, /^DONGTIEN · phiên /);
+  assert.equal(sent[0].replyToMessageId, 'm1');
 });
 
 test('tin quá 2000 ký tự thì cắt ở dòng cuối còn vừa, không để máy chủ từ chối cả tin', async () => {

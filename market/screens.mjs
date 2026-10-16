@@ -16,6 +16,7 @@ import { MOST_LISTED, STATUS as STRONG, changes, screenAll, settled, strengthMes
 import { STATUS as REBOUND, reboundAll, reboundMessage } from './rebound.mjs';
 import { flowMessage, sectorFlows, stockFlow } from './flow.mjs';
 import { pulseOf } from './pulse.mjs';
+import { basketSvg, flowSvg } from './screens-chart.mjs';
 import { MOST_TEXT, money } from './quote.mjs';
 
 const TIMEOUT_MS = 10000;
@@ -109,7 +110,7 @@ export function marketScreens({
   const NO_SESSION = 'Hôm nay chưa có phiên — đây là bản cuối ngày.';
 
   /// Một bộ lọc rổ VN30 + VNMID: bản cuối ngày, hoặc bản hiện tại kèm so với bản cuối ngày.
-  function basketScreen(name, screenOf, messageOf, shown) {
+  function basketScreen(name, kind, screenOf, messageOf, shown) {
     return ({ live: wantsLive = false } = {}) => kept(`${name}:${wantsLive}`, wantsLive ? LIVE_TTL_MS : SETTLED_TTL_MS, async () => {
       const at = new Date(now());
       const { vn30, mid, groupOf } = await basket();
@@ -118,10 +119,16 @@ export function marketScreens({
       const eod = screenOf(entries, index, { at });
       // Mỗi danh sách bớt dần một mã cho tới khi vừa một tin: mã cuối danh sách là mã kém nhất.
       const listed = (report, now = null, room = 0) => fitted(name, MOST_LISTED, (limit) => messageOf(report, { groupOf, limit, now }), room);
-      if (!wantsLive) return listed(eod);
+      // Hình vẽ từ đúng những cây nến đã dùng để chấm, kể cả cây nến phiên đang chạy.
+      const pictured = (text, report, used, current = null) => {
+        const bySymbol = new Map(used.map((entry) => [entry.symbol, entry.rows]));
+        const svg = basketSvg(kind, report, (symbol) => bySymbol.get(symbol), { groupOf, now: current });
+        return withPicture(text, svg, `${name}-${report.day}${current ? '-hientai' : ''}.svg`);
+      };
+      if (!wantsLive) return pictured(listed(eod), eod, entries);
 
       const today = await live(index, entries, at);
-      if (!today) return `${NO_SESSION}\n\n${listed(eod, null, NO_SESSION.length + 2)}`;
+      if (!today) return pictured(`${NO_SESSION}\n\n${listed(eod, null, NO_SESSION.length + 2)}`, eod, entries);
       const report = screenOf(today.entries, today.index, { at: null });
       const diff = changes(eod, report, shown);
       const day = eod.day.split('-').reverse().join('/');
@@ -129,12 +136,13 @@ export function marketScreens({
       // nó dài ra đúng vào những phiên thị trường xoay mạnh.
       const head = `${listed(report, today.now)}\n\nSo với bản cuối ngày ${day}:`;
       const lines = diff.length ? diff : ['không khác gì.'];
-      return [head, ...within(lines, MOST_TEXT - head.length, (n) => `… và ${n} thay đổi nữa.`)].join('\n');
+      const text = [head, ...within(lines, MOST_TEXT - head.length, (n) => `… và ${n} thay đổi nữa.`)].join('\n');
+      return pictured(text, report, today.entries, today.now);
     });
   }
 
-  const strong = basketScreen('manh', screenAll, strengthMessage, (r) => (r.leader ? STRONG[r.status] : null));
-  const rebound = basketScreen('hoiphuc', reboundAll, reboundMessage, (r) => (r.candidate ? REBOUND[r.status] : null));
+  const strong = basketScreen('manh', 'strong', screenAll, strengthMessage, (r) => (r.leader ? STRONG[r.status] : null));
+  const rebound = basketScreen('hoiphuc', 'rebound', reboundAll, reboundMessage, (r) => (r.candidate ? REBOUND[r.status] : null));
 
   /// Dòng tiền cả HOSE, kèm trạng thái `!manh` / `!hoiphuc` của các mã VN30 + VNMID.
   function flowReport(wantsLive) {
@@ -184,7 +192,11 @@ export function marketScreens({
       const text = sector
         ? sectorMessage(report, sector, { label, options, most: MOST_TEXT - room })
         : fittedFlow((shape) => flowMessage(report, { label, now: current, pulse, ...options, ...shape }), room);
-      return lateNote ? `${lateNote}\n\n${text}` : text;
+      const said = lateNote ? `${lateNote}\n\n${text}` : text;
+      // Hình chỉ đi với bản cả sàn: `!dongtien ngân hàng` là danh sách mã, và mã thì chữ nói rõ hơn.
+      if (sector) return said;
+      const svg = flowSvg(report, { now: current, recent: options.recent ?? 5 });
+      return withPicture(said, svg, `dongtien-${report.day}${current ? '-hientai' : ''}.svg`);
     },
   };
 }
@@ -213,6 +225,15 @@ export function sectorMessage(report, asked, { label = () => '', options = {}, m
   // danh sách là mã ít đáng kể nhất — bỏ từ đó lên.
   const room = most - lines.join('\n').length - foot.join('\n').length - 1;
   return [...lines, ...within(members, room, (n) => `… và ${n} mã nữa, tiền tăng thêm ít hơn.`), ...foot].join('\n');
+}
+
+/**
+ * Chữ kèm hình, theo đúng dạng `technicalRich`: hình và chữ cùng một tin, chữ nằm trong khối rich.
+ * Không có hình (không mã nào để vẽ) thì trả nguyên chữ.
+ */
+export function withPicture(text, svg, fileName) {
+  if (!svg) return text;
+  return { text, image: { fileName, svg }, rich: { blocks: [{ type: 'paragraph', text }] } };
 }
 
 // ---- vừa một tin nhắn ---------------------------------------------------------------------------

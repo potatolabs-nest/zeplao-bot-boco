@@ -22,6 +22,7 @@ import { changes, sessionShare, withToday } from './market/strength.mjs';
 import { sectorFlows, stockFlow } from './market/flow.mjs';
 import { pulseSeries } from './market/pulse.mjs';
 import { sectorMessage } from './market/screens.mjs';
+import { basketSvg, flowSvg } from './market/screens-chart.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -724,4 +725,42 @@ test('ngành đông mã thì bớt mã cuối danh sách cho vừa một tin, v�
   const few = sectorMessage({ sectors: [{ ...report.sectors[0], members: members.slice(0, 5) }] }, 'động sản');
   assert.equal(few.split('\n').filter((line) => line.startsWith('• ')).length, 5);
   assert.doesNotMatch(few, /… và/);
+});
+
+test('hình !dongtien: mỗi ngành một thanh, ba kiểu thanh cho ba nhóm', () => {
+  const sector = (name, shift, ret5) => ({ name, shift, ret5, share5: 10, ratio: 1, ret20: 0, breadth: 50, members: [] });
+  const report = {
+    sectors: [sector('Ngân hàng', 4.7, 2.2), sector('Dầu khí', 0.9, -7), sector('Bất động sản & <xây>', -2, -3.2)],
+    total5: 11111e9, totalBase: 13000e9, count: 199, day: '2026-10-16',
+  };
+  const svg = flowSvg(report);
+  assert.match(svg, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+  assert.match(svg, />Ngân hàng</);
+  assert.match(svg, />Bất động sản &amp; &lt;xây&gt;</);   // tên ngành được thoát ký tự
+  assert.match(svg, /fill="url\(#sold\)"/);              // tiền vào mà giá giảm: thanh sọc
+  assert.match(svg, />\+4,7</);
+  assert.doesNotMatch(svg, /[+-]0</);                     // không có "+0" hay "-0"
+  assert.equal(flowSvg({ ...report, sectors: [] }), null);
+});
+
+test('hình !manh / !hoiphuc: mỗi mã một ô, có vạch pivot và cắt lỗ; không có mã thì không có hình', () => {
+  const rows = Array.from({ length: 80 }, (_, i) => ({ time: 1_760_000_000 + i * 86400, close: 20 + i / 10 }));
+  const strong = (symbol, status) => ({
+    symbol, status, leader: true, score: 2, rsRank: 90, close: 27.9, change: 1.2,
+    plan: { pivot: 28.5, toPivot: -2.1, entry: 28.5, stop: 26.1, risk: 8.4 },
+  });
+  const report = { results: [strong('AAA', 'setup'), strong('BBB', 'breakout'), { ...strong('CCC', 'setup'), leader: false }], day: '2026-10-16' };
+  const svg = basketSvg('strong', report, () => rows, { groupOf: () => 'VN30' });
+  // Vượt nền đứng trước vùng mua, và mã không dẫn dắt thì không vẽ.
+  assert.ok(svg.indexOf('>BBB<') < svg.indexOf('>AAA<'));
+  assert.doesNotMatch(svg, />CCC</);
+  assert.match(svg, />vượt nền</);
+  assert.match(svg, />28,5</);
+  assert.match(svg, />26,1</);
+  assert.equal(basketSvg('strong', { results: [], day: '2026-10-16' }, () => rows), null);
+
+  const candidate = { ...strong('DDD', 'setup'), candidate: true, plan: { ...strong().plan, target: 30.7, gain: 7.7, rr: 1.4 } };
+  const picture = basketSvg('rebound', { results: [candidate], day: '2026-10-16' }, () => rows);
+  assert.match(picture, />sát pivot</);
+  assert.match(picture, /bán 30,7 \(\+7,7%\)/);
 });
