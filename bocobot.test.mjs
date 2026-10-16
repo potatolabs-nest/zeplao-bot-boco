@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedScreenFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
   privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
@@ -432,6 +432,16 @@ function stubForeign({ broken = false } = {}) {
 
 /// Bảng ngành giả. Mặc định của `run` gọi ra VNDirect, và một bộ test gọi ra internet là một bộ
 /// test đỏ khi mất mạng.
+function stubScreens({ broken = false } = {}) {
+  const calls = [];
+  const answer = (name) => async (asked) => {
+    calls.push({ name, ...asked });
+    if (broken) throw new Error('nến không trả lời');
+    return `${name.toUpperCase()}${asked.live ? ' hiện tại' : ''}${asked.sector ? ` · ${asked.sector}` : ''}`;
+  };
+  return { calls, strong: answer('manh'), rebound: answer('hoiphuc'), flow: answer('dongtien') };
+}
+
 function stubSectors() {
   return { async map() { return new Map([['VIC', 'Bất động sản'], ['HPG', 'Tài nguyên']]); } };
 }
@@ -459,7 +469,7 @@ async function withBot(
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
-    history = stubHistory(), foreign = stubForeign(),
+    history = stubHistory(), foreign = stubForeign(), screens = stubScreens(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
     refuseSessions = false, quiet = false,
     // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú. Bài nào cần sàn đóng thì đưa giờ khác vào.
@@ -482,6 +492,7 @@ async function withBot(
     company,
     history,
     foreign,
+    screens,
     sectors,
     board,
     statePath,
@@ -1206,6 +1217,37 @@ test('nguồn nến chết khi !ptkt thì nói ra', async () => {
   assert.equal(sent[0].text, SORRY.source);
 });
 
+test('!manh, !hoiphuc, !dongtien chạy đúng bộ lọc, không đi tra giá mã MANH', async () => {
+  const screens = stubScreens();
+  const market = stubMarket();
+  const { sent } = await withBot([
+    update({ text: '!manh' }),
+    update({ text: '!hoiphuc hientai', messageId: 'm2' }, 2),
+    update({ text: '!dongtien hiện tại ngân hàng', messageId: 'm3' }, 3),
+  ], { screens, market, expect: 3 });
+  assert.deepEqual(screens.calls, [
+    { name: 'manh', live: false, sector: '' },
+    { name: 'hoiphuc', live: true, sector: '' },
+    { name: 'dongtien', live: true, sector: 'ngân hàng' },
+  ]);
+  assert.deepEqual(sent.map((one) => one.text), ['MANH', 'HOIPHUC hiện tại', 'DONGTIEN hiện tại · ngân hàng']);
+  assert.equal(sent[0].replyToMessageId, 'm1');
+});
+
+test('!manh kèm mã thì nhắc cú pháp, không chấm rổ', async () => {
+  const screens = stubScreens();
+  const { sent } = await withBot([update({ text: '!manh fpt' })], { screens });
+  assert.deepEqual(screens.calls, []);
+  assert.match(sent[0].text, /^Gõ !manh hoặc !manh hientai/);
+  assert.equal(askedScreenFor(message({ text: '!manhxyz' })), null);
+});
+
+test('nguồn nến chết khi !dongtien thì nói ra', async () => {
+  const { sent } = await withBot([update({ text: '!dongtien -v' })], { screens: stubScreens({ broken: true }) });
+  assert.equal(sent[0].text, SORRY.source);
+  assert.equal(sent[0].onlyForUserId, 'u1');
+});
+
 // ---- lệnh ! theo tài liệu 15/09/2026 ----------------------------------------------------------
 
 test('lệnh máy chủ đã tách thì đọc theo command và commandArgs, kể cả khi gọi @tênbot', () => {
@@ -1248,7 +1290,7 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  const chinh = ['view', 'ptkt', 'tin', 'kq', 'board', 'bangdien', 'vboa', 'bang'];
+  const chinh = ['view', 'ptkt', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
   assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
   assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
@@ -1313,7 +1355,7 @@ test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', asyn
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'tin', 'kq', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -1327,6 +1369,18 @@ test('/vic gửi cho cả nhóm, !vic chỉ người gõ thấy', async () => {
 
   const alone = await withBot([update({ text: '!vic', command: 'vic', commandArgs: null, commandPrefix: '!', private: true })]);
   assert.match(alone.sent[0].text, /^VIC 256,1/);
+  assert.equal(alone.sent[0].onlyForUserId, 'u1');
+  assert.equal(alone.sent[0].replyToMessageId, undefined);
+});
+
+test('/manh gửi cho cả nhóm, !manh hientai chỉ người gõ thấy', async () => {
+  const group = await withBot([update({ text: '/manh', command: 'manh', commandArgs: null, commandPrefix: '/' })]);
+  assert.equal(group.sent[0].text, 'MANH');
+  assert.equal(group.sent[0].onlyForUserId, undefined);
+  assert.equal(group.sent[0].replyToMessageId, 'm1');
+
+  const alone = await withBot([update({ text: '!manh hientai', command: 'manh', commandArgs: 'hientai', commandPrefix: '!', private: true })]);
+  assert.equal(alone.sent[0].text, 'MANH hiện tại');
   assert.equal(alone.sent[0].onlyForUserId, 'u1');
   assert.equal(alone.sent[0].replyToMessageId, undefined);
 });
@@ -2162,7 +2216,7 @@ test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy ch�
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.

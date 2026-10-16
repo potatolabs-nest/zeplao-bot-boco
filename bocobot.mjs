@@ -45,6 +45,7 @@ import { askedHeatmapFor, boardState, marketHeatmap } from './market/heatmap.mjs
 import { vndirectSectors } from './market/sectors.mjs';
 import { vndirectForeign } from './market/foreign.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
+import { marketScreens } from './market/screens.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
 import {
@@ -142,6 +143,9 @@ export function commandsFor(me, symbols = []) {
     { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
+    { command: 'manh', description: 'Mã dẫn dắt và điểm mua swing trong VN30 + VNMID: !manh, !manh hientai' },
+    { command: 'hoiphuc', description: 'Mã vừa xác nhận đáy trong VN30 + VNMID: !hoiphuc, !hoiphuc hientai' },
+    { command: 'dongtien', description: 'Ngành đang hút tiền trên HOSE: !dongtien, !dongtien hientai, !dongtien ngân hàng' },
     { command: 'board', description: 'Bản đồ nhiệt dạng ảnh: !board · theo ngành: !board bank, bds, oil, retail, cn' },
     { command: 'bangdien', description: 'Tên khác của !board' },
     { command: 'vboa', description: 'Tên cũ của !board' },
@@ -217,6 +221,11 @@ export const HELP = [
   '!tin vic — 5 tin gần nhất về VIC',
   '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
   '!kq vic — cơ cấu doanh thu, lợi nhuận quý gần nhất; !kq vic q2, !kq vic 2025',
+  '',
+  'Lọc cả rổ (thêm chữ hientai để chấm cả phiên đang chạy):',
+  '!manh — mã dẫn dắt, điểm mua swing trong VN30 + VNMID',
+  '!hoiphuc — mã vừa xác nhận đáy, nhịp hồi 8–10%',
+  '!dongtien — ngành nào đang hút tiền trên HOSE; !dongtien ngân hàng — từng mã của một ngành',
   '',
   'Chart theo thời gian:',
   '/gex 1d — chart trong phiên gần nhất',
@@ -504,6 +513,39 @@ export function askedTechnicalFor(message) {
   return { addressed: true, symbol: symbols[0] };
 }
 
+const SCREENS = {
+  manh: 'strong',
+  hoiphuc: 'rebound',
+  dongtien: 'flow',
+};
+/// Chữ đòi bản "hiện tại" — chấm cả cây nến của phiên đang chạy.
+const LIVE_WORDS = new Set(['hientai', 'now', 'live', '--hientai']);
+
+/**
+ * `!manh`, `!hoiphuc`, `!dongtien` — ba bộ lọc cả rổ, không nhận mã nào.
+ *
+ * Chạy trước `askedFor` vì cùng lý do với `!ptkt`: `MANH` trông như một mã. Thêm `hientai` là chấm cả
+ * phiên đang chạy; `!dongtien` nhận thêm một phần tên ngành. Chữ lạ khác thì nhắc cú pháp, chứ
+ * không lẳng lặng chấm cả rổ như thể người ta không gõ gì thêm.
+ */
+export function askedScreenFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+
+  const words = text.slice(CALL.length).trim().split(/\s+/).filter(Boolean);
+  const command = words[0]?.toLowerCase();
+  if (!Object.hasOwn(SCREENS, command)) return null;
+
+  const asked = ` ${words.slice(1).join(' ').toLowerCase()} `.replace(' hiện tại ', ' hientai ');
+  const rest = asked.trim().split(' ').filter((word) => word && !LIVE_WORDS.has(word)).join(' ');
+  const live = asked.trim().split(' ').some((word) => LIVE_WORDS.has(word));
+
+  if (rest && command !== 'dongtien') {
+    return { addressed: true, error: `Gõ !${command} hoặc !${command} hientai — lệnh này chấm cả rổ VN30 + VNMID, không nhận mã.` };
+  }
+  return { addressed: true, kind: SCREENS[command], live, sector: rest };
+}
+
 /**
  * `!gex 1n` vẫn là hỏi giá GEX, nhưng chart đi kèm dùng khung 1 năm.
  *
@@ -551,6 +593,7 @@ export async function run(token, {
   company = vietcapCompany(),
   history = dailyHistory(),
   foreign = vndirectForeign(),
+  screens = marketScreens({ sectors }),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -1511,6 +1554,24 @@ export async function run(token, {
           replyTo,
           onlyForUserId,
         );
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
+      }
+      return;
+    }
+
+    const screenAsked = !message.priceOnly && askedScreenFor(message);
+    if (screenAsked) {
+      if (screenAsked.error) {
+        await say(message.conversationId, screenAsked.error, replyTo, onlyForUserId);
+        return;
+      }
+
+      try {
+        // Lần đầu là vài trăm lượt hỏi nến, có khi mươi giây; những lần sau trong nửa giờ là tức thì.
+        const text = await screens[screenAsked.kind]({ live: screenAsked.live, sector: screenAsked.sector });
+        await say(message.conversationId, text, replyTo, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
