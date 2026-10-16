@@ -9,8 +9,6 @@ concurrency:
   group: image-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-
 jobs:
   image:
     runs-on: ubuntu-latest
