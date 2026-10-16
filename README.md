@@ -21,6 +21,9 @@ dài đúng một dòng.
 | `!tin vic` | 5 bài viết gần nhất của một mã, link được nhúng trong tiêu đề |
 | `!kq vic`, `!kq vic q2`, `!kq vic 2025` | Cơ cấu doanh thu (doanh nghiệp: bán hàng / dịch vụ / xây dựng; ngân hàng: nguồn thu nhập; chứng khoán: nghiệp vụ; bảo hiểm: phí, tài chính…) kèm % đóng góp, so cùng kỳ, DT · LNG · LNST — số liệu BCTC từ Vietcap IQ, mọi mã |
 | `!ptkt vic` | Phân tích kỹ thuật một mã: hình chart kèm chỉ báo, đánh giá, độ tin cậy, điểm mua bán |
+| `!manh`, `!manh hientai` | Mã dẫn dắt trong VN30 + VNMID, kèm điểm vào và cắt lỗ |
+| `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
+| `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
 | `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
 
@@ -53,6 +56,37 @@ hiệu tự động, không phải khuyến nghị.
 
 Kỳ hạn chart nhận từ `1d` tới tối đa `20y`: `d` là ngày, `m` là tháng, `y` là năm. Chữ `n` vẫn
 được hiểu là năm, nên `!gex 5n` và `!gex 5y` đều chạy.
+
+### Lọc cả rổ: `!manh`, `!hoiphuc`, `!dongtien`
+
+Ba lệnh này không nhận mã. Chúng chấm cả một rổ rồi trả về một tin chữ: `!manh` và `!hoiphuc` chấm
+VN30 + VNMID, `!dongtien` chấm cả HOSE. Đầu tin là bối cảnh thị trường — VN-Index so với MA20, MA50,
+và nhịp kiểu O'Neil (phiên phân phối, ngày xác nhận) — vì lúc thị trường điều chỉnh thì ít mã lọt
+là đúng, và tin nhắn phải nói ra điều đó.
+
+- **`!manh`** — ba tầng. Lọc cứng: đủ thanh khoản, ở kênh trên, gần đỉnh, nằm trong nhóm mạnh nhất
+  rổ theo sức mạnh tương đối. Chấm nền: đường RS, giữ giá khi VN-Index giảm… Điểm vào: pivot là đỉnh
+  nền; mã được xếp **vượt nền / vùng mua / đã chạy xa / nền chưa xong / nền rộng**, kèm cắt lỗ.
+- **`!hoiphuc`** — ngược lại: mã ở xa đỉnh, đã tạo đáy đo được (dưới MA200 hoặc cách đỉnh 52 tuần
+  từ 25%; đáy 60 phiên chưa bị phá; đáy sau cao hơn đáy trước; giá trên MA20 và MA20 đã quay lên).
+  Mua khi vượt pivot với khối lượng, cắt lỗ dưới đáy sau, chốt lời trước kháng cự gần nhất, không
+  quá +10%. Một mã hồi hết đường, lấy lại MA200 và về gần đỉnh, là lúc nó chuyển sang `!manh`.
+- **`!dongtien`** — thước đo là **tỷ trọng** giá trị giao dịch: ngành hút tiền là ngành có phần
+  trong GTGD 5 phiên lớn hơn phần của nó trong 60 phiên trước. Tiền vào mà giá không lên được tách
+  riêng thành "có thể đang bị bán ra". Mã VN30 + VNMID được ghi kèm trạng thái `!manh` / `!hoiphuc`.
+  `!dongtien ngân hàng` (một phần tên ngành, có dấu hay không) kể mọi mã đủ thanh khoản của ngành.
+
+Mặc định là **bản cuối ngày**, chỉ dùng nến đã đóng. Thêm `hientai` là chấm cả cây nến của phiên đang
+chạy, khối lượng ước cả phiên theo nhịp cùng giờ 20 phiên trước; `!manh` / `!hoiphuc` khi đó in thêm
+mã nào mới lọt, mã nào rớt so với bản cuối ngày. Chưa có phiên hôm nay thì bot nói ra và trả bản
+cuối ngày.
+
+Một lần chấm là vài trăm lượt hỏi nến, nên bot giữ lại: nến ngày 30 phút, dùng chung cho cả ba lệnh;
+bài đã chấm 30 phút, bản `hientai` 3 phút; hai người hỏi cùng lúc thì chờ chung một lần chấm. Ngưỡng
+nằm ở `DEFAULTS` trong `market/strength.mjs`, `market/rebound.mjs`, `market/flow.mjs`; thử với dữ liệu
+thật, không cần bot, bằng `node try-manh.mjs`, `try-hoiphuc.mjs`, `try-dongtien.mjs` (hai file đầu
+nhận `--thongke` để đếm số mã đạt từng tiêu chí), backtest bằng `try-manh-backtest.mjs`,
+`try-hoiphuc-backtest.mjs`. Đây là tín hiệu tự động, không phải khuyến nghị.
 
 ## Vì sao là dấu chấm than, không phải gạch chéo
 
@@ -97,8 +131,8 @@ bấm vào chữ, nên bot gửi hình thành một tin riêng rồi chữ ngay 
 ### Khai báo lệnh trước (từ 15/09/2026)
 
 Nền tảng giờ chỉ giao `/từ` và `!từ` cho bot **đã khai báo** `từ` bằng `setCommands`, tối đa 100
-lệnh. Bot khai báo năm lệnh chính — `view` (giá mọi mã), `ptkt`, `tin`, `vboa`, và tên của chính
-nó (hướng dẫn) — rồi lấp phần còn lại bằng các mã giao dịch nhiều tiền nhất phiên gần nhất, xếp
+lệnh. Bot khai báo các lệnh chính — `view` (giá mọi mã), `ptkt`, `tin`, `kq`, `manh`, `hoiphuc`,
+`dongtien`, `board` (và hai tên khác `bangdien`, `vboa`), `bang`, và tên của chính nó (hướng dẫn) — rồi lấp phần còn lại bằng các mã giao dịch nhiều tiền nhất phiên gần nhất, xếp
 theo giá × khối lượng lúc khởi động. Gõ `/` là gửi cho cả nhóm (`/vic`, `/ptkt vic`, `/vboa bank`),
 gõ `!` là chỉ người gõ thấy (`!vic`, `!ptkt vic`). Mã không nằm trong danh sách lệnh vẫn hỏi được
 bằng `/view xyz` hoặc `!view xyz`. Câu trả lời cho `!` là tin cho một người (`onlyForUserId`); bot đọc
@@ -242,6 +276,12 @@ phải chỗ để cắt cho nhanh.
 | `market/dnse.mjs` | Nguồn 2 và 3 — nến ngày, và tầng có khoá |
 | `market/chain.mjs` | Xếp các nguồn thành một hàng |
 | `market/symbols.mjs` | Cái sàng: cái gì là mã, cái gì là lệnh của bot bên cạnh |
+| `market/strength.mjs` | Bộ lọc `!manh`, và nến phiên đang chạy dựng từ nến 5 phút |
+| `market/rebound.mjs` | Bộ lọc `!hoiphuc` |
+| `market/flow.mjs` | Dòng tiền theo ngành cho `!dongtien` |
+| `market/pulse.mjs` | Nhịp thị trường: phiên phân phối, ngày xác nhận |
+| `market/screens.mjs` | Phần mạng của ba bộ lọc trên: đi lấy nến cả rổ, giữ lại, chờ chung |
+| `try-*.mjs` | Chạy thử một lệnh với dữ liệu thật, không cần bot; `*-backtest.mjs` để chỉnh ngưỡng |
 
 `market/quote.mjs` không biết gì về mạng và `bocobot.mjs` không biết gì về nguồn nào đang chạy.
 Đó không phải chuyện gọn gàng: một nguồn giá miễn phí là thứ có thể đổi đường dẫn hoặc biến mất

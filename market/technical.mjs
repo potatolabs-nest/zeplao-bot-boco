@@ -1011,12 +1011,12 @@ function tickOf(price) {
   return price < 10 ? 0.01 : 0.1;
 }
 
-function roundTick(price) {
+export function roundTick(price) {
   const tick = tickOf(price);
   return Number((Math.round(price / tick) * tick).toFixed(2));
 }
 
-function floorTick(price) {
+export function floorTick(price) {
   const tick = tickOf(price);
   return Number((Math.floor(price / tick + 1e-9) * tick).toFixed(2));
 }

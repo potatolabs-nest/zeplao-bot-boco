@@ -18,6 +18,9 @@ import {
 import { dailyHistory, dailyRows } from './market/chart.mjs';
 import { foreignOf, vndirectForeign } from './market/foreign.mjs';
 import { eased } from './market/heatmap.mjs';
+import { changes, sessionShare, withToday } from './market/strength.mjs';
+import { sectorFlows, stockFlow } from './market/flow.mjs';
+import { pulseSeries } from './market/pulse.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -604,4 +607,99 @@ test('nắn ô trong một ngành: đầu bảng nhường 10% cho đuôi, tổn
   // Ngành chỉ có một mã, hoặc toàn mã đầu bảng, thì không có ai để nhường.
   assert.deepEqual(eased([{ symbol: 'A', value: 5 }]).map((one) => one.value), [5]);
   assert.deepEqual(eased([{ symbol: 'A', value: 0 }, { symbol: 'B', value: 0 }]).map((one) => one.value), [0, 0]);
+});
+
+test('nến phiên đang chạy dựng từ nến 1 phút, khối lượng ước cả phiên', () => {
+  // 10:15 giờ VN = 03:15 UTC: đã qua 75 trong 255 phút giao dịch.
+  const at = new Date('2026-10-16T03:15:00Z');
+  assert.equal(Math.round(sessionShare(at) * 255), 75);
+  assert.equal(sessionShare(new Date('2026-10-16T05:00:00Z')), 150 / 255); // nghỉ trưa
+  assert.equal(sessionShare(new Date('2026-10-16T08:00:00Z')), 1);          // 15:00
+
+  const day = (iso, close) => ({ time: Date.parse(iso) / 1000, open: close, high: close, low: close, close, volume: 1000 });
+  const rows = [day('2026-10-14T02:00:00Z', 10), day('2026-10-15T02:00:00Z', 11)];
+  const minute = (iso, o, h, l, c, v) => ({ time: Date.parse(iso) / 1000, open: o, high: h, low: l, close: c, volume: v });
+  const minutes = [
+    minute('2026-10-15T07:44:00Z', 11, 11, 11, 11, 99),   // hôm qua — phải bị bỏ
+    minute('2026-10-16T02:15:00Z', 11.2, 11.5, 11.1, 11.4, 300),
+    minute('2026-10-16T03:14:00Z', 11.4, 11.6, 11.0, 11.3, 200),
+  ];
+  const { rows: out, partial } = withToday(rows, minutes, at);
+  assert.equal(out.length, 3);
+  assert.equal(partial, 75 / 255);
+  assert.deepEqual(
+    { open: out[2].open, high: out[2].high, low: out[2].low, close: out[2].close, volume: Math.round(out[2].volume) },
+    { open: 11.2, high: 11.6, low: 11.0, close: 11.3, volume: 1700 },
+  );
+
+  // Đã có nến hôm nay (nguồn nến ngày cập nhật kịp) thì thay chứ không thêm.
+  assert.equal(withToday(out, minutes, at).rows.length, 3);
+  // Hôm nay chưa khớp gì thì giữ nguyên.
+  assert.deepEqual(withToday(rows, minutes.slice(0, 1), at), { rows, partial: null, paced: false });
+
+  // Đủ 5 phiên trước thì ước theo nhịp cùng giờ: mỗi phiên khớp 400 trước 10:15 và 600 sau đó,
+  // tức tới giờ này thường đã khớp 40% — hôm nay khớp 500 thì cả phiên ước 1.250, không phải 1.700.
+  const past = ['09', '12', '13', '14', '15'].flatMap((d) => [
+    minute(`2026-10-${d}T02:15:00Z`, 11, 11, 11, 11, 400),
+    minute(`2026-10-${d}T07:00:00Z`, 11, 11, 11, 11, 600),
+  ]);
+  const paced = withToday(rows, [...past, ...minutes.slice(1)], at);
+  assert.equal(paced.paced, true);
+  assert.equal(Math.round(paced.rows.at(-1).volume), 1250);
+});
+
+test('so bản hiện tại với bản cuối ngày', () => {
+  const report = (list) => ({ results: list.map(([symbol, status]) => ({ symbol, status })) });
+  const label = (r) => r.status;
+  const before = report([['A', 'vùng mua'], ['B', 'nền rộng'], ['C', null], ['D', 'vùng mua']]);
+  const now = report([['A', 'vùng mua'], ['B', 'vượt nền'], ['C', 'vùng mua'], ['D', null]]);
+  assert.deepEqual(changes(before, now, label), ['~ B: nền rộng → vượt nền', '+ C: vùng mua', '− D: rớt khỏi vùng mua']);
+});
+
+test('dòng tiền đo bằng tỷ trọng, không bằng giá trị tuyệt đối', () => {
+  // 66 phiên: 60 phiên nền rồi 5 phiên gần nhất (cộng một phiên đầu để có giá 5 phiên trước).
+  const series = (base, recent, from, to) => Array.from({ length: 66 }, (_, i) => ({
+    time: 1_700_000_000 + i * 86400, open: 10, high: 10, low: 10,
+    close: i < 61 ? from : to,
+    volume: (i < 61 ? base : recent) / ((i < 61 ? from : to) * 1000),
+  }));
+  // Cả sàn gấp đôi: A gấp ba (hút tiền), B gấp đôi (giữ phần), C chỉ tăng 75% (bị rút dù vẫn tăng).
+  const flows = [
+    stockFlow('A1', series(2e9, 6e9, 10, 11)), stockFlow('A2', series(2e9, 6e9, 10, 11)), stockFlow('A3', series(2e9, 6e9, 10, 11)),
+    stockFlow('B1', series(2e9, 4e9, 10, 10)), stockFlow('B2', series(2e9, 4e9, 10, 10)), stockFlow('B3', series(2e9, 4e9, 10, 10)),
+    stockFlow('C1', series(8e9, 14e9, 10, 9)), stockFlow('C2', series(8e9, 14e9, 10, 9)), stockFlow('C3', series(8e9, 14e9, 10, 9)),
+  ];
+  assert.equal(Math.round(flows[0].ratio * 10) / 10, 3);
+  assert.equal(Math.round(flows[0].ret5), 10);
+
+  const { sectors } = sectorFlows(flows, (symbol) => symbol[0]);
+  assert.deepEqual(sectors.map((s) => s.name), ['A', 'B', 'C']);
+  assert.ok(sectors[0].shift > 0 && sectors[2].shift < 0, 'C giao dịch nhiều hơn mà vẫn mất tỷ trọng');
+  assert.equal(Math.round(sectors[1].shift * 10), 0);
+});
+
+test('nhịp thị trường: phân phối, nỗ lực hồi phục, ngày xác nhận', () => {
+  // Mỗi phiên: [% thay đổi, KL]. Giảm dần về đáy, hồi 3 phiên KL thấp, rồi ngày 4 tăng mạnh KL cao.
+  const steps = [
+    ...Array(10).fill([-1, 100]),
+    [-1, 120], [-1, 130],          // 2 phiên phân phối (giảm, KL cao hơn phiên trước)
+    [+0.5, 80], [+0.3, 70], [+0.2, 60], // ngày 1–3: hồi với KL thấp — chưa tính
+    [+1.5, 150],                   // ngày 4: tăng ≥ 1,2% với KL cao hơn → xác nhận
+  ];
+  let close = 1000;
+  const rows = steps.map(([change, volume], i) => {
+    const open = close;
+    close = close * (1 + change / 100);
+    return { time: 1_700_000_000 + i * 86400, open, high: Math.max(open, close), low: Math.min(open, close), close, volume };
+  });
+  const series = pulseSeries(rows);
+  assert.equal(series[11].state, 'correction');
+  assert.equal(series[11].distribution, 2);
+  assert.deepEqual(series.slice(12, 15).map((p) => [p.state, p.attemptDay]), [['attempt', 1], ['attempt', 2], ['attempt', 3]]);
+  assert.equal(series[15].state, 'confirmed');
+  assert.equal(series[15].distribution, 0, 'phân phối của đợt giảm trước không tính sang xu hướng mới');
+
+  // Cùng nhịp hồi nhưng ngày 4 tăng mà KL thấp hơn phiên trước: không xác nhận.
+  rows[15].volume = 50;
+  assert.equal(pulseSeries(rows)[15].state, 'attempt');
 });
