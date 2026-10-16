@@ -12,11 +12,11 @@ import { FEED } from './vps.mjs';
 import { CHART } from './dnse.mjs';
 import { rowsFrom } from './technical.mjs';
 import { vndirectSectors } from './sectors.mjs';
-import { STATUS as STRONG, changes, screenAll, settled, strengthMessage, withToday } from './strength.mjs';
+import { MOST_LISTED, STATUS as STRONG, changes, screenAll, settled, strengthMessage, withToday } from './strength.mjs';
 import { STATUS as REBOUND, reboundAll, reboundMessage } from './rebound.mjs';
 import { flowMessage, sectorFlows, stockFlow } from './flow.mjs';
 import { pulseOf } from './pulse.mjs';
-import { money } from './quote.mjs';
+import { MOST_TEXT, money } from './quote.mjs';
 
 const TIMEOUT_MS = 10000;
 const LOOKBACK_DAYS = 450;
@@ -116,19 +116,20 @@ export function marketScreens({
       const [index, entries] = await Promise.all([daily(INDEX, 'index'), entriesOf([...new Set([...vn30, ...mid])])]);
       if (!index.length) throw new Error('không có nến VN-Index');
       const eod = screenOf(entries, index, { at });
-      if (!wantsLive) return messageOf(eod, { groupOf });
+      // Mỗi danh sách bớt dần một mã cho tới khi vừa một tin: mã cuối danh sách là mã kém nhất.
+      const listed = (report, now = null, room = 0) => fitted(name, MOST_LISTED, (limit) => messageOf(report, { groupOf, limit, now }), room);
+      if (!wantsLive) return listed(eod);
 
       const today = await live(index, entries, at);
-      if (!today) return `${NO_SESSION}\n\n${messageOf(eod, { groupOf })}`;
+      if (!today) return `${NO_SESSION}\n\n${listed(eod, null, NO_SESSION.length + 2)}`;
       const report = screenOf(today.entries, today.index, { at: null });
       const diff = changes(eod, report, shown);
       const day = eod.day.split('-').reverse().join('/');
-      return [
-        messageOf(report, { groupOf, now: today.now }),
-        '',
-        `So với bản cuối ngày ${day}:`,
-        ...(diff.length ? diff : ['không khác gì.']),
-      ].join('\n');
+      // Phần so sánh nhường chỗ trước: danh sách mới là câu trả lời, còn "thay đổi" là phần thêm, và
+      // nó dài ra đúng vào những phiên thị trường xoay mạnh.
+      const head = `${listed(report, today.now)}\n\nSo với bản cuối ngày ${day}:`;
+      const lines = diff.length ? diff : ['không khác gì.'];
+      return [head, ...within(lines, MOST_TEXT - head.length, (n) => `… và ${n} thay đổi nữa.`)].join('\n');
     });
   }
 
@@ -179,9 +180,10 @@ export function marketScreens({
     /// `!dongtien` — ngành nào đang hút tiền trên HOSE; có `sector` thì kể mọi mã của ngành ấy.
     async flow({ live: wantsLive = false, sector = '' } = {}) {
       const { report, label, options, now: current, pulse, lateNote } = await flowReport(wantsLive);
+      const room = lateNote ? lateNote.length + 2 : 0;
       const text = sector
-        ? sectorMessage(report, sector, { label, options })
-        : flowMessage(report, { label, now: current, pulse, ...options });
+        ? sectorMessage(report, sector, { label, options, most: MOST_TEXT - room })
+        : fittedFlow((shape) => flowMessage(report, { label, now: current, pulse, ...options, ...shape }), room);
       return lateNote ? `${lateNote}\n\n${text}` : text;
     },
   };
@@ -191,7 +193,7 @@ export function marketScreens({
  * Mọi mã đủ thanh khoản của một ngành, mỗi mã một dòng. `asked` là một phần tên ngành, không dấu
  * hay có dấu đều được.
  */
-export function sectorMessage(report, asked, { label = () => '', options = {} } = {}) {
+export function sectorMessage(report, asked, { label = () => '', options = {}, most = MOST_TEXT } = {}) {
   const wanted = plain(asked);
   const sector = report.sectors.find((s) => plain(s.name).includes(wanted));
   if (!sector) return `Không có ngành nào khớp "${asked}". Các ngành: ${report.sectors.map((s) => s.name).join(', ')}.`;
@@ -202,12 +204,56 @@ export function sectorMessage(report, asked, { label = () => '', options = {} } 
     `Tỷ trọng ${fmt(sector.share5)}% (${sector.shift >= 0 ? '+' : ''}${fmt(sector.shift)} điểm) · GTGD ${fmt(sector.ratio)} lần TB60 · giá ${signed(sector.ret5)} ${period}`,
     '',
   ];
-  for (const f of sector.members) {
+  const members = sector.members.map((f) => {
     const state = label(f.symbol);
-    lines.push(`• ${f.symbol} ${money(f.close)} ${signed(f.ret5)} ${period} · ${signed(f.ret20)} 20 phiên · GTGD ${fmt(f.value5 / 1e9)} tỷ, ${fmt(f.ratio)} lần TB60${state ? ` · ${state}` : ''}`);
+    return `• ${f.symbol} ${money(f.close)} ${signed(f.ret5)} ${period} · ${signed(f.ret20)} 20 phiên · GTGD ${fmt(f.value5 / 1e9)} tỷ, ${fmt(f.ratio)} lần TB60${state ? ` · ${state}` : ''}`;
+  });
+  const foot = ['', 'Thông tin dòng tiền, chưa backtest — không phải khuyến nghị đầu tư.'];
+  // Ngành đông mã (bất động sản, xây dựng) thì quá một tin. Mã xếp theo tiền tăng thêm, nên mã cuối
+  // danh sách là mã ít đáng kể nhất — bỏ từ đó lên.
+  const room = most - lines.join('\n').length - foot.join('\n').length - 1;
+  return [...lines, ...within(members, room, (n) => `… và ${n} mã nữa, tiền tăng thêm ít hơn.`), ...foot].join('\n');
+}
+
+// ---- vừa một tin nhắn ---------------------------------------------------------------------------
+//
+// Một tin quá `MOST_TEXT` ký tự thì máy chủ từ chối cả tin. Nên đo trước khi gửi, và nếu quá thì bỏ
+// bớt theo thứ tự đáng bỏ — giống `fits` của bảng sống — rồi ghi ra log đã bỏ gì.
+
+/// Tin nhắn với danh sách dài nhất `most` mục mà vẫn vừa; bớt từng mục một, không dưới một mục.
+function fitted(name, most, build, room = 0) {
+  let text = build(most);
+  let limit = most;
+  while (text.length > MOST_TEXT - room && limit > 1) text = build(--limit);
+  if (limit < most) console.error(`!${name} quá dài, đã bớt còn ${limit} mã mỗi danh sách`);
+  return text;
+}
+
+/// `!dongtien`: bớt số mã kể tên mỗi ngành trước — ngành mới là câu trả lời — rồi mới bớt số ngành.
+function fittedFlow(build, room = 0) {
+  const shapes = [
+    { perSector: 3, limit: 4 }, { perSector: 2, limit: 4 }, { perSector: 1, limit: 4 },
+    { perSector: 1, limit: 3 }, { perSector: 0, limit: 3 }, { perSector: 0, limit: 2 },
+  ];
+  let text = '';
+  for (const shape of shapes) {
+    text = build(shape);
+    if (text.length <= MOST_TEXT - room) {
+      if (shape !== shapes[0]) console.error(`!dongtien quá dài, đã bớt còn ${shape.limit} ngành, ${shape.perSector} mã mỗi ngành`);
+      break;
+    }
   }
-  lines.push('', 'Thông tin dòng tiền, chưa backtest — không phải khuyến nghị đầu tư.');
-  return lines.join('\n');
+  return text;
+}
+
+/// Những dòng đầu của `lines` vừa trong `room` ký tự (tính cả dấu xuống dòng đứng trước mỗi dòng),
+/// kèm một dòng nói còn bao nhiêu dòng bị bỏ.
+function within(lines, room, more) {
+  const size = (list) => list.reduce((total, line) => total + line.length + 1, 0);
+  if (size(lines) <= room) return lines;
+  let kept = lines.length;
+  while (kept > 0 && size(lines.slice(0, kept)) + more(lines.length - kept).length + 1 > room) kept--;
+  return [...lines.slice(0, kept), more(lines.length - kept)];
 }
 
 /// Chữ thường, bỏ dấu, để `ngan hang` khớp với "Ngân hàng".

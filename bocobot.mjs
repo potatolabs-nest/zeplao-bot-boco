@@ -34,7 +34,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { MAX_SYMBOLS, reply, sessionNote } from './market/quote.mjs';
+import { MAX_SYMBOLS, MOST_TEXT, reply, sessionNote } from './market/quote.mjs';
 import { publicFeed, withCache } from './market/vps.mjs';
 import { dnse } from './market/dnse.mjs';
 import { chain } from './market/chain.mjs';
@@ -1653,7 +1653,7 @@ export async function run(token, {
    * không ai còn nhớ đã hỏi.
    */
   async function say(conversationId, text, replyToMessageId, onlyForUserId) {
-    const content = typeof text === 'string' ? { text } : text;
+    const content = clipped(typeof text === 'string' ? { text } : text);
     if (!content.image) return (await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId)).sent;
 
     // Chữ đi kèm hình phải đi dưới dạng rich, không phải `entities` gắn thẳng trên tin.
@@ -1678,6 +1678,23 @@ export async function run(token, {
     // Máy chủ không nhận hình thì chữ vẫn đi, kèm một dòng nói ra điều đó.
     const { image, ...words } = shaped;
     return (await sayWithTerms(conversationId, withoutPicture(words), replyToMessageId, onlyForUserId)).sent;
+  }
+
+  /**
+   * Chữ quá `MOST_TEXT` ký tự thì cắt ở dòng cuối cùng còn vừa, kèm một dòng nói ra là đã cắt.
+   *
+   * Lớp chặn cuối, không phải cách chính: câu trả lời nào có thể dài thì tự bớt danh sách cho vừa
+   * trước khi tới đây (`market/screens.mjs`). Nhưng máy chủ từ chối **cả** tin khi quá dài, và một
+   * câu trả lời mất đuôi vẫn hơn im lặng. Entity rơi vào phần bị cắt thì bỏ theo.
+   */
+  function clipped(content) {
+    if (typeof content?.text !== 'string' || content.text.length <= MOST_TEXT || content.rich || content.image) return content;
+    const note = '\n… (tin dài quá, đã cắt bớt)';
+    const end = content.text.lastIndexOf('\n', MOST_TEXT - note.length);
+    const kept = content.text.slice(0, end > 0 ? end : MOST_TEXT - note.length);
+    console.error(`tin ${content.text.length} ký tự, đã cắt còn ${kept.length}`);
+    const entities = content.entities?.filter((entity) => entity.offset + entity.length <= kept.length);
+    return { ...content, text: `${kept}${note}`, ...(content.entities ? { entities } : {}) };
   }
 
   /// Chữ trơn thành một khối rich, mang theo chú thích đã gắn sẵn. Tin không có ảnh thì không cần:

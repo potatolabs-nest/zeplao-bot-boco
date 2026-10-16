@@ -16,7 +16,7 @@ import {
   privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
-import { normalize } from './market/quote.mjs';
+import { MOST_TEXT, normalize } from './market/quote.mjs';
 import { chartRich, intradayChart, parseChartPeriod, rangeSession, withSessionData } from './market/chart.mjs';
 import { askedHeatmapFor, boardState, heatmapRich } from './market/heatmap.mjs';
 import { googleNews, MAX_NEWS_REPLY_CHARS, newsMessage } from './market/news.mjs';
@@ -432,11 +432,12 @@ function stubForeign({ broken = false } = {}) {
 
 /// Bảng ngành giả. Mặc định của `run` gọi ra VNDirect, và một bộ test gọi ra internet là một bộ
 /// test đỏ khi mất mạng.
-function stubScreens({ broken = false } = {}) {
+function stubScreens({ broken = false, long = 0 } = {}) {
   const calls = [];
   const answer = (name) => async (asked) => {
     calls.push({ name, ...asked });
     if (broken) throw new Error('nến không trả lời');
+    if (long) return Array.from({ length: long }, (_, i) => `dòng ${i} ${'x'.repeat(40)}`).join('\n');
     return `${name.toUpperCase()}${asked.live ? ' hiện tại' : ''}${asked.sector ? ` · ${asked.sector}` : ''}`;
   };
   return { calls, strong: answer('manh'), rebound: answer('hoiphuc'), flow: answer('dongtien') };
@@ -1240,6 +1241,13 @@ test('!manh kèm mã thì nhắc cú pháp, không chấm rổ', async () => {
   assert.deepEqual(screens.calls, []);
   assert.match(sent[0].text, /^Gõ !manh hoặc !manh hientai/);
   assert.equal(askedScreenFor(message({ text: '!manhxyz' })), null);
+});
+
+test('tin quá 2000 ký tự thì cắt ở dòng cuối còn vừa, không để máy chủ từ chối cả tin', async () => {
+  const { sent } = await withBot([update({ text: '!dongtien' })], { screens: stubScreens({ long: 100 }) });
+  assert.ok(sent[0].text.length <= MOST_TEXT, `${sent[0].text.length} ký tự`);
+  assert.match(sent[0].text, /^dòng 0 /);
+  assert.match(sent[0].text, /x\n… \(tin dài quá, đã cắt bớt\)$/);
 });
 
 test('nguồn nến chết khi !dongtien thì nói ra', async () => {

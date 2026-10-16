@@ -14,7 +14,11 @@
  */
 export const SHARES_PER_LOT = 10;
 
-/// Nhiều nhất bao nhiêu mã một lần hỏi. Một tin nhắn tối đa 2000 ký tự, và mười dòng đã là
+/// Một tin nhắn dài nhất chừng này ký tự (đơn vị UTF-16, đúng thứ `String.length` đếm). Dài hơn
+/// thì máy chủ từ chối cả tin, và người hỏi không nhận được gì.
+export const MOST_TEXT = 2000;
+
+/// Nhiều nhất bao nhiêu mã một lần hỏi. Một tin nhắn tối đa `MOST_TEXT` ký tự, và mười dòng đã là
 /// nhiều hơn thứ ai đó đọc được trong một nhóm đang nói chuyện.
 export const MAX_SYMBOLS = 10;
 

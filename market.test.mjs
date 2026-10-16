@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  normalize, line, missing, reply, money, count, sessionNote, SHARES_PER_LOT,
+  normalize, line, missing, reply, money, count, sessionNote, SHARES_PER_LOT, MOST_TEXT,
 } from './market/quote.mjs';
 import { withCache } from './market/vps.mjs';
 import { looksLikeCode, tokensIn, makeGuard } from './market/symbols.mjs';
@@ -21,6 +21,7 @@ import { eased } from './market/heatmap.mjs';
 import { changes, sessionShare, withToday } from './market/strength.mjs';
 import { sectorFlows, stockFlow } from './market/flow.mjs';
 import { pulseSeries } from './market/pulse.mjs';
+import { sectorMessage } from './market/screens.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -702,4 +703,25 @@ test('nhịp thị trường: phân phối, nỗ lực hồi phục, ngày xác 
   // Cùng nhịp hồi nhưng ngày 4 tăng mà KL thấp hơn phiên trước: không xác nhận.
   rows[15].volume = 50;
   assert.equal(pulseSeries(rows)[15].state, 'attempt');
+});
+
+test('ngành đông mã thì bớt mã cuối danh sách cho vừa một tin, và nói còn bao nhiêu mã', () => {
+  const members = Array.from({ length: 60 }, (_, i) => ({
+    symbol: `M${String(i).padStart(2, '0')}`, close: 12.3, ret5: 1.5, ret20: -2.25, value5: 25e9, ratio: 1.4,
+  }));
+  const report = { sectors: [{ name: 'Bất động sản', share5: 12.5, shift: 1.2, ratio: 1.3, ret5: 2.1, members }] };
+
+  const text = sectorMessage(report, 'bat dong san');
+  assert.ok(text.length <= MOST_TEXT, `${text.length} ký tự`);
+  assert.match(text, /^Bất động sản\n/);
+  assert.match(text, /\n• M00 /);
+  const shown = text.split('\n').filter((line) => line.startsWith('• ')).length;
+  assert.ok(shown > 0 && shown < 60);
+  assert.match(text, new RegExp(`\n… và ${60 - shown} mã nữa, tiền tăng thêm ít hơn\.\n`));
+  assert.match(text, /không phải khuyến nghị đầu tư\.$/);
+
+  // Ngành ít mã thì giữ đủ, không có dòng "… và".
+  const few = sectorMessage({ sectors: [{ ...report.sectors[0], members: members.slice(0, 5) }] }, 'động sản');
+  assert.equal(few.split('\n').filter((line) => line.startsWith('• ')).length, 5);
+  assert.doesNotMatch(few, /… và/);
 });
