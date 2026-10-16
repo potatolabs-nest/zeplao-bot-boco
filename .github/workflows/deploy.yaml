@@ -1,4 +1,4 @@
-name: image
+name: deploy
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
             printf 'pm2 restart bot-boco --update-env\n'
             printf 'pm2 status\n'
           } | ssh \
-            -i ~/.ssh/id_ed25519 \
+            -i ~/.ssh/id_rsa \
             -p "${SSH_PORT:-22}" \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
