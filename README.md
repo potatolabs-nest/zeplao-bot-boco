@@ -24,6 +24,7 @@ dài đúng một dòng.
 | `!manh`, `!manh hientai` | Mã dẫn dắt trong VN30 + VNMID, kèm điểm vào và cắt lỗ |
 | `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
+| `/liqu`, `/thanhkhoan` | Chart thanh khoản VN-Index cộng dồn trong phiên, so với cùng giờ phiên trước — số liệu nến phút của Vietcap |
 | `/sugg`, `!sugg` | Quét cả sàn, 10 mã đáng mua nhất lúc gõ theo PTKT, mỗi mã kèm lý do ngắn và điểm mua / chốt / cắt lỗ |
 | `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
@@ -292,6 +293,7 @@ phải chỗ để cắt cho nhanh.
 | `market/vps.mjs` | Nguồn 1 — feed công khai, kèm bộ nhớ vài giây |
 | `market/dnse.mjs` | Nguồn 2 và 3 — nến ngày, và tầng có khoá |
 | `market/chain.mjs` | Xếp các nguồn thành một hàng |
+| `market/liquidity.mjs` | Thanh khoản VN-Index cho `!liqu`: nến phút Vietcap, so cùng giờ, chart SVG |
 | `market/suggest.mjs` | Quét cả sàn cho `!sugg`: lọc, xếp hạng, câu chữ |
 | `market/symbols.mjs` | Cái sàng: cái gì là mã, cái gì là lệnh của bot bên cạnh |
 | `market/strength.mjs` | Bộ lọc `!manh`, và nến phiên đang chạy dựng từ nến 5 phút |

@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedScreenFor, askedSuggestFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
+  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedLiquidityFor, askedScreenFor, askedSuggestFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
   privateRecipientFor, run,
   SORRY,
 } from './bocobot.mjs';
@@ -25,6 +25,7 @@ import { MOST_SEGMENTS, parseResultsPeriod, resultsMessage, resultsRich, results
 import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResults } from './market/vietcap.mjs';
 import { COMPANY_VIEW } from './market/company.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
+import { compare, liquidityRich, sessionsFrom } from './market/liquidity.mjs';
 import { MIN_MARKET_CAP, suggestions, suggestMessage, withQuote } from './market/suggest.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
@@ -328,6 +329,22 @@ function stubHeatmap({ broken = false, rich = null } = {}) {
   };
 }
 
+function stubLiquidity({ broken = false } = {}) {
+  let calls = 0;
+  return {
+    get calls() { return calls; },
+    async rich() {
+      calls += 1;
+      if (broken) throw new Error('Vietcap trả lời 503');
+      return {
+        text: 'Thanh khoản VN-Index phiên 21/10/2026 tới 14:12: 16.535 tỷ đồng',
+        image: { fileName: 'thanhkhoan-2026-10-21.svg', svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
+        rich: { blocks: [] },
+      };
+    },
+  };
+}
+
 function stubSuggest({ broken = false } = {}) {
   const calls = [];
   return {
@@ -486,7 +503,7 @@ async function withBot(
   updates,
   {
     market = stubMarket(), news = stubNews(), chart = stubChart(), heatmap = stubHeatmap(), technical = stubTechnical(),
-    suggest = stubSuggest(),
+    suggest = stubSuggest(), liquidity = stubLiquidity(),
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
     history = stubHistory(), foreign = stubForeign(), screens = stubScreens(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
@@ -508,6 +525,7 @@ async function withBot(
     heatmap,
     technical,
     suggest,
+    liquidity,
     results,
     company,
     history,
@@ -1325,7 +1343,7 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  const chinh = ['view', 'ptkt', 'sugg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
+  const chinh = ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
   assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
   assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
@@ -1390,7 +1408,7 @@ test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', asyn
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'sugg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -2251,7 +2269,7 @@ test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy ch�
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.
@@ -2358,4 +2376,49 @@ test('!sugg trong phiên nối cây nến hôm nay từ bảng giá; ngoài phi�
   assert.equal(joined.length, 41);
   assert.deepEqual([joined.at(-1).open, joined.at(-1).high, joined.at(-1).low, joined.at(-1).close], [10, 10.6, 9.9, 10.5]);
   assert.equal(withQuote(rows, quote, SATURDAY), rows);
+});
+
+// ---- !liqu ---------------------------------------------------------------------------------------
+
+test('!liqu và !thanhkhoan cùng là một lệnh; chữ khác thì không', () => {
+  assert.deepEqual(askedLiquidityFor(message({ text: '!liqu' })), { addressed: true });
+  assert.deepEqual(askedLiquidityFor(message({ text: '!ThanhKhoan' })), { addressed: true });
+  assert.equal(askedLiquidityFor(message({ text: '!liquid' })), null);
+  assert.equal(askedLiquidityFor(message({ text: 'thanhkhoan' })), null);
+});
+
+test('/thanhkhoan gửi chart kèm chữ trong một tin; nguồn chết thì nói ra', async () => {
+  const liquidity = stubLiquidity();
+  const { sent } = await withBot([update({ text: '/thanhkhoan', command: 'thanhkhoan', commandArgs: null, commandPrefix: '/' })], { liquidity });
+  assert.equal(liquidity.calls, 1);
+  assert.equal(sent[0].image.fileName, 'thanhkhoan-2026-10-21.svg');
+
+  const failed = await withBot([update({ text: '!liqu' })], { liquidity: stubLiquidity({ broken: true }) });
+  assert.match(failed.sent[0].text, /Nguồn thanh khoản đang không trả lời/);
+});
+
+test('thanh khoản so hôm nay với **cùng giờ** phiên trước, không phải với cả phiên', () => {
+  // 20/10 và 21/10, nến phút lúc 9:15, 10:00, 14:12, 14:45 giờ Việt Nam; giá trị bằng triệu đồng.
+  const at = (day, hour, minute) => String(Date.UTC(2026, 9, day, hour - 7, minute) / 1000);
+  const data = {
+    t: [at(20, 9, 15), at(20, 10, 0), at(20, 14, 12), at(20, 14, 45), at(21, 9, 15), at(21, 10, 0), at(21, 14, 12)],
+    accumulatedValue: [100e3, 3000e3, 10000e3, 13000e3, 200e3, 5000e3, 16500e3],
+  };
+  const sessions = sessionsFrom(data);
+  assert.deepEqual(sessions.map((one) => one.day), ['2026-10-20', '2026-10-21']);
+
+  const shown = compare(sessions);
+  assert.equal(shown.value, 16500e9);
+  assert.equal(shown.then, 10000e9);
+  assert.equal(shown.beforeTotal, 13000e9);
+  assert.equal(Math.round(shown.percent), 65);
+
+  const rich = liquidityRich(shown);
+  assert.match(rich.text, /^Thanh khoản VN-Index phiên 21\/10\/2026 tới 14:12: 16\.500 tỷ đồng, tăng 65,00% so với cùng giờ phiên 20\/10\/2026 \(10\.000 tỷ\)/);
+  assert.match(rich.text, /\nCả phiên 20\/10\/2026: 13\.000 tỷ$/);
+  assert.equal(rich.image.fileName, 'thanhkhoan-2026-10-21.svg');
+  assert.match(rich.image.svg, /^<svg /);
+  assert.match(rich.image.svg, /tăng \+65,00% so với hôm qua/);
+
+  assert.equal(compare(sessions.slice(-1)), null);
 });

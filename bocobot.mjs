@@ -47,6 +47,7 @@ import { vndirectForeign } from './market/foreign.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { marketScreens } from './market/screens.mjs';
 import { suggestMessage, suggestions } from './market/suggest.mjs';
+import { vietcapLiquidity } from './market/liquidity.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
 import {
@@ -143,6 +144,8 @@ export function commandsFor(me, symbols = []) {
     { command: PRICE_COMMAND, description: 'Giá mọi mã: /view vic cho cả nhóm, !view vic chỉ bạn thấy' },
     { command: 'ptkt', description: 'Phân tích kỹ thuật một mã: !ptkt vic' },
     { command: 'sugg', description: 'Quét cả sàn, 10 mã đáng mua nhất lúc này theo PTKT: !sugg' },
+    { command: 'liqu', description: 'Thanh khoản VN-Index trong phiên so với cùng giờ hôm qua, kèm chart: !liqu' },
+    { command: 'thanhkhoan', description: 'Tên khác của !liqu' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
     { command: 'manh', description: 'Mã dẫn dắt và điểm mua swing trong VN30 + VNMID: !manh, !manh hientai' },
@@ -223,6 +226,7 @@ export const HELP = [
   '!tin vic — 5 tin gần nhất về VIC',
   '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
   '!sugg — quét cả sàn, 10 mã đáng mua nhất lúc này theo PTKT, kèm lý do',
+  '!liqu hoặc !thanhkhoan — thanh khoản VN-Index trong phiên so với cùng giờ hôm qua, kèm chart',
   '!kq vic — cơ cấu doanh thu, lợi nhuận quý gần nhất; !kq vic q2, !kq vic 2025',
   '',
   'Lọc cả rổ (thêm chữ hientai để chấm cả phiên đang chạy):',
@@ -557,6 +561,13 @@ export function askedSuggestFor(message) {
   return /^sugg(\s|$)/i.test(text.slice(CALL.length).trim()) ? { addressed: true } : null;
 }
 
+/// `!liqu` hay `!thanhkhoan` — chart thanh khoản VN-Index. Không tham số, chữ thừa phía sau bỏ qua.
+export function askedLiquidityFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+  return /^(liqu|thanhkhoan)(\s|$)/i.test(text.slice(CALL.length).trim()) ? { addressed: true } : null;
+}
+
 /**
  * `!gex 1n` vẫn là hỏi giá GEX, nhưng chart đi kèm dùng khung 1 năm.
  *
@@ -601,6 +612,7 @@ export async function run(token, {
   board = { tickMs: BOARD_TICK_MS, idleMs: BOARD_IDLE_MS },
   technical = technicalAnalysis(),
   suggest = suggestions(),
+  liquidity = vietcapLiquidity(),
   results = vietcapResults(),
   company = vietcapCompany(),
   history = dailyHistory(),
@@ -1587,6 +1599,17 @@ export async function run(token, {
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
+      }
+      return;
+    }
+
+    if (!message.priceOnly && askedLiquidityFor(message)) {
+      try {
+        const rich = await liquidity.rich();
+        await say(message.conversationId, rich ?? 'Nguồn thanh khoản chưa có đủ hai phiên để so. Thử lại sau một lát.', replyTo, onlyForUserId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, 'Nguồn thanh khoản đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
       }
       return;
     }
