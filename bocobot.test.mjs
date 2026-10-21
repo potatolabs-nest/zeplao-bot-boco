@@ -26,7 +26,7 @@ import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResult
 import { COMPANY_VIEW } from './market/company.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import { compare, liquidityRich, sessionsFrom } from './market/liquidity.mjs';
-import { MIN_MARKET_CAP, suggestions, suggestMessage, withQuote } from './market/suggest.mjs';
+import { MIN_MARKET_CAP, suggestions, suggestMessage, suggestRich, withQuote } from './market/suggest.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
 } from './market/technical.mjs';
@@ -2340,7 +2340,8 @@ test('!sugg chỉ đưa mã tích cực, vốn hoá từ 1.000 tỷ, không đ�
     caps: { AAA: 5000e9, BBB: MIN_MARKET_CAP - 1, CCC: 2000e9, DDD: 9000e9, EEE: 9000e9 },
     ceiling: ['CCC'],
   });
-  const { picks, scanned } = await world.suggest.top(world.market, world.company);
+  const result = await world.suggest.top(world.market, world.company);
+  const { picks, scanned } = result;
   // BBB nhỏ, CCC đứng trần, DDD giảm, EEE tăng nhưng đã chạy xa vùng mua.
   assert.deepEqual(picks.map((pick) => pick.symbol), ['AAA']);
   assert.equal(scanned, 5);
@@ -2348,9 +2349,25 @@ test('!sugg chỉ đưa mã tích cực, vốn hoá từ 1.000 tỷ, không đ�
 
   const text = suggestMessage({ at: SATURDAY, scanned, picks });
   assert.match(text, /^TOP 1 MÃ ĐÁNG MUA · /);
-  assert.match(text, /\n1\. AAA .+ · vốn hoá 5\.000 tỷ · tin cậy /);
-  assert.match(text, /\n   Mua .+ · chốt .+ · cắt lỗ .+ · R:R /);
+  // Mỗi mã một dòng chữ; lý do, điểm và R:R nằm trên hình.
+  assert.match(text, /\n1\. AAA \S+ \S+ · mua .+ · chốt .+ · cắt lỗ \S+\n/);
   assert.match(text, /không phải khuyến nghị đầu tư/);
+
+  // Hình đặt mã được chọn cạnh phân bố điểm của mọi mã đã chấm.
+  assert.equal(result.scores.length, 5);
+  const rich = suggestRich(result);
+  assert.equal(rich.text, text);
+  assert.match(rich.image.fileName, /^sugg-\d{4}-\d{2}-\d{2}\.svg$/);
+  assert.match(rich.image.svg, /^<svg /);
+  assert.match(rich.image.svg, /thuộc nhóm [\d,]+% điểm cao nhất/);
+  assert.match(rich.image.svg, new RegExp(`điểm \\+${picks[0].score}:</tspan> AAA`));
+  assert.match(rich.image.svg, />R:R /);
+});
+
+test('!sugg không có mã nào thì chỉ gửi chữ, không vẽ một hình rỗng', () => {
+  const reply = suggestRich({ at: SATURDAY, scanned: 800, scores: [0, 1, -2], picks: [] });
+  assert.equal(typeof reply, 'string');
+  assert.match(reply, /Chưa có mã/);
 });
 
 test('!sugg mã không rõ vốn hoá thì bỏ, nguồn hồ sơ chết hẳn thì báo lỗi chứ không trả danh sách rỗng', async () => {

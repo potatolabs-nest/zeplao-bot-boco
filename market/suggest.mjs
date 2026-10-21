@@ -8,7 +8,7 @@
 // mấy luồng song song, vài giây. Mã cả phiên không ai mua bán thì không có gì để khuyến nghị mua.
 import { analyze, dailyCandles } from './technical.mjs';
 import { formatDay, tradingDay } from './chart.mjs';
-import { count, money, vietnamNow } from './quote.mjs';
+import { money, vietnamNow } from './quote.mjs';
 
 /// Bao nhiêu mã trong câu trả lời.
 export const SUGGEST_COUNT = 10;
@@ -50,6 +50,8 @@ export function suggestions({ daily = dailyCandles(), now = () => Date.now(), co
 
     const index = await daily('VNINDEX').catch(() => null);
     const picks = [];
+    // Điểm của mọi mã đã chấm, để hình đặt mười mã được chọn cạnh cả sàn.
+    const scores = [];
     let analyzed = 0;
     await pool(scanned, concurrency, async (quote) => {
       let rows;
@@ -61,11 +63,12 @@ export function suggestions({ daily = dailyCandles(), now = () => Date.now(), co
       const analysis = analyze(quote.symbol, withQuote(rows, quote, at), index, { at });
       if (!analysis) return;
       analyzed += 1;
+      scores.push(analysis.score);
       if (recommendable(analysis, quote)) picks.push(analysis);
     });
 
     picks.sort(byStrength);
-    return { at, scanned: analyzed, picks: await bigEnough(picks, company) };
+    return { at, scanned: analyzed, scores, picks: await bigEnough(picks, company) };
   }
 
   return {
@@ -169,44 +172,50 @@ async function pool(items, size, work) {
 
 // ---- câu chữ -----------------------------------------------------------------------------------
 
-/// Một tin nhắn tối đa 2.000 ký tự; chừa chỗ cho phần bao ngoài.
-export const MAX_SUGGEST_CHARS = 1900;
-
-/// Ba lý do mỗi mã, bớt dần khi tin dài quá trần.
-export function suggestMessage(result) {
-  let text = '';
-  for (let most = 3; most >= 1; most--) {
-    text = suggestText(result, most);
-    if (text.length <= MAX_SUGGEST_CHARS) break;
-  }
-  return text;
-}
-
-function suggestText({ at, scanned, picks }, most) {
-  const time = new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(at);
-  const head = `${picks.length ? `TOP ${picks.length} ` : ''}MÃ ĐÁNG MUA · ${time} ${formatDay(tradingDay(at.getTime() / 1000))} · quét ${scanned} mã`;
+/**
+ * Chữ đi kèm hình: mỗi mã một dòng, đủ để đặt lệnh mà không cần mở hình. Lý do, điểm, độ tin cậy và
+ * chỗ đứng so với cả sàn nằm trên hình — ba dòng chữ mỗi mã nhân mười là một bức tường không ai đọc.
+ */
+export function suggestMessage({ at, scanned, picks }) {
+  const head = `${picks.length ? `TOP ${picks.length} ` : ''}MÃ ĐÁNG MUA · ${stamp(at)} · quét ${scanned} mã`;
   if (!picks.length) {
     return [head, 'Chưa có mã vốn hoá từ 1.000 tỷ nào đủ tín hiệu tích cực với độ tin cậy từ trung bình trở lên. Đứng ngoài cũng là một vị thế.'].join('\n');
   }
 
-  const market = picks[0].steps.find((step) => step.key === 'market');
+  const market = marketOf(picks);
   return [
     head,
     market ? market.text : null,
     '',
-    ...picks.flatMap((analysis, i) => [
-      `${i + 1}. ${analysis.symbol} ${money(analysis.close)} ${pct(analysis.change)} · vốn hoá ${count(analysis.marketCap / 1e9)} tỷ · tin cậy ${CONFIDENCE[analysis.confidence]} (+${analysis.score})`,
-      `   ${reasons(analysis, most).join(' · ')}`,
-      `   Mua ${range(analysis.plan.buy)} · chốt ${money(analysis.plan.targets[0])} · cắt lỗ ${money(analysis.plan.stop)} · R:R ${one.format(rewardNow(analysis))}`,
-    ]),
+    ...picks.map((analysis, i) => `${i + 1}. ${analysis.symbol} ${money(analysis.close)} ${pct(analysis.change)} · mua ${range(analysis.plan.buy)} · chốt ${money(analysis.plan.targets[0])} · cắt lỗ ${money(analysis.plan.stop)}`),
     '',
     'Tín hiệu tự động từ PTKT, không phải khuyến nghị đầu tư. Xem kỹ: !ptkt <mã>',
   ].filter((line) => line !== null).join('\n');
 }
 
-/// Lý do, ngắn: những bước kéo điểm lên, mỗi bước một cụm từ. Thị trường chung đã nói ở đầu tin.
+/// Tin gửi đi: hình trước, chữ ngay sau — như `!ptkt`. Không có mã nào thì chỉ chữ.
+export function suggestRich(result) {
+  const text = suggestMessage(result);
+  if (!result.picks.length) return text;
+  return {
+    text,
+    image: { fileName: `sugg-${tradingDay(result.at.getTime() / 1000)}.svg`, svg: suggestSvg(result) },
+    rich: { blocks: [{ type: 'paragraph', text }] },
+  };
+}
+
+function marketOf(picks) {
+  return picks[0]?.steps.find((step) => step.key === 'market') ?? null;
+}
+
+function stamp(at) {
+  const time = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(at);
+  return `${time} ${formatDay(tradingDay(at.getTime() / 1000))}`;
+}
+
+/// Lý do, ngắn: những bước kéo điểm lên, mỗi bước một cụm từ. Thị trường chung đã nói ở đầu hình.
 export function reasons(analysis, most = 3) {
   return analysis.steps
     .filter((step) => step.score > 0 && step.key !== 'market')
@@ -234,4 +243,169 @@ function range([from, to]) {
 function pct(value) {
   const sign = value > 0 ? '+' : value < 0 ? '-' : '';
   return `${sign}${money(Math.abs(value))}%`;
+}
+
+// ---- hình -----------------------------------------------------------------------------------------
+//
+// Hai câu hỏi, hai phần, đọc từ trên xuống:
+//
+// 1. **Mười mã này đứng ở đâu so với cả sàn?** Phân bố điểm PTKT của mọi mã đã chấm, mỗi điểm một
+//    cột. Cột có mã được chọn tô xanh và mang tên mã ngay trên đầu — nhìn là thấy chúng nằm ở đuôi
+//    phải, không phải giữa đám đông. Chiều cao theo căn bậc hai: một cột 300 mã cạnh một cột 3 mã
+//    theo thang thẳng thì cột nhỏ không còn thấy được, mà cột nhỏ chính là chỗ cần nhìn.
+// 2. **Mua mỗi mã thì được ăn bao nhiêu, mất bao nhiêu?** Mỗi mã một hàng, **chung một trục phần
+//    trăm** tính từ giá hiện tại: đỏ là quãng tới cắt lỗ, xanh là quãng tới chốt lời, dải nhạt là
+//    vùng mua. Chung trục thì so được giữa các hàng bằng mắt — thanh xanh dài, thanh đỏ ngắn là kèo
+//    đẹp, không cần đọc số.
+
+const W = 1000;
+const SCALE = 2;
+const FONT = 'system-ui, -apple-system, Segoe UI, sans-serif';
+const SURFACE = '#fcfcfb';
+const INK = '#0b0b0b';
+const SECONDARY = '#52514e';
+const MUTED = '#898781';
+const GRID = '#e1e0d9';
+const BAR = '#d6d4cc';
+const UP = '#0b6b2f';
+const UP_SOFT = '#cfe6d6';
+const DOWN = '#e0504d';
+const CAUTION = '#c8622f';
+const MOOD = { 1: UP, 0: '#76746e', '-1': CAUTION };
+
+const HEAD = 150;
+const DIST = { top: 270, bottom: 500, left: 60, right: 940 };
+const PLAN_TOP = 610;
+const ROW = 104;
+const LANE = { left: 300, right: 760 };
+
+export function suggestSvg({ at, scanned, scores = [], picks }) {
+  const height = PLAN_TOP + 70 + picks.length * ROW + 60;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W * SCALE}" height="${height * SCALE}" viewBox="0 0 ${W} ${height}" font-family="${FONT}">
+  <rect width="${W}" height="${height}" fill="${SURFACE}"/>
+  ${headerSvg(at, scanned, picks)}
+  ${distributionSvg(scores, picks, scanned)}
+  ${planSvg(picks)}
+  <text x="36" y="${height - 24}" font-size="18" fill="${MUTED}">Tín hiệu tự động từ giá và khối lượng, không phải khuyến nghị đầu tư. Xem kỹ: !ptkt &lt;mã&gt;</text>
+</svg>`;
+}
+
+function headerSvg(at, scanned, picks) {
+  const market = marketOf(picks);
+  const mood = market?.score ?? 0;
+  const label = market ? market.text.replace('Thị trường chung: ', 'Thị trường ') : '';
+  const pill = Math.round(label.length * 10.6 + 36);
+  return `<text x="36" y="66" font-size="40" font-weight="800" fill="${INK}">${picks.length} mã đáng mua nhất</text>
+  <text x="36" y="104" font-size="22" fill="${SECONDARY}">${escapeXml(stamp(at))} · chấm PTKT ${scanned} mã · vốn hoá từ 1.000 tỷ</text>
+  ${market ? `<rect x="36" y="${HEAD - 26}" width="${pill}" height="38" rx="19" fill="${MOOD[mood]}"/>
+  <text x="${36 + pill / 2}" y="${HEAD - 0}" text-anchor="middle" font-size="20" font-weight="700" fill="#ffffff">${escapeXml(label)}</text>` : ''}`;
+}
+
+function distributionSvg(scores, picks, scanned) {
+  if (!scores.length) return '';
+  const low = Math.min(...scores, ...picks.map((pick) => pick.score));
+  const high = Math.max(...scores, ...picks.map((pick) => pick.score));
+  const counts = new Map();
+  for (const score of scores) counts.set(score, (counts.get(score) ?? 0) + 1);
+  const most = Math.max(...counts.values());
+
+  const slots = high - low + 1;
+  const slot = (DIST.right - DIST.left) / slots;
+  const bar = Math.min(56, slot * 0.72);
+  const x = (score) => DIST.left + slot * (score - low + 0.5);
+  // Phần dưới cho cột, phần trên cho chú thích tên mã.
+  const floor = DIST.bottom;
+  const reach = (DIST.bottom - DIST.top) * 0.58;
+  const tall = (n) => Math.max(3, Math.sqrt(n / most) * reach);
+
+  const chosen = new Map();
+  for (const pick of picks) chosen.set(pick.score, [...(chosen.get(pick.score) ?? []), pick.symbol]);
+  const cut = Math.min(...picks.map((pick) => pick.score));
+  const above = scores.filter((score) => score >= cut).length;
+  const share = (above / scores.length) * 100;
+
+  const bars = [];
+  for (let score = low; score <= high; score++) {
+    const n = counts.get(score) ?? 0;
+    const picked = chosen.has(score);
+    const h = n ? tall(n) : 0;
+    const cx = x(score);
+    if (n) bars.push(`<rect x="${r(cx - bar / 2)}" y="${r(floor - h)}" width="${r(bar)}" height="${r(h)}" rx="3" fill="${picked ? UP : BAR}"/>`);
+    if (n && slot >= 30) bars.push(`<text x="${r(cx)}" y="${r(floor - h - 6)}" text-anchor="middle" font-size="14" fill="${picked ? UP : MUTED}">${n}</text>`);
+    bars.push(`<text x="${r(cx)}" y="${floor + 26}" text-anchor="middle" font-size="16" font-weight="${score === 0 ? 700 : 400}" fill="${picked ? UP : MUTED}">${score > 0 ? `+${score}` : score}</text>`);
+  }
+
+  // Tên mã thành chú thích ở góc trên bên phải, mỗi mức điểm một dòng. Chồng thẳng lên đầu cột thì
+  // tám mã cùng điểm là một cột chữ cao hơn cả hình.
+  const notes = [...chosen.entries()].sort(([a], [b]) => b - a).map(([score, names], i) => `<text x="${DIST.right}" y="${DIST.top + 6 + i * 26}" text-anchor="end" font-size="19" fill="${UP}"><tspan font-weight="800">điểm +${score}:</tspan> ${escapeXml(names.join(' · '))}</text>`);
+
+  return `<text x="36" y="${DIST.top - 36}" font-size="24" font-weight="700" fill="${INK}">So với cả sàn: thuộc nhóm ${one.format(share)}% điểm cao nhất</text>
+  <text x="36" y="${DIST.top - 8}" font-size="18" fill="${SECONDARY}">Mỗi cột là số mã theo điểm PTKT của ${scanned} mã · cột xanh có mã được chọn</text>
+  <line x1="${DIST.left}" y1="${floor}" x2="${DIST.right}" y2="${floor}" stroke="${GRID}" stroke-width="2"/>
+  ${bars.join('\n  ')}
+  ${notes.join('\n  ')}
+  <text x="${DIST.left}" y="${floor + 52}" font-size="16" fill="${MUTED}">← tiêu cực</text>
+  <text x="${DIST.right}" y="${floor + 52}" text-anchor="end" font-size="16" fill="${MUTED}">tích cực →</text>`;
+}
+
+function planSvg(picks) {
+  const percent = (pick, price) => ((price - pick.close) / pick.close) * 100;
+  const lowest = Math.min(-2, ...picks.map((pick) => percent(pick, pick.plan.stop)));
+  const highest = Math.max(2, ...picks.map((pick) => percent(pick, pick.plan.targets[0])));
+  const step = [1, 2, 5, 10, 20, 50].find((size) => (highest - lowest) / size <= 7) ?? 100;
+  const lo = Math.floor(lowest / step) * step;
+  const hi = Math.ceil(highest / step) * step;
+  const x = (value) => LANE.left + ((value - lo) / (hi - lo)) * (LANE.right - LANE.left);
+  const first = PLAN_TOP + 70;
+
+  const ticks = [];
+  for (let value = lo; value <= hi + 1e-9; value += step) ticks.push(value);
+  // Lưới chỉ chạy qua dải thanh của từng hàng, không cắt ngang dòng lý do.
+  const grid = ticks.map((value) => `${picks.map((_, i) => `<line x1="${r(x(value))}" y1="${first + i * ROW + 4}" x2="${r(x(value))}" y2="${first + i * ROW + 48}" stroke="${value === 0 ? SECONDARY : '#cfcdc4'}" stroke-width="${value === 0 ? 2 : 1}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/>`).join('')}
+  <text x="${r(x(value))}" y="${first - 20}" text-anchor="middle" font-size="15" fill="${value === 0 ? INK : MUTED}" font-weight="${value === 0 ? 700 : 400}">${value === 0 ? 'giá' : `${value > 0 ? '+' : ''}${value}%`}</text>`).join('\n  ');
+
+  const rows = picks.map((pick, i) => {
+    const top = first + i * ROW;
+    const mid = top + 26;
+    const stop = x(percent(pick, pick.plan.stop));
+    const target = x(percent(pick, pick.plan.targets[0]));
+    const zero = x(0);
+    const [buyLow, buyHigh] = pick.plan.buy.map((price) => x(percent(pick, price)));
+    const arrow = pick.change > 0 ? '▲' : pick.change < 0 ? '▼' : '';
+    const tone = pick.change > 0 ? UP : pick.change < 0 ? DOWN : MUTED;
+    const reward = rewardNow(pick);
+    return `<text x="36" y="${mid + 8}" font-size="20" fill="${MUTED}">${i + 1}</text>
+  <text x="68" y="${mid + 10}" font-size="30" font-weight="800" fill="${INK}">${escapeXml(pick.symbol)}</text>
+  <text x="168" y="${mid + 8}" font-size="20" font-weight="600" fill="${INK}">${money(pick.close)}</text>
+  <text x="168" y="${mid + 32}" font-size="16" fill="${tone}">${arrow}${pct(Math.abs(pick.change)).replace(/^[+-]/, '')}</text>
+  <rect x="${r(Math.min(buyLow, buyHigh) - 2)}" y="${mid - 15}" width="${r(Math.max(4, Math.abs(buyHigh - buyLow) + 4))}" height="30" rx="4" fill="${UP_SOFT}"/>
+  <rect x="${r(stop)}" y="${mid - 6}" width="${r(zero - stop)}" height="12" rx="3" fill="${DOWN}"/>
+  <rect x="${r(zero)}" y="${mid - 6}" width="${r(target - zero)}" height="12" rx="3" fill="${UP}"/>
+  <circle cx="${r(zero)}" cy="${mid}" r="7" fill="${INK}" stroke="${SURFACE}" stroke-width="2"/>
+  <text x="${r(stop)}" y="${mid + 30}" text-anchor="middle" font-size="15" fill="${DOWN}">${money(pick.plan.stop)}</text>
+  <text x="${r(target)}" y="${mid + 30}" text-anchor="middle" font-size="15" fill="${UP}">${money(pick.plan.targets[0])}</text>
+  <text x="${LANE.right + 24}" y="${mid + 2}" font-size="22" font-weight="800" fill="${reward >= 2 ? UP : INK}">R:R ${one.format(reward)}</text>
+  <text x="${LANE.right + 24}" y="${mid + 28}" font-size="16" fill="${SECONDARY}">điểm +${pick.score} · tin cậy ${CONFIDENCE[pick.confidence]}</text>
+  <text x="68" y="${top + 74}" font-size="16" fill="${SECONDARY}">${escapeXml(reasons(pick, 3).join(' · '))}</text>`;
+  }).join('\n  ');
+  const stripes = picks.map((_, i) => (i % 2 ? '' : `<rect x="20" y="${first + i * ROW - 14}" width="${W - 40}" height="${ROW}" rx="10" fill="#f3f2ee"/>`)).join('');
+
+  return `<text x="36" y="${PLAN_TOP - 8}" font-size="24" font-weight="700" fill="${INK}">Mua ở giá hiện tại: mất bao nhiêu, được bao nhiêu</text>
+  <rect x="36" y="${PLAN_TOP + 8}" width="28" height="12" rx="3" fill="${DOWN}"/>
+  <text x="72" y="${PLAN_TOP + 20}" font-size="16" fill="${SECONDARY}">tới cắt lỗ</text>
+  <rect x="166" y="${PLAN_TOP + 8}" width="28" height="12" rx="3" fill="${UP}"/>
+  <text x="202" y="${PLAN_TOP + 20}" font-size="16" fill="${SECONDARY}">tới chốt lời</text>
+  <rect x="306" y="${PLAN_TOP + 2}" width="28" height="24" rx="4" fill="${UP_SOFT}"/>
+  <text x="342" y="${PLAN_TOP + 20}" font-size="16" fill="${SECONDARY}">vùng mua</text>
+  ${stripes}
+  ${grid}
+  ${rows}`;
+}
+
+function r(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function escapeXml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

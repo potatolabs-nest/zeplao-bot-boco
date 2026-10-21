@@ -25,7 +25,7 @@ dài đúng một dòng.
 | `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
 | `/liqu`, `/thanhkhoan` | Chart thanh khoản VN-Index cộng dồn trong phiên, so với cùng giờ phiên trước — số liệu nến phút của Vietcap |
-| `/sugg`, `!sugg` | Quét cả sàn, 10 mã đáng mua nhất lúc gõ theo PTKT, mỗi mã kèm lý do ngắn và điểm mua / chốt / cắt lỗ |
+| `/sugg`, `!sugg` | Quét cả sàn, 10 mã đáng mua nhất lúc gõ theo PTKT. Hình: vị trí 10 mã trên phân bố điểm của cả sàn, và mỗi mã một thanh rủi ro / lời trên chung một trục % kèm lý do; chữ: mỗi mã một dòng mua / chốt / cắt lỗ |
 | `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
 

@@ -46,7 +46,7 @@ import { vndirectSectors } from './market/sectors.mjs';
 import { vndirectForeign } from './market/foreign.mjs';
 import { technicalAnalysis } from './market/technical.mjs';
 import { marketScreens } from './market/screens.mjs';
-import { suggestMessage, suggestions } from './market/suggest.mjs';
+import { suggestions, suggestRich } from './market/suggest.mjs';
 import { vietcapLiquidity } from './market/liquidity.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
@@ -1617,7 +1617,7 @@ export async function run(token, {
     if (!message.priceOnly && askedSuggestFor(message)) {
       try {
         // Quét cả sàn mất vài giây; kết quả được nhớ hai phút nên người hỏi sau không phải đợi.
-        await say(message.conversationId, suggestMessage(await suggest.top(market, company)), replyTo, onlyForUserId);
+        await say(message.conversationId, suggestRich(await suggest.top(market, company)), replyTo, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, SORRY.source, replyTo, onlyForUserId);
