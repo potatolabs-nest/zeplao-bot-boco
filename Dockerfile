@@ -8,7 +8,7 @@
 # Không có bước cài đặt nào, vì repo này không phụ thuộc gói nào cả: không `npm install`, không
 # `node_modules`, không lockfile để mà lệch. Cả image là Node và sáu file — nên nó dựng trong
 # vài giây và không có gì trong đó để mà cũ đi ngoài chính Node.
-FROM node:22-alpine
+FROM node:24-alpine
 
 # Chạy dưới người dùng `node` có sẵn trong image, không phải root. Một con bot là mã nói chuyện
 # với internet suốt ngày; nó không có việc gì cần tới root, và ngày nó bị lợi dụng thì cái không
