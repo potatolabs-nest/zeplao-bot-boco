@@ -12,8 +12,8 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import {
-  askedChartFor, askedFor, askedHelpFor, askedNewsFor, askedResultsFor, askedLiquidityFor, askedScreenFor, askedSuggestFor, askedTechnicalFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
-  privateRecipientFor, run,
+  askedChartFor, askedFor, askedGoldFor, askedHelpFor, askedNewsFor, askedResultsFor, askedLiquidityFor, askedScreenFor, askedSuggestFor, askedTechnicalFor, askedWorldFor, boardSymbols, canonicalMessage, commandsFor, HELP, MOST_COMMANDS,
+  privateRecipientFor, run, WORLD_COMMAND,
   SORRY,
 } from './bocobot.mjs';
 import { MOST_TEXT, normalize } from './market/quote.mjs';
@@ -26,6 +26,7 @@ import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResult
 import { COMPANY_VIEW } from './market/company.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import { compare, liquidityRich, sessionsFrom } from './market/liquidity.mjs';
+import { mihongGold, vnGold, vnGoldText, worldQuote, worldText, yahooQuotes } from './market/gold.mjs';
 import { MIN_MARKET_CAP, suggestions, suggestMessage, suggestRich, withQuote } from './market/suggest.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
@@ -345,6 +346,58 @@ function stubLiquidity({ broken = false } = {}) {
   };
 }
 
+/**
+ * Vàng trong nước giả, đúng hình Mi Hồng: một chỉ, và có cả loại chỉ thu vào.
+ *
+ * `buyingPrice`/`sellingPrice` là đồng **một chỉ** — cái bẫy của nguồn này, nên stub giữ nguyên
+ * đơn vị ấy để bài test bắt được phép nhân mười ở `vnGold`.
+ */
+function stubGold({ broken = false, rows = null } = {}) {
+  let calls = 0;
+  return {
+    get calls() { return calls; },
+    async price() {
+      calls += 1;
+      if (broken) throw new Error('Mi Hồng trả lời 503');
+      return vnGold(rows ?? [
+        {
+          code: 'SJC', buyingPrice: 14050000, sellingPrice: 14200000, dateTime: '27/10/2026 09:30',
+        },
+        {
+          code: '999', buyingPrice: 14050000, sellingPrice: 14200000, dateTime: '27/10/2026 09:30',
+        },
+        // Chỉ thu vào, không bán ra: `sellingPrice` bằng 0, và số 0 ấy không được in thành giá.
+        { code: '950', buyingPrice: 12150000, sellingPrice: 0, dateTime: '27/10/2026 09:30' },
+      ]);
+    },
+  };
+}
+
+/// XAU và DXY giả, đúng hình phản hồi Yahoo.
+function stubWorld({ broken = false } = {}) {
+  const calls = [];
+  const one = (symbol, price, reference) => worldQuote(symbol, {
+    chart: {
+      result: [{
+        meta: {
+          currency: 'USD', regularMarketTime: Date.UTC(2026, 9, 27, 4, 30) / 1000,
+        },
+        indicators: { quote: [{ close: [reference, price] }] },
+      }],
+    },
+  });
+
+  return {
+    calls,
+    async quotes(symbols) {
+      calls.push(symbols);
+      if (broken) throw new Error('Yahoo trả lời 429');
+      const made = { XAU: one('XAU', 4030.7, 4038.4), DXY: one('DXY', 102.037, 101.96) };
+      return symbols.map((symbol) => made[symbol]).filter(Boolean);
+    },
+  };
+}
+
 function stubSuggest({ broken = false } = {}) {
   const calls = [];
   return {
@@ -506,6 +559,7 @@ async function withBot(
     suggest = stubSuggest(), liquidity = stubLiquidity(),
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
     history = stubHistory(), foreign = stubForeign(), screens = stubScreens(),
+    gold = stubGold(), world = stubWorld(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
     refuseSessions = false, quiet = false,
     // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú. Bài nào cần sàn đóng thì đưa giờ khác vào.
@@ -533,6 +587,8 @@ async function withBot(
     screens,
     sectors,
     board,
+    gold,
+    world,
     statePath,
     at,
   });
@@ -1343,7 +1399,7 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  const chinh = ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
+  const chinh = ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
   assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
   assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
@@ -1408,7 +1464,7 @@ test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', asyn
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -2269,7 +2325,7 @@ test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy ch�
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.
@@ -2438,4 +2494,175 @@ test('thanh khoản so hôm nay với **cùng giờ** phiên trước, không ph
   assert.match(rich.image.svg, /tăng \+65,00% so với hôm qua/);
 
   assert.equal(compare(sessions.slice(-1)), null);
+});
+
+// ---- vàng: !vang và !tg -------------------------------------------------------------------------
+
+test('!vang và !sjc cùng là một lệnh; chữ khác thì không', () => {
+  assert.deepEqual(askedGoldFor(message({ text: '!vang' })), { addressed: true });
+  assert.deepEqual(askedGoldFor(message({ text: '!SJC' })), { addressed: true });
+  assert.equal(askedGoldFor(message({ text: '!vanga' })), null);
+  assert.equal(askedGoldFor(message({ text: 'vang' })), null);
+});
+
+test('!tg là prefix của thị trường ngoài: trơn là cả hai, có chữ là một', () => {
+  assert.equal(WORLD_COMMAND, 'tg');
+  assert.deepEqual(askedWorldFor(message({ text: '!tg' })), { addressed: true, symbols: ['XAU', 'DXY'] });
+  assert.deepEqual(askedWorldFor(message({ text: '!tg xau' })), { addressed: true, symbols: ['XAU'] });
+  assert.deepEqual(askedWorldFor(message({ text: '!tg dxy' })), { addressed: true, symbols: ['DXY'] });
+  // Một mã không có trong bảng tên thì nhắc cú pháp, không im và không đoán bừa.
+  assert.match(askedWorldFor(message({ text: '!tg vang' })).error, /!tg/);
+  // Không phải prefix này thì không phải việc của nó.
+  assert.equal(askedWorldFor(message({ text: '!tgi' })), null);
+  assert.equal(askedWorldFor(message({ text: '!vang' })), null);
+});
+
+test('XAU và DXY trả lời bằng mã người ta gõ, không phải mã của Yahoo', async () => {
+  const world = stubWorld();
+  const { sent } = await withBot([update({ text: '!tg' })], { world });
+  assert.deepEqual(world.calls, [['XAU', 'DXY']]);
+  assert.match(sent[0].text, /^XAU 4\.030,7 USD ▼ -0,19%/);
+  assert.match(sent[0].text, /\nDXY 102,04 USD ▲ \+0,08%/);
+  // Không có `GC=F` hay `DX-Y.NYB` nào lọt ra tin nhắn.
+  assert.doesNotMatch(sent[0].text, /GC=F|DX-Y\.NYB/);
+});
+
+test('!tg xau chỉ hỏi một mã', async () => {
+  const world = stubWorld();
+  const { sent } = await withBot([update({ text: '!tg xau' })], { world });
+  assert.deepEqual(world.calls, [['XAU']]);
+  assert.match(sent[0].text, /^XAU /);
+  assert.doesNotMatch(sent[0].text, /DXY/);
+});
+
+test('nguồn vàng thế giới chết thì nói ra, không im', async () => {
+  const { sent } = await withBot([update({ text: '!tg' })], { world: stubWorld({ broken: true }) });
+  assert.match(sent[0].text, /vàng thế giới đang không trả lời/);
+});
+
+test('!vang in cả một lượng lẫn một chỉ, và nhân mười từ đơn vị một chỉ của nguồn', async () => {
+  const gold = stubGold();
+  const { sent } = await withBot([update({ text: '!vang' })], { gold });
+  assert.equal(gold.calls, 1);
+  assert.match(sent[0].text, /^Vàng miếng SJC 1 lượng: 140\.500\.000 – 142\.000\.000 đồng$/m);
+  assert.match(sent[0].text, /^Vàng miếng SJC 1 chỉ: 14\.050\.000 – 14\.200\.000 đồng$/m);
+  assert.match(sent[0].text, /^Nhẫn tròn trơn 999\.9 1 lượng: 140\.500\.000 – 142\.000\.000 đồng$/m);
+  assert.match(sent[0].text, /Giá mua vào – bán ra · 27\/10 09:30$/);
+});
+
+test('một chỉ phải bằng đúng một phần mười một lượng — phép nhân mười ghim lại', () => {
+  const [sjc] = vnGold([{ code: 'SJC', buyingPrice: 14050000, sellingPrice: 14200000, dateTime: '27/10/2026 09:30' }]);
+  assert.equal(sjc.buyPerChi, 14050000);
+  assert.equal(sjc.buyPerLuong, 140500000);
+  assert.equal(sjc.sellPerLuong, 142000000);
+  assert.equal(sjc.buyPerLuong, sjc.buyPerChi * 10);
+});
+
+test('loại vàng chỉ thu vào thì không in giá bán bằng 0', () => {
+  const rows = vnGold([{ code: 'SJC', buyingPrice: 14050000, sellingPrice: 0, dateTime: '27/10/2026 09:30' }]);
+  assert.equal(rows[0].sellPerLuong, null);
+  assert.equal(rows[0].buyPerLuong, 140500000);
+  assert.match(vnGoldText(rows), /1 lượng: 140\.500\.000 đồng/);
+  assert.doesNotMatch(vnGoldText(rows), /– 0 đồng/);
+});
+
+test('nguồn vàng trong nước chết thì nói ra, không im', async () => {
+  const { sent } = await withBot([update({ text: '!vang' })], { gold: stubGold({ broken: true }) });
+  assert.match(sent[0].text, /Nguồn giá vàng đang không trả lời/);
+});
+
+test('nguồn không có loại vàng nào quen thì nói ra, không gửi khung rỗng', async () => {
+  const { sent } = await withBot([update({ text: '!vang' })], { gold: stubGold({ rows: [] }) });
+  assert.match(sent[0].text, /Nguồn giá vàng đang không trả lời/);
+});
+
+test('tham chiếu của XAU là cây nến đã đóng gần nhất, không phải chartPreviousClose', () => {
+  // `chartPreviousClose` của Yahoo là giá đóng cửa **trước cả khung**, không phải phiên liền trước.
+  // Một bài test ghim lại: lấy nhầm nó thì mức tăng giảm là của cả tuần.
+  const data = {
+    chart: {
+      result: [{
+        meta: { currency: 'USD', regularMarketTime: 1793075678, chartPreviousClose: 4060.4 },
+        indicators: { quote: [{ close: [4060.4, 4007.9, 4038.4, 4030.7] }] },
+      }],
+    },
+  };
+  const one = worldQuote('XAU', data);
+  assert.equal(one.reference, 4038.4);
+  assert.equal(one.price, 4030.7);
+  assert.equal(one.change, -7.7);
+  assert.equal(one.percent, -0.19);
+  assert.equal(one.currency, 'USD');
+});
+
+test('chỉ số thế giới có ngày nghỉ: chỗ close null bị bỏ, không thành giá 0', () => {
+  const data = {
+    chart: {
+      result: [{
+        meta: { currency: 'USD' },
+        indicators: { quote: [{ close: [101.61, null, 101.96, 102.037] }] },
+      }],
+    },
+  };
+  const one = worldQuote('DXY', data);
+  assert.equal(one.reference, 101.96);
+  assert.equal(one.price, 102.037);
+  assert.ok(one.percent > 0);
+});
+
+test('phản hồi thiếu nến thì không có giá, không phải giá 0', () => {
+  assert.equal(worldQuote('XAU', { chart: { result: [{ meta: {}, indicators: { quote: [{ close: [4030.7] }] } }] } }), null);
+  assert.equal(worldQuote('XAU', { chart: { result: null } }), null);
+  assert.equal(worldQuote('XAU', {}), null);
+});
+
+test('nguồn vàng gọi đúng đường dẫn, và đòi User-Agent vì Yahoo đóng cửa với request trần', async () => {
+  const asked = [];
+  const fetchImpl = async (url, options) => {
+    asked.push({ url, headers: options?.headers ?? {} });
+    return {
+      ok: true,
+      json: async () => (url.includes('mihong')
+        ? [{ code: 'SJC', buyingPrice: 14050000, sellingPrice: 14200000, dateTime: '27/10/2026 09:30' }]
+        : { chart: { result: [{ meta: {}, indicators: { quote: [{ close: [4038.4, 4030.7] }] } }] } }),
+    };
+  };
+
+  await mihongGold({ fetchImpl }).price();
+  await yahooQuotes({ fetchImpl }).quotes(['XAU']);
+
+  assert.match(asked[0].url, /market=domestic/);
+  assert.ok(asked[0].headers['User-Agent']);
+  // Mã trên Yahoo phải là `GC=F`, không phải `XAU` — `=` có thể được mã hoá trong đường dẫn.
+  assert.match(decodeURIComponent(asked[1].url), /\/GC=F\?/);
+  assert.doesNotMatch(decodeURIComponent(asked[1].url), /\/XAU\?/);
+  assert.ok(asked[1].headers['User-Agent']);
+});
+
+test('giá vàng trong nước và thế giới không lẫn vào bộ đọc mã cổ phiếu', async () => {
+  // `VANG`, `SJC`, `XAU`, `DXY` đều đúng hình một mã, nên nếu lệnh vàng không chạy trước `askedFor`
+  // thì chúng thành những lượt hỏi giá cổ phiếu — và câu trả lời là "không có dữ liệu".
+  //
+  // Không khẳng định nguồn chứng khoán **không được gọi**: lúc khởi động nó vẫn được gọi để xếp
+  // hạng mã cho bảng lệnh. Điều cần ghim là không chữ vàng nào lọt vào lượt hỏi ấy.
+  const asked = [];
+  const market = {
+    async universe() { return ['VIC', 'HPG']; },
+    async quotes(symbols) { asked.push(...symbols); return []; },
+  };
+
+  const gold = stubGold();
+  const world = stubWorld();
+  const { sent } = await withBot(
+    [update({ text: '!vang' }), update({ text: '!sjc' }, 2), update({ text: '!tg' }, 3)],
+    { gold, market, world, expect: 3 },
+  );
+
+  assert.equal(gold.calls, 2);
+  assert.deepEqual(world.calls, [['XAU', 'DXY']]);
+  for (const word of ['VANG', 'SJC', 'XAU', 'DXY', 'TG']) {
+    assert.ok(!asked.includes(word), `${word} lọt vào nguồn giá cổ phiếu`);
+  }
+  assert.match(sent[0].text, /Vàng miếng SJC/);
+  assert.match(sent[2].text, /^XAU /);
 });

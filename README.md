@@ -25,6 +25,8 @@ dài đúng một dòng.
 | `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
 | `/liqu`, `/thanhkhoan` | Chart thanh khoản VN-Index cộng dồn trong phiên, so với cùng giờ phiên trước — số liệu nến phút của Vietcap |
+| `/vang`, `!vang`, `!sjc` | Giá vàng trong nước: vàng miếng SJC và nhẫn tròn trơn 999.9, mỗi thứ hai dòng — một lượng và một chỉ, giá mua vào – bán ra. Số liệu Mi Hồng |
+| `/tg`, `!tg`, `!tg xau`, `!tg dxy` | Vàng thế giới (XAU) và chỉ số đô la (DXY), một dòng mỗi thứ. Số liệu Yahoo |
 | `/sugg`, `!sugg` | Quét cả sàn, 10 mã đáng mua nhất lúc gõ theo PTKT. Hình: vị trí 10 mã trên phân bố điểm của cả sàn, và mỗi mã một thanh rủi ro / lời trên chung một trục % kèm lý do; chữ: mỗi mã một dòng mua / chốt / cắt lỗ |
 | `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
@@ -175,6 +177,42 @@ tại.
 Bot không biết nguồn nào đang trả lời. Nó nhận một cái hình có đúng hai hàm, `quotes()` và
 `universe()`, nên cắm thêm hay đổi nguồn không phải sửa một dòng nào trong phần bot.
 
+### Vàng không đi qua dây nguồn ấy
+
+`!vang` và `!tg` có nguồn riêng, vì vàng không phải một cái mã có sàn. Nhét `XAU` vào dây nguồn
+trên thì bộ đọc mã sẽ đem nó đi hỏi DNSE — và DNSE không có XAU lẫn DXY, cả hai đều trả `400`.
+Nên hai lệnh ấy có bộ đọc riêng, chạy **trước** `askedFor`, cùng chỗ với `!tin` và `!ptkt`.
+
+Hai nguồn, và cả hai đều không cần khoá:
+
+| Nguồn | Cho | Gọi thế nào |
+| --- | --- | --- |
+| Mi Hồng `api.mihong.com/v1/gold-prices?market=domestic` | Vàng trong nước: SJC, nhẫn 999.9 | Một lượt, không header gì |
+| Yahoo `query1.finance.yahoo.com/v8/finance/chart/{mã}` | XAU và DXY | Một lượt mỗi mã, **phải kèm `User-Agent`** |
+
+Ba chỗ ở đây là chỗ dễ sai, và cả ba đều im lặng khi sai:
+
+**Giá Mi Hồng là đồng một CHỈ, không phải một lượng.** `14050000` đọc lên y như một cái giá một
+lượng rẻ mạt. Đối chiếu ba nguồn: Mi Hồng niêm yết SJC 1 chỉ 14.200.000 bán ra; BTMC cũng niêm
+yết SJC đúng 14.200.000 cho sản phẩm "0.1" của họ, tức một phần mười lượng; và trên thế giới vàng
+lúc ấy $4.030 một ounce — một lượng là 1,2056 ounce, tỷ giá 25.831, ra 125,5 triệu, cộng chênh
+lệch SJC quen thuộc là vừa khớp. Một lượng mười chỉ, nên SJC bán ra **142.000.000 đồng một lượng**.
+Phép nhân mười ấy nằm một chỗ, ở `vnGold`, và có bài test ghim lại.
+
+**Yahoo đóng cửa với một request không `User-Agent`** — nó trả `429`, và `429` đọc lên như bị chặn
+vì hạn mức. Không phải: chỉ là cửa trước không mở cho một request trần trụi.
+
+**`meta.chartPreviousClose` không phải giá phiên liền trước.** Nó là giá đóng cửa của phiên *trước
+cả cây nến đầu tiên trong khung*, nên với khung 5 ngày nó bằng chính cây nến đầu. Lấy nó làm tham
+chiếu thì mức tăng giảm là của cả tuần mà gọi tên là của hôm nay. Tham chiếu đúng là **cây nến đã
+đóng gần nhất**, tức cây áp cuối — và chỉ số có ngày nghỉ nên mảng `close` có chỗ `null`, phải bỏ
+đi trước khi đếm.
+
+Cũng vì thế mà `!tg` là một **prefix** chứ không phải `!xau` trơn: bot này phục vụ một phòng trong
+nước, `XAU` lại đúng hình một mã cổ phiếu, nên phần thị trường ngoài đứng sau một chữ riêng. `!tg`
+trơn là cả hai; `!tg xau` hay `!tg dxy` là một thứ. Vàng trong nước thì không cần prefix — đó là
+việc chính.
+
 ### Khoá DNSE
 
 Tầng thứ ba đọc khoá từ **biến môi trường**, và chỉ từ đó:
@@ -294,6 +332,7 @@ phải chỗ để cắt cho nhanh.
 | `market/dnse.mjs` | Nguồn 2 và 3 — nến ngày, và tầng có khoá |
 | `market/chain.mjs` | Xếp các nguồn thành một hàng |
 | `market/liquidity.mjs` | Thanh khoản VN-Index cho `!liqu`: nến phút Vietcap, so cùng giờ, chart SVG |
+| `market/gold.mjs` | Vàng cho `!vang` (Mi Hồng, trong nước) và `!tg` (Yahoo: XAU, DXY) |
 | `market/suggest.mjs` | Quét cả sàn cho `!sugg`: lọc, xếp hạng, câu chữ |
 | `market/symbols.mjs` | Cái sàng: cái gì là mã, cái gì là lệnh của bot bên cạnh |
 | `market/strength.mjs` | Bộ lọc `!manh`, và nến phiên đang chạy dựng từ nến 5 phút |

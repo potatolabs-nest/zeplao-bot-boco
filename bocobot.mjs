@@ -48,6 +48,7 @@ import { technicalAnalysis } from './market/technical.mjs';
 import { marketScreens } from './market/screens.mjs';
 import { suggestions, suggestRich } from './market/suggest.mjs';
 import { vietcapLiquidity } from './market/liquidity.mjs';
+import { mihongGold, vnGoldText, WORLD_SYMBOLS, worldText, yahooQuotes } from './market/gold.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
 import {
@@ -134,6 +135,9 @@ const TYPING_MS = 3 * 60 * 1000;
 const BOARD_TITLE = 'Bản đồ nhiệt VN';
 /// Lệnh mở bảng sống. Một chữ, và chỉ một chữ — nó là chữ duy nhất được khai `opensWidget`.
 const BOARD_COMMAND = 'bang';
+/// Prefix của phần thị trường ngoài: `!tg` là vàng thế giới và chỉ số đô la. Có prefix vì bot này
+/// phục vụ một phòng trong nước — xem `askedWorldFor`.
+export const WORLD_COMMAND = 'tg';
 /// Một dòng dưới chân bảng: người mở bảng lần đầu cần biết gõ gì tiếp, mà bảng thì không có chỗ
 /// cho cả phần hướng dẫn.
 const BOARD_HELP = 'Gõ /vic xem giá · !ptkt vic phân tích · !board bản đồ dạng ảnh';
@@ -146,6 +150,9 @@ export function commandsFor(me, symbols = []) {
     { command: 'sugg', description: 'Quét cả sàn, 10 mã đáng mua nhất lúc này theo PTKT: !sugg' },
     { command: 'liqu', description: 'Thanh khoản VN-Index trong phiên so với cùng giờ hôm qua, kèm chart: !liqu' },
     { command: 'thanhkhoan', description: 'Tên khác của !liqu' },
+    { command: 'vang', description: 'Giá vàng trong nước, một lượng và một chỉ: !vang' },
+    { command: 'sjc', description: 'Tên khác của !vang' },
+    { command: WORLD_COMMAND, description: 'Vàng thế giới (XAU) và chỉ số đô la (DXY): !tg, !tg xau, !tg dxy' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
     { command: 'manh', description: 'Mã dẫn dắt và điểm mua swing trong VN30 + VNMID: !manh, !manh hientai' },
@@ -227,6 +234,8 @@ export const HELP = [
   '!ptkt vic — phân tích kỹ thuật VIC: xu hướng, điểm mua bán, độ tin cậy',
   '!sugg — quét cả sàn, 10 mã đáng mua nhất lúc này theo PTKT, kèm lý do',
   '!liqu hoặc !thanhkhoan — thanh khoản VN-Index trong phiên so với cùng giờ hôm qua, kèm chart',
+  '!vang hoặc !sjc — giá vàng trong nước, một lượng và một chỉ',
+  '!tg — vàng thế giới (XAU) và chỉ số đô la (DXY); !tg xau hoặc !tg dxy cho một thứ',
   '!kq vic — cơ cấu doanh thu, lợi nhuận quý gần nhất; !kq vic q2, !kq vic 2025',
   '',
   'Lọc cả rổ (thêm chữ hientai để chấm cả phiên đang chạy):',
@@ -569,6 +578,48 @@ export function askedLiquidityFor(message) {
 }
 
 /**
+ * `!vang` hay `!sjc` — giá vàng trong nước, một lượng và một chỉ.
+ *
+ * Chạy trước `askedFor` vì cùng lý do với `!tin` với `!ptkt`: để bộ đọc giá nhìn thấy cả câu thì
+ * `VANG` và `SJC` là hai chữ ba ký tự đúng hình một mã, và chúng sẽ được đem đi hỏi giá cổ phiếu.
+ * `SJC` thì đặc biệt chắc: không có mã nào tên ấy, nhưng nó vẫn qua được cái sàng ở `symbols.mjs`,
+ * nên nếu không có chỗ này thì `!sjc` là một lượt dò mạng để rồi im.
+ */
+export function askedGoldFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+  return /^(vang|sjc)(\s|$)/i.test(text.slice(CALL.length).trim()) ? { addressed: true } : null;
+}
+
+/**
+ * `!tg` — vàng thế giới và chỉ số đô la, đứng sau một **prefix**.
+ *
+ * Vì sao có prefix trong khi `!vang` thì không: con bot này phục vụ một phòng chat trong nước, và
+ * vàng trong nước là thứ người ta hỏi hằng ngày. XAU với DXY là chuyện của thị trường ngoài — để
+ * chung một chỗ với `!vang` thì bảng lệnh đầy những chữ không ai gõ, và `XAU` là một chữ đúng hình
+ * một mã, nên nó còn tranh chỗ với chính bộ đọc giá cổ phiếu. Một prefix giữ phần ngoài ấy ra
+ * riêng, và giữ luôn đường vào trong nước cho gọn.
+ *
+ * `!tg` trơn là cả hai; `!tg xau` hay `!tg dxy` là một trong hai.
+ */
+export function askedWorldFor(message) {
+  const text = withoutPrivateFlag(message?.text ?? '').trimStart();
+  if (!text.startsWith(CALL)) return null;
+
+  const words = text.slice(CALL.length).trim().split(/\s+/).filter(Boolean);
+  if (words[0]?.toLowerCase() !== WORLD_COMMAND) return null;
+
+  const asked = words.slice(1).map((word) => word.toUpperCase());
+  if (!asked.length) return { addressed: true, symbols: ['XAU', 'DXY'] };
+
+  const known = asked.filter((word) => Object.hasOwn(WORLD_SYMBOLS, word));
+  if (!known.length) {
+    return { addressed: true, error: 'Gõ !tg để xem vàng thế giới (XAU) và chỉ số đô la (DXY), hoặc !tg xau hay !tg dxy.' };
+  }
+  return { addressed: true, symbols: [...new Set(known)] };
+}
+
+/**
  * `!gex 1n` vẫn là hỏi giá GEX, nhưng chart đi kèm dùng khung 1 năm.
  *
  * Chỉ nhận đúng dạng `!<mã> <kỳ hạn>` để một câu hỏi nhiều mã không bị hiểu nhầm là chart riêng.
@@ -618,6 +669,8 @@ export async function run(token, {
   history = dailyHistory(),
   foreign = vndirectForeign(),
   screens = marketScreens({ sectors }),
+  gold = mihongGold(),
+  world = yahooQuotes(),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -1610,6 +1663,34 @@ export async function run(token, {
       } catch (problem) {
         console.error(String(problem));
         await say(message.conversationId, 'Nguồn thanh khoản đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
+      }
+      return;
+    }
+
+    if (!message.priceOnly && askedGoldFor(message)) {
+      try {
+        const text = vnGoldText(await gold.price());
+        await say(message.conversationId, text ?? 'Nguồn giá vàng đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, 'Nguồn giá vàng đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
+      }
+      return;
+    }
+
+    const worldAsked = !message.priceOnly && askedWorldFor(message);
+    if (worldAsked) {
+      if (worldAsked.error) {
+        await say(message.conversationId, worldAsked.error, replyTo, onlyForUserId);
+        return;
+      }
+
+      try {
+        const text = worldText(await world.quotes(worldAsked.symbols));
+        await say(message.conversationId, text ?? 'Nguồn giá vàng thế giới đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
+      } catch (problem) {
+        console.error(String(problem));
+        await say(message.conversationId, 'Nguồn giá vàng thế giới đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
       }
       return;
     }
