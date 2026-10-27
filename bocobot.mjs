@@ -48,7 +48,9 @@ import { technicalAnalysis } from './market/technical.mjs';
 import { marketScreens } from './market/screens.mjs';
 import { suggestions, suggestRich } from './market/suggest.mjs';
 import { vietcapLiquidity } from './market/liquidity.mjs';
-import { mihongGold, vnGoldText, WORLD_SYMBOLS, worldText, yahooQuotes } from './market/gold.mjs';
+import {
+  btmcSilver, mihongGold, vnGoldText, vnSilverText, WORLD_SYMBOLS, worldText, yahooQuotes,
+} from './market/gold.mjs';
 import { parseResultsPeriod, resultsRich } from './market/results.mjs';
 import { vietcapResults } from './market/vietcap.mjs';
 import {
@@ -152,7 +154,8 @@ export function commandsFor(me, symbols = []) {
     { command: 'thanhkhoan', description: 'Tên khác của !liqu' },
     { command: 'vang', description: 'Giá vàng trong nước, một lượng và một chỉ: !vang' },
     { command: 'sjc', description: 'Tên khác của !vang' },
-    { command: WORLD_COMMAND, description: 'Vàng thế giới (XAU) và chỉ số đô la (DXY): !tg, !tg xau, !tg dxy' },
+    { command: 'bac', description: 'Giá bạc trong nước, một lượng: !bac' },
+    { command: WORLD_COMMAND, description: 'Vàng bạc thế giới (XAU, XAG) và chỉ số đô la (DXY): !tg, !tg xau, !tg xag, !tg dxy' },
     { command: 'tin', description: '5 tin mới nhất về một mã: !tin vic' },
     { command: 'kq', description: 'Cơ cấu doanh thu, lợi nhuận từ BCTC: !kq vic, !kq vic q2, !kq vic 2025' },
     { command: 'manh', description: 'Mã dẫn dắt và điểm mua swing trong VN30 + VNMID: !manh, !manh hientai' },
@@ -235,7 +238,8 @@ export const HELP = [
   '!sugg — quét cả sàn, 10 mã đáng mua nhất lúc này theo PTKT, kèm lý do',
   '!liqu hoặc !thanhkhoan — thanh khoản VN-Index trong phiên so với cùng giờ hôm qua, kèm chart',
   '!vang hoặc !sjc — giá vàng trong nước, một lượng và một chỉ',
-  '!tg — vàng thế giới (XAU) và chỉ số đô la (DXY); !tg xau hoặc !tg dxy cho một thứ',
+  '!bac — giá bạc trong nước, một lượng',
+  '!tg — vàng thế giới (XAU) và chỉ số đô la (DXY); !tg xau, !tg xag, !tg dxy cho một thứ',
   '!kq vic — cơ cấu doanh thu, lợi nhuận quý gần nhất; !kq vic q2, !kq vic 2025',
   '',
   'Lọc cả rổ (thêm chữ hientai để chấm cả phiên đang chạy):',
@@ -581,26 +585,37 @@ export function askedLiquidityFor(message) {
  * `!vang` hay `!sjc` — giá vàng trong nước, một lượng và một chỉ.
  *
  * Chạy trước `askedFor` vì cùng lý do với `!tin` với `!ptkt`: để bộ đọc giá nhìn thấy cả câu thì
- * `VANG` và `SJC` là hai chữ ba ký tự đúng hình một mã, và chúng sẽ được đem đi hỏi giá cổ phiếu.
- * `SJC` thì đặc biệt chắc: không có mã nào tên ấy, nhưng nó vẫn qua được cái sàng ở `symbols.mjs`,
- * nên nếu không có chỗ này thì `!sjc` là một lượt dò mạng để rồi im.
+ * `VANG`, `SJC` và `BAC` là ba chữ ba ký tự đúng hình một mã, và chúng sẽ được đem đi hỏi giá cổ
+ * phiếu. `SJC` với `BAC` thì đặc biệt chắc: không có mã nào tên ấy, nhưng cả hai vẫn qua được cái
+ * sàng ở `symbols.mjs`, nên nếu không có chỗ này thì `!sjc` là một lượt dò mạng để rồi im.
+ *
+ * `!bac` là bạc trong nước, cùng đường vào vì cùng một loại việc — giá niêm yết của một tiệm,
+ * không phải một cái mã có sàn. Nguồn thì khác: xem `market/gold.mjs`.
  */
 export function askedGoldFor(message) {
   const text = withoutPrivateFlag(message?.text ?? '').trimStart();
   if (!text.startsWith(CALL)) return null;
-  return /^(vang|sjc)(\s|$)/i.test(text.slice(CALL.length).trim()) ? { addressed: true } : null;
+
+  const matched = /^(vang|sjc|bac)(\s|$)/i.exec(text.slice(CALL.length).trim());
+  if (!matched) return null;
+  // Trả về **kim loại nào**, không chỉ "có phải lệnh này không": `!bac` đi nguồn khác `!vang`, và
+  // người gọi không phải đọc lại `message.text` để đoán — đoán ở hai chỗ là hai chỗ lệch nhau.
+  return { addressed: true, kind: matched[1].toLowerCase() === 'bac' ? 'silver' : 'gold' };
 }
 
 /**
- * `!tg` — vàng thế giới và chỉ số đô la, đứng sau một **prefix**.
+ * `!tg` — vàng bạc thế giới và chỉ số đô la, đứng sau một **prefix**.
  *
  * Vì sao có prefix trong khi `!vang` thì không: con bot này phục vụ một phòng chat trong nước, và
- * vàng trong nước là thứ người ta hỏi hằng ngày. XAU với DXY là chuyện của thị trường ngoài — để
- * chung một chỗ với `!vang` thì bảng lệnh đầy những chữ không ai gõ, và `XAU` là một chữ đúng hình
- * một mã, nên nó còn tranh chỗ với chính bộ đọc giá cổ phiếu. Một prefix giữ phần ngoài ấy ra
+ * vàng trong nước là thứ người ta hỏi hằng ngày. XAU, XAG với DXY là chuyện của thị trường ngoài —
+ * để chung một chỗ với `!vang` thì bảng lệnh đầy những chữ không ai gõ, và `XAU` là một chữ đúng
+ * hình một mã, nên nó còn tranh chỗ với chính bộ đọc giá cổ phiếu. Một prefix giữ phần ngoài ấy ra
  * riêng, và giữ luôn đường vào trong nước cho gọn.
  *
- * `!tg` trơn là cả hai; `!tg xau` hay `!tg dxy` là một trong hai.
+ * `!tg` trơn là vàng với đô la — hai thứ trả lời cùng một câu, vì vàng tính bằng đô la nên đồng đô
+ * la mạnh lên là một cái gió ngược. Bạc **không** vào mặc định: nó là chỉ số thứ ba, và một dòng
+ * thừa trong câu trả lời của người chỉ hỏi vàng là một dòng người ta phải bỏ qua. `!tg xag` khi
+ * cần. Tên nào cũng gõ được cùng lúc: `!tg xau xag`.
  */
 export function askedWorldFor(message) {
   const text = withoutPrivateFlag(message?.text ?? '').trimStart();
@@ -614,7 +629,7 @@ export function askedWorldFor(message) {
 
   const known = asked.filter((word) => Object.hasOwn(WORLD_SYMBOLS, word));
   if (!known.length) {
-    return { addressed: true, error: 'Gõ !tg để xem vàng thế giới (XAU) và chỉ số đô la (DXY), hoặc !tg xau hay !tg dxy.' };
+    return { addressed: true, error: 'Gõ !tg để xem vàng thế giới (XAU) và chỉ số đô la (DXY), hoặc !tg xau, !tg xag, !tg dxy.' };
   }
   return { addressed: true, symbols: [...new Set(known)] };
 }
@@ -670,6 +685,7 @@ export async function run(token, {
   foreign = vndirectForeign(),
   screens = marketScreens({ sectors }),
   gold = mihongGold(),
+  silver = btmcSilver(),
   world = yahooQuotes(),
 } = {}) {
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
@@ -1667,13 +1683,20 @@ export async function run(token, {
       return;
     }
 
-    if (!message.priceOnly && askedGoldFor(message)) {
+    const goldAsked = !message.priceOnly && askedGoldFor(message);
+    if (goldAsked) {
+      // `!bac` đi cùng đường vào nhưng khác nguồn — bạc là BTMC, vàng là Mi Hồng.
+      const silverAsked = goldAsked.kind === 'silver';
+      const what = silverAsked ? 'bạc' : 'vàng';
+
       try {
-        const text = vnGoldText(await gold.price());
-        await say(message.conversationId, text ?? 'Nguồn giá vàng đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
+        const text = silverAsked
+          ? vnSilverText(await silver.price())
+          : vnGoldText(await gold.price());
+        await say(message.conversationId, text ?? `Nguồn giá ${what} đang không trả lời. Thử lại sau một lát.`, replyTo, onlyForUserId);
       } catch (problem) {
         console.error(String(problem));
-        await say(message.conversationId, 'Nguồn giá vàng đang không trả lời. Thử lại sau một lát.', replyTo, onlyForUserId);
+        await say(message.conversationId, `Nguồn giá ${what} đang không trả lời. Thử lại sau một lát.`, replyTo, onlyForUserId);
       }
       return;
     }

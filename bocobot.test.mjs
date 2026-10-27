@@ -26,7 +26,7 @@ import { pickPeriod as pickReportPeriod, profileOf, vietcapReport, vietcapResult
 import { COMPANY_VIEW } from './market/company.mjs';
 import { publishWidget, widgetFiles, zip } from './widget.mjs';
 import { compare, liquidityRich, sessionsFrom } from './market/liquidity.mjs';
-import { mihongGold, vnGold, vnGoldText, worldQuote, worldText, yahooQuotes } from './market/gold.mjs';
+import { btmcSilver, mihongGold, vnGold, vnGoldText, vnSilver, vnSilverText, worldQuote, worldText, yahooQuotes } from './market/gold.mjs';
 import { MIN_MARKET_CAP, suggestions, suggestMessage, suggestRich, withQuote } from './market/suggest.mjs';
 import {
   analyze, atr, ema, rsi, sma, technicalAnalysis, technicalMessage, technicalRich, withSession,
@@ -373,6 +373,40 @@ function stubGold({ broken = false, rows = null } = {}) {
   };
 }
 
+/**
+ * Bạc trong nước giả, đúng hình BTMC: một **túi phẳng** có tên trường tự đánh số, và đơn vị ghi
+ * trong tên sản phẩm.
+ *
+ * Stub giữ cả hai đặc điểm ấy, vì cả hai đều là chỗ dễ đọc sai: tên trường đổi số theo dòng, và
+ * quy cách nằm trong chính cái tên.
+ */
+/// Một dòng thô của BTMC, đúng hình: tên trường tự đánh số và quy cách nằm trong chính cái tên.
+const btmcSilverRow = (name, buy, sell) => ({
+  '@n_1': name, '@pb_1': String(buy), '@ps_1': String(sell), '@d_1': '27/10/2026 11:40',
+});
+
+function stubSilver({ broken = false, rows = null } = {}) {
+  let calls = 0;
+  // Đúng thứ tự của nguồn thật: 1 KG, 5 LƯỢNG, 0,5 KG lẫn vào — chỉ dòng "1 LƯỢNG" là dùng.
+  const kept = rows ?? [
+    btmcSilverRow('BẠC THỎI BẠC RỒNG THĂNG LONG Ag 999 1 KG (BẠC RỒNG THĂNG LONG Ag 999)', 45892186, 48025466),
+    btmcSilverRow('BẠC MIẾNG PHÚ QUÝ Ag 999 5 LƯỢNG (PHÚ QUÝ)', 8575000, 8840000),
+    btmcSilverRow('BẠC MIẾNG PHÚ QUÝ Ag 999 1 LƯỢNG (PHÚ QUÝ)', 1715000, 1768000),
+    btmcSilverRow('BẠC THỎI BẠC RỒNG THĂNG LONG Ag 999 0,5 KG (BẠC RỒNG THĂNG LONG Ag 999)', 22946093, 24012733),
+    btmcSilverRow('BẠC MIẾNG BẠC RỒNG THĂNG LONG Ag 999 5 LƯỢNG (BẠC RỒNG THĂNG LONG Ag 999)', 8605000, 9005000),
+    btmcSilverRow('BẠC MIẾNG BẠC RỒNG THĂNG LONG Ag 999 1 LƯỢNG (BẠC RỒNG THĂNG LONG Ag 999)', 1721000, 1801000),
+  ];
+
+  return {
+    get calls() { return calls; },
+    async price() {
+      calls += 1;
+      if (broken) throw new Error('BTMC trả lời 503');
+      return vnSilver(kept);
+    },
+  };
+}
+
 /// XAU và DXY giả, đúng hình phản hồi Yahoo.
 function stubWorld({ broken = false } = {}) {
   const calls = [];
@@ -392,7 +426,11 @@ function stubWorld({ broken = false } = {}) {
     async quotes(symbols) {
       calls.push(symbols);
       if (broken) throw new Error('Yahoo trả lời 429');
-      const made = { XAU: one('XAU', 4030.7, 4038.4), DXY: one('DXY', 102.037, 101.96) };
+      const made = {
+        XAU: one('XAU', 4030.7, 4038.4),
+        XAG: one('XAG', 53.31, 54.108),
+        DXY: one('DXY', 102.037, 101.96),
+      };
       return symbols.map((symbol) => made[symbol]).filter(Boolean);
     },
   };
@@ -559,7 +597,7 @@ async function withBot(
     suggest = stubSuggest(), liquidity = stubLiquidity(),
     results = null, company = stubCompany(), sectors = stubSectors(), board = { tickMs: 40 },
     history = stubHistory(), foreign = stubForeign(), screens = stubScreens(),
-    gold = stubGold(), world = stubWorld(),
+    gold = stubGold(), silver = stubSilver(), world = stubWorld(),
     expect = 1, settle = 200, refuseImages = false, refuseViews = false, widgetAnswers = [], keepCommands = null,
     refuseSessions = false, quiet = false,
     // 10:00 thứ Hai: sàn đang mở, không có dòng ghi chú. Bài nào cần sàn đóng thì đưa giờ khác vào.
@@ -588,6 +626,7 @@ async function withBot(
     sectors,
     board,
     gold,
+    silver,
     world,
     statePath,
     at,
@@ -1399,7 +1438,7 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  const chinh = ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
+  const chinh = ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang'];
   assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
   assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
@@ -1464,7 +1503,7 @@ test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', asyn
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -2325,7 +2364,7 @@ test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy ch�
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.
@@ -2499,10 +2538,18 @@ test('thanh khoản so hôm nay với **cùng giờ** phiên trước, không ph
 // ---- vàng: !vang và !tg -------------------------------------------------------------------------
 
 test('!vang và !sjc cùng là một lệnh; chữ khác thì không', () => {
-  assert.deepEqual(askedGoldFor(message({ text: '!vang' })), { addressed: true });
-  assert.deepEqual(askedGoldFor(message({ text: '!SJC' })), { addressed: true });
+  assert.deepEqual(askedGoldFor(message({ text: '!vang' })), { addressed: true, kind: 'gold' });
+  assert.deepEqual(askedGoldFor(message({ text: '!SJC' })), { addressed: true, kind: 'gold' });
   assert.equal(askedGoldFor(message({ text: '!vanga' })), null);
   assert.equal(askedGoldFor(message({ text: 'vang' })), null);
+});
+
+test('!bac đi cùng đường vào nhưng trả về kim loại khác, vì khác nguồn', () => {
+  assert.deepEqual(askedGoldFor(message({ text: '!bac' })), { addressed: true, kind: 'silver' });
+  assert.deepEqual(askedGoldFor(message({ text: '!Bac' })), { addressed: true, kind: 'silver' });
+  assert.deepEqual(askedGoldFor(message({ text: '!vang' })), { addressed: true, kind: 'gold' });
+  assert.equal(askedGoldFor(message({ text: '!bacci' })), null);
+  assert.equal(askedGoldFor(message({ text: 'bac' })), null);
 });
 
 test('!tg là prefix của thị trường ngoài: trơn là cả hai, có chữ là một', () => {
@@ -2665,4 +2712,150 @@ test('giá vàng trong nước và thế giới không lẫn vào bộ đọc m�
   }
   assert.match(sent[0].text, /Vàng miếng SJC/);
   assert.match(sent[2].text, /^XAU /);
+});
+
+// ---- bạc: !bac và !tg xag ------------------------------------------------------------------------
+
+test('!bac lấy đúng dòng 1 LƯỢNG, không lấy 1 KG hay 5 LƯỢNG', () => {
+  // Nguồn có cả ba quy cách. Chọn nhầm "5 LƯỢNG" thì giá vọt lên năm lần mà trông vẫn hợp lý.
+  const rows = vnSilver([
+    btmcSilverRow('BẠC THỎI BẠC RỒNG THĂNG LONG Ag 999 1 KG (BẠC RỒNG THĂNG LONG Ag 999)', 45892186, 48025466),
+    btmcSilverRow('BẠC MIẾNG BẠC RỒNG THĂNG LONG Ag 999 5 LƯỢNG (BẠC RỒNG THĂNG LONG Ag 999)', 8605000, 9005000),
+    btmcSilverRow('BẠC MIẾNG BẠC RỒNG THĂNG LONG Ag 999 1 LƯỢNG (BẠC RỒNG THĂNG LONG Ag 999)', 1721000, 1801000),
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].brand, 'Rồng Thăng Long');
+  assert.equal(rows[0].buyPerLuong, 1721000);
+  assert.equal(rows[0].sellPerLuong, 1801000);
+});
+
+test('một lượng bạc bằng đúng một phần năm dòng 5 LƯỢNG — đơn vị ghim lại', () => {
+  // Đối chiếu nội tại của nguồn: 5 LƯỢNG = 9.005.000 thì 1 LƯỢNG phải là 1.801.000. Đây là chỗ
+  // chứng minh "lượng" ở bảng bạc cũng là 37,5 g, không phải một quy cách khác — cùng phép kiểm đã
+  // dùng cho vàng ở Mi Hồng, chỉ khác là ở đây đơn vị nằm sẵn trong tên sản phẩm.
+  const rows = vnSilver([
+    btmcSilverRow('BẠC MIẾNG BẠC RỒNG THĂNG LONG Ag 999 5 LƯỢNG (BẠC RỒNG THĂNG LONG Ag 999)', 8605000, 9005000),
+    btmcSilverRow('BẠC MIẾNG BẠC RỒNG THĂNG LONG Ag 999 1 LƯỢNG (BẠC RỒNG THĂNG LONG Ag 999)', 1721000, 1801000),
+  ]);
+  assert.equal(rows.length, 1);   // dòng 5 LƯỢNG không lọt vào
+  assert.equal(rows[0].sellPerLuong, 1801000);
+  assert.equal(rows[0].sellPerLuong * 5, 9005000);   // = giá thỏi 5 lượng của chính nguồn
+  assert.equal(rows[0].buyPerLuong * 5, 8605000);
+});
+
+test('!bac in cả hai thương hiệu, không gộp — chênh nhau gần 2%', async () => {
+  const silver = stubSilver();
+  const { sent } = await withBot([update({ text: '!bac' })], { silver });
+  assert.equal(silver.calls, 1);
+  assert.match(sent[0].text, /^Bạc miếng Phú Quý Ag 999 1 lượng: 1\.715\.000 – 1\.768\.000 đồng$/m);
+  assert.match(sent[0].text, /^Bạc miếng Rồng Thăng Long Ag 999 1 lượng: 1\.721\.000 – 1\.801\.000 đồng$/m);
+  assert.match(sent[0].text, /Giá mua vào – bán ra · 27\/10 11:40$/);
+});
+
+test('!bac không hỏi nguồn vàng, và !vang không hỏi nguồn bạc', async () => {
+  const gold = stubGold();
+  const silver = stubSilver();
+
+  await withBot([update({ text: '!bac' })], { gold, silver, expect: 1 });
+  assert.equal(silver.calls, 1);
+  assert.equal(gold.calls, 0);
+
+  const gold2 = stubGold();
+  const silver2 = stubSilver();
+  await withBot([update({ text: '!vang' })], { gold: gold2, silver: silver2, expect: 1 });
+  assert.equal(gold2.calls, 1);
+  assert.equal(silver2.calls, 0);
+});
+
+test('nguồn bạc chết thì nói ra là bạc, không nói là vàng', async () => {
+  const { sent } = await withBot([update({ text: '!bac' })], { silver: stubSilver({ broken: true }) });
+  assert.match(sent[0].text, /Nguồn giá bạc đang không trả lời/);
+});
+
+test('nguồn bạc không có dòng nào quen thì nói ra, không gửi khung rỗng', async () => {
+  const { sent } = await withBot([update({ text: '!bac' })], { silver: stubSilver({ rows: [] }) });
+  assert.match(sent[0].text, /Nguồn giá bạc đang không trả lời/);
+});
+
+test('!tg mặc định không kèm bạc; !tg xag mới có', async () => {
+  const world = stubWorld();
+  const { sent } = await withBot([update({ text: '!tg' })], { world });
+  assert.deepEqual(world.calls, [['XAU', 'DXY']]);
+  assert.doesNotMatch(sent[0].text, /XAG/);
+
+  const asked = stubWorld();
+  const only = await withBot([update({ text: '!tg xag' })], { world: asked });
+  assert.deepEqual(asked.calls, [['XAG']]);
+  assert.match(only.sent[0].text, /^XAG /);
+});
+
+test('!tg xau xag gõ được cùng lúc, xếp XAU trước XAG rồi DXY', () => {
+  const world = stubWorld();
+  const one = (symbol, price, reference) => worldQuote(symbol, {
+    chart: { result: [{ meta: { currency: 'USD' }, indicators: { quote: [{ close: [reference, price] }] } }] },
+  });
+  const text = worldText([
+    one('DXY', 102.037, 101.96), one('XAG', 53.31, 54.108), one('XAU', 4030.7, 4038.4),
+  ]);
+  assert.match(text, /^XAU /m);
+  assert.ok(text.indexOf('XAU') < text.indexOf('XAG'));
+  assert.ok(text.indexOf('XAG') < text.indexOf('DXY'));
+});
+
+test('XAG dùng mã `SI=F` của Yahoo, không phải `XAG`', async () => {
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    return {
+      ok: true,
+      json: async () => ({ chart: { result: [{ meta: {}, indicators: { quote: [{ close: [54.1, 53.3] }] } }] } }),
+    };
+  };
+  await yahooQuotes({ fetchImpl }).quotes(['XAG']);
+  assert.match(decodeURIComponent(asked[0]), /\/SI=F\?/);
+});
+
+test('tên trường của BTMC đọc theo tiền tố, không theo số cố định', () => {
+  // Dòng 460 mang `@n_460`, không phải `@n_1`. Đọc cứng số thì mọi dòng ra `undefined`, và cái sai
+  // ấy im lặng: bảng giá rỗng chứ không phải một lỗi.
+  const rows = vnSilver([
+    { '@n_460': 'BẠC MIẾNG PHÚ QUÝ Ag 999 1 LƯỢNG (PHÚ QUÝ)', '@pb_460': '1715000', '@ps_460': '1768000', '@d_460': '27/10/2026 11:40' },
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].buyPerLuong, 1715000);
+  assert.equal(rows[0].sellPerLuong, 1768000);
+});
+
+test('nguồn bạc gọi đúng đường dẫn có tham số key bắt buộc, và đọc đúng túi phẳng của BTMC', async () => {
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    return {
+      ok: true,
+      json: async () => ({
+        DataList: {
+          Data: [
+            { '@n_95': 'BẠC MIẾNG PHÚ QUÝ Ag 999 1 LƯỢNG (PHÚ QUÝ)', '@pb_95': '1715000', '@ps_95': '1768000', '@d_95': '27/10/2026 11:40' },
+          ],
+        },
+      }),
+    };
+  };
+
+  const rows = await btmcSilver({ fetchImpl }).price();
+  // Thiếu `key` là `404`, nên nó phải có mặt — dù giá trị chỉ là hình thức.
+  assert.match(asked[0], /[?&]key=/);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].brand, 'Phú Quý');
+  assert.equal(vnSilverText(rows), [
+    'Bạc miếng Phú Quý Ag 999 1 lượng: 1.715.000 – 1.768.000 đồng',
+    'Giá mua vào – bán ra · 27/10 11:40',
+  ].join('\n'));
+});
+
+test('túi phẳng của BTMC hỏng hình thì ra rỗng, không ném', async () => {
+  for (const body of [{}, { DataList: {} }, { DataList: { Data: null } }, { Error: 'nope' }]) {
+    const fetchImpl = async () => ({ ok: true, json: async () => body });
+    assert.deepEqual(await btmcSilver({ fetchImpl }).price(), []);
+  }
 });

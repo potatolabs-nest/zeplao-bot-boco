@@ -1,9 +1,14 @@
-// Vàng, cho `/xau` và `/vang`.
+// Kim loại quý, cho `!vang`, `!bac` và `!tg`.
 //
-// Hai thị trường, hai nguồn, và chúng không liên quan gì tới dây nguồn cổ phiếu ở `chain.mjs`:
-// XAU với DXY là chỉ số thế giới, còn vàng trong nước là giá niêm yết của một tiệm, không phải
-// một cái mã có sàn. Nên chúng vào bằng một lệnh riêng chứ không đi qua `askedFor` — nhét `XAU`
-// vào đó thì bộ đọc mã sẽ đem nó đi hỏi DNSE, và câu trả lời là "không có dữ liệu".
+// Hai thị trường, ba nguồn, và chúng không liên quan gì tới dây nguồn cổ phiếu ở `chain.mjs`: XAU,
+// XAG với DXY là chỉ số thế giới, còn vàng bạc trong nước là giá niêm yết của một tiệm, không phải
+// một cái mã có sàn. Nên chúng vào bằng lệnh riêng chứ không đi qua `askedFor` — nhét `XAU` vào đó
+// thì bộ đọc mã sẽ đem nó đi hỏi DNSE, và câu trả lời là "không có dữ liệu".
+//
+// **Vàng trong nước của Mi Hồng, bạc trong nước của BTMC.** Không phải tuỳ tiện: Mi Hồng trả về
+// một lượt gọn gàng và có cả nhẫn lẫn SJC, nhưng nó **không có bạc** — `market=silver` trả `400`,
+// và danh sách `goldCode` hợp lệ chỉ có mười mã vàng. BTMC thì có bạc, và bạc của họ ghi đơn vị
+// ngay trong tên sản phẩm.
 //
 // **Mi Hồng** trả vàng trong nước: một lượt gọi, không khoá, không header. Giá của họ tính bằng
 // **đồng một chỉ**, không phải một lượng — chỗ này là chỗ dễ sai nhất, vì `14050000` đọc lên y như
@@ -22,7 +27,13 @@
 import { money } from './quote.mjs';
 
 export const MIHONG = process.env.MIHONG_GOLD ?? 'https://api.mihong.com/v1/gold-prices';
+export const BTMC = process.env.BTMC_GOLD ?? 'https://api.btmc.vn/api/BTMCAPI/getpricebtmc';
 export const YAHOO = process.env.YAHOO_CHART ?? 'https://query1.finance.yahoo.com/v8/finance/chart';
+
+/// Khoá của BTMC: đường dẫn **bắt buộc** có tham số này — thiếu thì `404` — nhưng giá trị nào cũng
+/// chạy. Nó là một tham số hình thức, không phải một bí mật, nên nó nằm trong repo như mọi hằng số
+/// khác. Đây không phải chỗ để đặt biến môi trường.
+const BTMC_KEY = '123456';
 
 const TIMEOUT_MS = 8000;
 
@@ -43,7 +54,7 @@ const VN_CODES = [
 const CHI_PER_LUONG = 10;
 
 /// Tên gọi trên Yahoo. Không có spot, xem đầu file.
-export const WORLD_SYMBOLS = { XAU: 'GC=F', DXY: 'DX-Y.NYB' };
+export const WORLD_SYMBOLS = { XAU: 'GC=F', XAG: 'SI=F', DXY: 'DX-Y.NYB' };
 
 /// Yahoo đóng cửa cho một request không `User-Agent`. Chuỗi này không phải để giả danh ai — nó chỉ
 /// là thứ tối thiểu một HTTP client tử tế gửi kèm.
@@ -112,7 +123,101 @@ export function vnGold(rows) {
 }
 
 /**
- * XAU và DXY, từ Yahoo.
+ * Bạc trong nước, từ BTMC.
+ *
+ * Vì sao bạc đi nguồn khác vàng: xem đầu file — Mi Hồng không có bạc.
+ *
+ * Đơn vị ở đây **khác vàng, và khác theo hướng dễ chịu hơn**: bạc của BTMC ghi đơn vị ngay trong
+ * tên sản phẩm ("BẠC MIẾNG PHÚ QUÝ Ag 999 **1 LƯỢNG**"), nên con số tự nói ra đơn vị của nó. Đó
+ * cũng là lý do ở đây **không** có phép nhân mười như `vnGold`: chọn đúng dòng "1 LƯỢNG" rồi đọc
+ * thẳng, thay vì lấy một dòng rồi đoán quy ước của bảng. Đối chiếu: dòng "5 LƯỢNG" của Rồng Thăng
+ * Long là 9.005.000, đúng năm lần dòng "1 LƯỢNG" 1.801.000; và thỏi 1 KG chia 26,67 lượng cũng ra
+ * đúng con số ấy.
+ *
+ * Có hai thương hiệu và không gộp chúng: Phú Quý với Rồng Thăng Long chênh nhau gần 2% một lượng,
+ * và người mua bạc miếng quan tâm thương hiệu nào mua lại được. Gộp thành một dòng là bỏ mất đúng
+ * thứ họ cần biết.
+ */
+export function btmcSilver({ base = BTMC, fetchImpl = fetch, timeout = TIMEOUT_MS, now = () => Date.now() } = {}) {
+  let last = null;
+
+  async function rows() {
+    const response = await fetchImpl(`${base}?key=${BTMC_KEY}`, {
+      headers: { Accept: 'application/json', 'User-Agent': UA },
+      signal: AbortSignal.timeout(timeout),
+    });
+    if (!response.ok) throw new Error(`BTMC trả lời ${response.status}`);
+    const data = await response.json();
+    return Array.isArray(data?.DataList?.Data) ? data.DataList.Data : [];
+  }
+
+  return {
+    /// Giá từng thương hiệu bạc, hoặc mảng rỗng khi nguồn không có dòng nào quen.
+    async price() {
+      if (!last || now() - last.at >= VN_FRESH_MS) last = { at: now(), rows: await rows() };
+      return vnSilver(last.rows);
+    },
+  };
+}
+
+/**
+ * Một dòng thô của BTMC thành `{ tên, giá }`.
+ *
+ * Bản ghi của họ là một **túi phẳng** với tên trường tự đánh số, và số ấy đổi theo dòng: dòng 95
+ * mang `@n_95`, `@pb_95`, còn dòng 460 mang `@n_460`, `@pb_460`. Nên trường được tìm theo **tiền
+ * tố**, không theo tên cố định — đọc cứng `@n_95` thì hôm sau nguồn đổi thứ tự là ra `undefined`
+ * cho mọi dòng, và cái sai ấy im lặng.
+ */
+function btmcRow(row) {
+  const pick = (prefix) => {
+    for (const [key, value] of Object.entries(row ?? {})) {
+      if (key.startsWith(prefix)) return value;
+    }
+    return undefined;
+  };
+  const name = String(pick('@n_') ?? '').trim();
+  const buy = Number(pick('@pb_'));
+  const sell = Number(pick('@ps_'));
+  const at = String(pick('@d_') ?? '');
+  return name ? { name, buy, sell, at } : null;
+}
+
+/// Bạc miếng 1 lượng của từng thương hiệu, theo thứ tự cố định để câu trả lời không đổi thứ tự
+/// giữa hai lần gõ. Tên thương hiệu lấy từ chính tên sản phẩm, không viết tay thành một danh sách
+/// thứ hai sẽ cũ.
+const SILVER_BRANDS = [
+  { key: 'PHÚ QUÝ', label: 'Phú Quý' },
+  { key: 'RỒNG THĂNG LONG', label: 'Rồng Thăng Long' },
+];
+
+export function vnSilver(rows) {
+  const parsed = (rows ?? []).map(btmcRow).filter(Boolean);
+
+  return SILVER_BRANDS.flatMap(({ key, label }) => {
+    // Dòng "1 LƯỢNG" của thương hiệu này. Bỏ qua `0,5 KG`, `1 KG`, `5 LƯỢNG`: chúng là cùng một
+    // thứ nhân lên, và một bảng giá trong chat chỉ cần một quy cách.
+    const row = parsed.find((one) => {
+      const name = one.name.toUpperCase();
+      return name.includes('BẠC') && name.includes(key) && /1\s*LƯỢNG/.test(name);
+    });
+    if (!row) return [];
+
+    const price = (value) => (Number(value) > 0 ? Number(value) : null);
+    const buy = price(row.buy);
+    const sell = price(row.sell);
+    if (buy == null && sell == null) return [];
+
+    return [{
+      brand: label,
+      buyPerLuong: buy,
+      sellPerLuong: sell,
+      at: row.at,
+    }];
+  });
+}
+
+/**
+ * XAU, XAG và DXY, từ Yahoo.
  *
  * Giá hiện tại đọc ở **cây nến cuối**, không đọc ở `meta.regularMarketPrice` — hai chỗ ấy bằng
  * nhau hôm nay, nhưng chỉ một chỗ là thứ `quotes()` bên dưới cũng dùng, và hai đường đọc cho cùng
@@ -266,6 +371,26 @@ export function vnGoldText(rows) {
 }
 
 /**
+ * Cả câu trả lời cho `!bac`.
+ *
+ * Một dòng mỗi thương hiệu, mỗi dòng một quy cách — một lượng. Không có dòng "một chỉ" như vàng:
+ * bạc bán theo lượng và theo kg, một chỉ bạc là thứ không ai niêm yết.
+ */
+export function vnSilverText(rows) {
+  if (!rows?.length) return null;
+
+  const lines = rows.map((one) => {
+    if (one.buyPerLuong == null) return `Bạc miếng ${one.brand} Ag 999 1 lượng: ${vnd(one.sellPerLuong)} đồng`;
+    if (one.sellPerLuong == null) return `Bạc miếng ${one.brand} Ag 999 1 lượng: ${vnd(one.buyPerLuong)} đồng`;
+    return `Bạc miếng ${one.brand} Ag 999 1 lượng: ${vnd(one.buyPerLuong)} – ${vnd(one.sellPerLuong)} đồng`;
+  });
+
+  const when = stamp(rows[0].at);
+  lines.push(when ? `Giá mua vào – bán ra · ${when}` : 'Giá mua vào – bán ra');
+  return lines.join('\n');
+}
+
+/**
  * Cả câu trả lời cho `/xau` — vàng thế giới và sức mạnh đồng đô la, cùng một tin.
  *
  * Hai chỉ số này đi cùng nhau vì chúng trả lời cùng một câu: vàng tính bằng đô la, nên đồng đô la
@@ -275,7 +400,7 @@ export function worldText(quotes) {
   const kept = (quotes ?? []).filter(Boolean);
   if (!kept.length) return null;
 
-  const order = ['XAU', 'DXY'];
+  const order = ['XAU', 'XAG', 'DXY'];
   const sorted = [...kept].sort((a, b) => order.indexOf(a.symbol) - order.indexOf(b.symbol));
   return sorted.map(worldLine).filter(Boolean).join('\n');
 }

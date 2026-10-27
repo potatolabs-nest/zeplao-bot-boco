@@ -26,7 +26,8 @@ dài đúng một dòng.
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
 | `/liqu`, `/thanhkhoan` | Chart thanh khoản VN-Index cộng dồn trong phiên, so với cùng giờ phiên trước — số liệu nến phút của Vietcap |
 | `/vang`, `!vang`, `!sjc` | Giá vàng trong nước: vàng miếng SJC và nhẫn tròn trơn 999.9, mỗi thứ hai dòng — một lượng và một chỉ, giá mua vào – bán ra. Số liệu Mi Hồng |
-| `/tg`, `!tg`, `!tg xau`, `!tg dxy` | Vàng thế giới (XAU) và chỉ số đô la (DXY), một dòng mỗi thứ. Số liệu Yahoo |
+| `/bac`, `!bac` | Giá bạc trong nước: miếng Phú Quý và Rồng Thăng Long Ag 999, một lượng, giá mua vào – bán ra. Số liệu BTMC |
+| `/tg`, `!tg`, `!tg xau`, `!tg xag`, `!tg dxy` | Vàng (XAU), bạc (XAG) thế giới và chỉ số đô la (DXY), một dòng mỗi thứ. Số liệu Yahoo |
 | `/sugg`, `!sugg` | Quét cả sàn, 10 mã đáng mua nhất lúc gõ theo PTKT. Hình: vị trí 10 mã trên phân bố điểm của cả sàn, và mỗi mã một thanh rủi ro / lời trên chung một trục % kèm lý do; chữ: mỗi mã một dòng mua / chốt / cắt lỗ |
 | `/view vnindex`, `/view vn30f1m`, `/view fuevfvnd` — mọi mã, kể cả mã không có lệnh riêng | Chỉ số, phái sinh, chứng chỉ quỹ — cùng một dấu |
 | `@bocobot vic hpg` | Gọi tên, nếu ai đó quen lối ấy |
@@ -177,27 +178,42 @@ tại.
 Bot không biết nguồn nào đang trả lời. Nó nhận một cái hình có đúng hai hàm, `quotes()` và
 `universe()`, nên cắm thêm hay đổi nguồn không phải sửa một dòng nào trong phần bot.
 
-### Vàng không đi qua dây nguồn ấy
+### Vàng bạc không đi qua dây nguồn ấy
 
-`!vang` và `!tg` có nguồn riêng, vì vàng không phải một cái mã có sàn. Nhét `XAU` vào dây nguồn
-trên thì bộ đọc mã sẽ đem nó đi hỏi DNSE — và DNSE không có XAU lẫn DXY, cả hai đều trả `400`.
-Nên hai lệnh ấy có bộ đọc riêng, chạy **trước** `askedFor`, cùng chỗ với `!tin` và `!ptkt`.
+`!vang`, `!bac` và `!tg` có nguồn riêng, vì vàng bạc không phải những cái mã có sàn. Nhét `XAU` vào
+dây nguồn trên thì bộ đọc mã sẽ đem nó đi hỏi DNSE — và DNSE không có XAU, XAG lẫn DXY, cả ba đều
+trả `400`. Nên các lệnh ấy có bộ đọc riêng, chạy **trước** `askedFor`, cùng chỗ với `!tin` và `!ptkt`.
 
-Hai nguồn, và cả hai đều không cần khoá:
+Ba nguồn, và cả ba đều không cần khoá:
 
 | Nguồn | Cho | Gọi thế nào |
 | --- | --- | --- |
 | Mi Hồng `api.mihong.com/v1/gold-prices?market=domestic` | Vàng trong nước: SJC, nhẫn 999.9 | Một lượt, không header gì |
-| Yahoo `query1.finance.yahoo.com/v8/finance/chart/{mã}` | XAU và DXY | Một lượt mỗi mã, **phải kèm `User-Agent`** |
+| BTMC `api.btmc.vn/api/BTMCAPI/getpricebtmc` | Bạc trong nước: Phú Quý, Rồng Thăng Long | Một lượt, **bắt buộc có `?key=`** (giá trị nào cũng chạy) |
+| Yahoo `query1.finance.yahoo.com/v8/finance/chart/{mã}` | XAU, XAG và DXY | Một lượt mỗi mã, **phải kèm `User-Agent`** |
 
-Ba chỗ ở đây là chỗ dễ sai, và cả ba đều im lặng khi sai:
+**Vàng và bạc trong nước đi hai nguồn khác nhau, và đó không phải tuỳ tiện.** Mi Hồng trả một lượt
+gọn gàng, có cả SJC lẫn nhẫn — nhưng nó **không có bạc**: `market=silver` trả `400`, và danh sách
+`goldCode` hợp lệ chỉ có mười mã vàng. BTMC thì có bạc. Đổi lại, túi dữ liệu của BTMC khó đọc hơn:
+một bản ghi phẳng với **tên trường tự đánh số** (`@n_95`, `@pb_95`, rồi `@n_460`, `@pb_460` ở dòng
+khác), nên trường phải tìm theo **tiền tố** — đọc cứng `@n_95` thì hôm sau nguồn đổi thứ tự là ra
+`undefined` cho mọi dòng, và cái sai ấy im lặng.
 
-**Giá Mi Hồng là đồng một CHỈ, không phải một lượng.** `14050000` đọc lên y như một cái giá một
+Bốn chỗ dưới đây là chỗ dễ sai, và cả bốn đều im lặng khi sai:
+
+**Giá vàng Mi Hồng là đồng một CHỈ, không phải một lượng.** `14050000` đọc lên y như một cái giá một
 lượng rẻ mạt. Đối chiếu ba nguồn: Mi Hồng niêm yết SJC 1 chỉ 14.200.000 bán ra; BTMC cũng niêm
 yết SJC đúng 14.200.000 cho sản phẩm "0.1" của họ, tức một phần mười lượng; và trên thế giới vàng
 lúc ấy $4.030 một ounce — một lượng là 1,2056 ounce, tỷ giá 25.831, ra 125,5 triệu, cộng chênh
 lệch SJC quen thuộc là vừa khớp. Một lượng mười chỉ, nên SJC bán ra **142.000.000 đồng một lượng**.
 Phép nhân mười ấy nằm một chỗ, ở `vnGold`, và có bài test ghim lại.
+
+**Bạc BTMC thì ngược lại: đơn vị ghi sẵn trong tên sản phẩm** ("BẠC MIẾNG PHÚ QUÝ Ag 999 **1
+LƯỢNG**"), nên ở đó **không** có phép nhân nào — chọn đúng dòng "1 LƯỢNG" rồi đọc thẳng, thay vì
+lấy một dòng rồi đoán quy ước của bảng. Nguồn có cả `1 KG`, `0,5 KG`, `5 LƯỢNG`; chọn nhầm dòng
+`5 LƯỢNG` thì giá vọt lên năm lần mà trông vẫn hoàn toàn hợp lý. Đối chiếu: dòng "5 LƯỢNG" của Rồng
+Thăng Long là 9.005.000, đúng năm lần dòng "1 LƯỢNG" 1.801.000 — và đúng bằng năm lần phép tính
+của bot.
 
 **Yahoo đóng cửa với một request không `User-Agent`** — nó trả `429`, và `429` đọc lên như bị chặn
 vì hạn mức. Không phải: chỉ là cửa trước không mở cho một request trần trụi.
@@ -210,8 +226,14 @@ chiếu thì mức tăng giảm là của cả tuần mà gọi tên là của h
 
 Cũng vì thế mà `!tg` là một **prefix** chứ không phải `!xau` trơn: bot này phục vụ một phòng trong
 nước, `XAU` lại đúng hình một mã cổ phiếu, nên phần thị trường ngoài đứng sau một chữ riêng. `!tg`
-trơn là cả hai; `!tg xau` hay `!tg dxy` là một thứ. Vàng trong nước thì không cần prefix — đó là
-việc chính.
+trơn là vàng với đô la — hai thứ trả lời cùng một câu, vì vàng tính bằng đô la nên đồng đô la mạnh
+lên là một cái gió ngược; `!tg xau`, `!tg xag` hay `!tg dxy` là một thứ, và gõ được cùng lúc. **Bạc
+không vào mặc định**: nó là chỉ số thứ ba, và một dòng thừa trong câu trả lời của người chỉ hỏi vàng
+là một dòng người ta phải bỏ qua. Vàng bạc trong nước thì không cần prefix — đó là việc chính.
+
+Bạc trong nước có hai thương hiệu và **không gộp chúng**: Phú Quý với Rồng Thăng Long chênh nhau gần
+2% một lượng, và người mua bạc miếng quan tâm thương hiệu nào mua lại được. Gộp thành một dòng là bỏ
+mất đúng thứ họ cần biết.
 
 ### Khoá DNSE
 
@@ -332,7 +354,7 @@ phải chỗ để cắt cho nhanh.
 | `market/dnse.mjs` | Nguồn 2 và 3 — nến ngày, và tầng có khoá |
 | `market/chain.mjs` | Xếp các nguồn thành một hàng |
 | `market/liquidity.mjs` | Thanh khoản VN-Index cho `!liqu`: nến phút Vietcap, so cùng giờ, chart SVG |
-| `market/gold.mjs` | Vàng cho `!vang` (Mi Hồng, trong nước) và `!tg` (Yahoo: XAU, DXY) |
+| `market/gold.mjs` | Vàng bạc cho `!vang` (Mi Hồng), `!bac` (BTMC) và `!tg` (Yahoo: XAU, XAG, DXY) |
 | `market/suggest.mjs` | Quét cả sàn cho `!sugg`: lọc, xếp hạng, câu chữ |
 | `market/symbols.mjs` | Cái sàng: cái gì là mã, cái gì là lệnh của bot bên cạnh |
 | `market/strength.mjs` | Bộ lọc `!manh`, và nến phiên đang chạy dựng từ nến 5 phút |
