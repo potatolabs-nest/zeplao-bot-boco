@@ -18,6 +18,7 @@ import { floorTick, roundTick, sma } from './technical.mjs';
 import { formatDay, tradingDay } from './chart.mjs';
 import { money, vietnamNow } from './quote.mjs';
 import { pulseLines, pulseOf } from './pulse.mjs';
+import { phaseLines } from './strategy.mjs';
 
 export const DEFAULTS = {
   // ---- Tầng 1: lọc cứng ----
@@ -366,6 +367,7 @@ export function strengthMessage(report, { groupOf = () => '', limit = MOST_LISTE
   const lines = heading('MẠNH', report, now);
   if (market) lines.push(`VN-Index ${signed(market.change20)} 20 phiên · ${REGIME[market.regime]}`);
   lines.push(...pulseLines(report.pulse, { estimated: Boolean(now) }));
+  lines.push(...phaseLines(market, report.pulse));
   lines.push(`${liquid.length}/${results.length} mã đủ thanh khoản · ${leaders.length} mã dẫn dắt`);
 
   const o = { ...DEFAULTS, ...options };

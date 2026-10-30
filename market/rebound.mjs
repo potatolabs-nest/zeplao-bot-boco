@@ -23,6 +23,7 @@ import { formatDay } from './chart.mjs';
 import { money } from './quote.mjs';
 import { dayOf, heading, indexDays, marketOf, settled, spikeTag, volumeNote } from './strength.mjs';
 import { pulseLines, pulseOf } from './pulse.mjs';
+import { phaseLines } from './strategy.mjs';
 
 export const DEFAULTS = {
   /// Thanh khoản: KL TB20 từ chừng này cổ, hoặc giá trị TB20 từ chừng này đồng — như `!manh`.
@@ -304,6 +305,7 @@ export function reboundMessage(report, { groupOf = () => '', limit = MOST_LISTED
   const lines = heading('HỒI PHỤC', report, now);
   if (market) lines.push(`VN-Index ${signed(market.change20)} 20 phiên · ${REGIME[market.regime]}`);
   lines.push(...pulseLines(report.pulse, { estimated: Boolean(now) }));
+  lines.push(...phaseLines(market, report.pulse));
   lines.push(`${liquid.length}/${results.length} mã đủ thanh khoản · ${candidates.length} mã đã xác nhận đáy`);
 
   const planLine = (r) => {

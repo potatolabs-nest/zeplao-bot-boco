@@ -20,10 +20,11 @@ import { foreignOf, vndirectForeign } from './market/foreign.mjs';
 import { eased } from './market/heatmap.mjs';
 import { changes, sessionShare, strengthMessage, withToday } from './market/strength.mjs';
 import { reboundMessage } from './market/rebound.mjs';
+import { phaseLines, phaseOf, strategyMessage } from './market/strategy.mjs';
 import { sectorFlows, stockFlow } from './market/flow.mjs';
 import { pulseSeries } from './market/pulse.mjs';
 import { sectorMessage } from './market/screens.mjs';
-import { basketSvg, flowSvg } from './market/screens-chart.mjs';
+import { basketSvg, flowSvg, strategySvg } from './market/screens-chart.mjs';
 
 const VIC = {
   sym: 'VIC', r: 244.5, c: 261.6, f: 227.4,
@@ -831,4 +832,56 @@ test('!hoiphuc: danh sách theo dõi kể mã thiếu đúng một điều kiệ
   const text = reboundMessage(report);
   assert.match(text, /Theo dõi — gần xác nhận đáy, thiếu một điều kiện:\n1\. AAA 20 · pivot 22 \(-9,1%\) · thiếu MA20 quay lên \(giá dưới MA20 20 · MA20 -1%\)/);
   assert.doesNotMatch(text, /BBB|CCC/);
+});
+
+test('pha thị trường: điều chỉnh hoặc dưới MA50 là downtrend, trên MA50 kèm xác nhận là uptrend, còn lại đi ngang', () => {
+  const up = { regime: 'up', close: 1800, ma20: 1790, ma50: 1750 };
+  const down = { regime: 'down', close: 1700, ma20: 1720, ma50: 1760 };
+  const mixed = { regime: 'mixed', close: 1760, ma20: 1740, ma50: 1750 };
+  assert.equal(phaseOf(down, { state: 'attempt' }), 'down');
+  assert.equal(phaseOf(up, { state: 'correction' }), 'down');
+  assert.equal(phaseOf(up, { state: 'confirmed' }), 'up');
+  assert.equal(phaseOf(up, { state: 'pressure' }), 'sideways');
+  assert.equal(phaseOf(mixed, { state: 'confirmed' }), 'sideways');
+  assert.equal(phaseOf(null, null), null);
+
+  const lines = phaseLines(down, { state: 'attempt', distribution: 9 });
+  assert.match(lines[0], /^Pha thị trường: DOWNTREND · tỷ trọng cổ phiếu 0–20%/);
+  assert.match(lines[2], /Có ngày xác nhận thì thăm dò/);
+  assert.deepEqual(phaseLines(null, null), []);
+});
+
+test('!strategy: chỉ in hành động của pha hiện tại, kèm lý do và điều kiện chuyển pha', () => {
+  const down = { regime: 'down', close: 1741, ma20: 1720, ma50: 1760 };
+  const attempt = { state: 'attempt', distribution: 9, attemptDay: 8, low: 1677.2 };
+  const text = strategyMessage(down, attempt, { day: '2026-10-30' });
+  assert.match(text, /^CHIẾN LƯỢC · phiên 30\/10\/2026\nPha hiện tại: DOWNTREND — giữ vốn/);
+  assert.match(text, /Vì sao: VN-Index dưới MA50 · MA20 dưới MA50 · đang nỗ lực hồi phục, chưa xác nhận · 9 phiên phân phối\/25/);
+  assert.match(text, /Tỷ trọng cổ phiếu 0–20%/);
+  assert.match(text, /Lúc này: Ngày 8 của nhịp hồi từ đáy 1.677,2, chưa có ngày xác nhận: chưa mua đuổi/);
+  assert.doesNotMatch(text, /UPTREND|ĐI NGANG|80–100%/);
+  assert.ok(text.length < 2000, `dài ${text.length} ký tự`);
+
+  const up = strategyMessage({ regime: 'up', close: 1800, ma20: 1790, ma50: 1750 }, { state: 'confirmed', distribution: 1 });
+  assert.match(up, /Pha hiện tại: UPTREND/);
+  assert.match(up, /Tỷ trọng cổ phiếu 80–100%/);
+  assert.doesNotMatch(up, /DOWNTREND|Lúc này/);
+
+  const bare = strategyMessage(null, null);
+  assert.match(bare, /Chưa lấy được dữ liệu VN-Index/);
+  assert.match(bare, /Kỷ luật chung/);
+});
+
+test('hình !strategy: pha hiện tại tô đặc, thước tỷ trọng, sáu ô hành động; không có pha thì không có hình', () => {
+  const svg = strategySvg({ regime: 'down', close: 1741.62, ma20: 1720, ma50: 1760 }, { state: 'attempt', distribution: 9 }, { day: '2026-10-30' });
+  assert.match(svg, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+  assert.match(svg, />Chiến lược theo pha thị trường</);
+  assert.match(svg, />phiên 30\/10\/2026 · VN-Index 1\.741,62</);
+  assert.match(svg, /font-weight="800" fill="#ffffff">DOWNTREND</);   // pha hiện tại: chữ trắng trên nền đặc
+  assert.match(svg, /fill="#898781">UPTREND</);                        // pha khác: chữ xám
+  assert.match(svg, />0–20%</);
+  assert.match(svg, />Rủi ro mỗi lệnh</);
+  assert.match(svg, />Lúc này</);
+  assert.match(svg, />▼</);
+  assert.equal(strategySvg(null, null), null);
 });

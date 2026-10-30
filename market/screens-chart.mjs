@@ -1,4 +1,4 @@
-// Hình cho ba bộ lọc cả rổ: `!dongtien`, `!manh`, `!hoiphuc`.
+// Hình cho ba bộ lọc cả rổ `!dongtien`, `!manh`, `!hoiphuc`, và tấm infographic của `!strategy`.
 //
 // Chữ của ba lệnh ấy vẫn đi kèm, trong cùng một tin. Hình làm việc mà chữ làm kém: `!dongtien` so
 // hai chục ngành trên hai chiều một lúc — tỷ trọng và giá — mà chữ thì phải cắt còn vài ngành cho
@@ -13,6 +13,7 @@ import { formatDay } from './chart.mjs';
 import { money } from './quote.mjs';
 import { STATUS as STRONG } from './strength.mjs';
 import { STATUS as REBOUND } from './rebound.mjs';
+import { PHASES, exposureText, nowText, phaseOf, phaseReasons } from './strategy.mjs';
 
 const W = 1000;
 const SCALE = 2;
@@ -213,6 +214,155 @@ function cellSvg(kind, result, rows, group, { x, y }) {
   <circle cx="${r(px(closes.length - 1))}" cy="${r(py(closes.at(-1)))}" r="5" fill="${FAST}"/>
   <text x="${x + 16}" y="${y + CELL.height - 18}" font-size="19" fill="${SECONDARY}">${escapeXml(foot)}</text>
 </g>`;
+}
+
+// ---- !strategy ----------------------------------------------------------------------------------
+
+/// Màu của từng pha. Không bao giờ đứng một mình: pha hiện tại còn được tô đặc, chữ trắng, có mũi tên.
+const PHASE_COLOR = { down: DOWN, sideways: CAUTION, up: UP };
+const TONE = {
+  up: { mark: '▲', color: UP },
+  down: { mark: '▼', color: DOWN },
+  flat: { mark: '●', color: CAUTION },
+};
+
+/**
+ * Một tấm infographic cho pha hiện tại: thanh ba pha có pha hiện tại tô đặc, lý do, thước tỷ trọng
+ * cổ phiếu, sáu ô hành động, điểm mua / chốt lời, và điều kiện chuyển pha. `null` khi không xác
+ * định được pha — tin chữ khi ấy đã nói ra lý do.
+ */
+export function strategySvg(market, pulse, { day = '' } = {}) {
+  const phase = phaseOf(market, pulse);
+  if (!phase) return null;
+  const p = PHASES[phase];
+  const color = PHASE_COLOR[phase];
+  const parts = [];
+  let y = 0;
+
+  // Thanh ba pha, trái sang phải từ xấu tới tốt.
+  const order = ['down', 'sideways', 'up'];
+  const segment = { top: 150, height: 64, gap: 14, width: (W - 72 - 2 * 14) / 3 };
+  order.forEach((key, i) => {
+    const x = 36 + i * (segment.width + segment.gap);
+    const current = key === phase;
+    parts.push(`<rect x="${r(x)}" y="${segment.top}" width="${r(segment.width)}" height="${segment.height}" rx="12" fill="${current ? PHASE_COLOR[key] : '#eeede8'}" stroke="${current ? PHASE_COLOR[key] : AXIS}" stroke-width="1.5"/>`);
+    parts.push(`<text x="${r(x + segment.width / 2)}" y="${segment.top + 42}" text-anchor="middle" font-size="${current ? 28 : 22}" font-weight="${current ? 800 : 600}" fill="${current ? '#ffffff' : MUTED}">${escapeXml(PHASES[key].name)}</text>`);
+    if (current) {
+      const cx = x + segment.width / 2;
+      parts.push(`<path d="M${r(cx - 12)},${segment.top - 22}L${r(cx + 12)},${segment.top - 22}L${r(cx)},${segment.top - 6}Z" fill="${INK}"/>`);
+      parts.push(`<text x="${r(cx + 20)}" y="${segment.top - 8}" font-size="18" font-weight="700" fill="${INK}">hiện tại</text>`);
+    }
+  });
+  y = segment.top + segment.height + 40;
+  parts.push(`<text x="36" y="${y}" font-size="22" fill="${SECONDARY}">Mục tiêu: <tspan font-weight="700" fill="${INK}">${escapeXml(p.goal)}</tspan></text>`);
+
+  // Lý do: mỗi tiêu chí một nhãn, có ký hiệu chiều chứ không chỉ có màu.
+  y += 24;
+  let chipX = 36;
+  for (const reason of phaseReasons(market, pulse)) {
+    const tone = TONE[reason.tone];
+    const width = Math.round(reason.text.length * 9.6 + 54);
+    if (chipX + width > W - 36) { chipX = 36; y += 48; }
+    parts.push(`<rect x="${chipX}" y="${y}" width="${width}" height="38" rx="19" fill="#ffffff" stroke="${GRID}" stroke-width="1.5"/>`);
+    parts.push(`<text x="${chipX + 16}" y="${y + 26}" font-size="19" fill="${INK}"><tspan fill="${tone.color}" font-weight="700">${tone.mark}</tspan><tspan dx="8">${escapeXml(reason.text)}</tspan></text>`);
+    chipX += width + 12;
+  }
+  y += 38 + 56;
+
+  // Thước tỷ trọng cổ phiếu 0–100%, khoảng nên giữ tô theo màu pha.
+  const [low, high] = p.exposure;
+  const bar = { left: 36, right: W - 36, height: 40 };
+  const bx = (value) => bar.left + (value / 100) * (bar.right - bar.left);
+  parts.push(`<text x="36" y="${y}" font-size="24" font-weight="700" fill="${INK}">Tỷ trọng cổ phiếu</text>`);
+  parts.push(`<text x="${W - 36}" y="${y + 4}" text-anchor="end" font-size="40" font-weight="800" fill="${color}">${exposureText(phase)}</text>`);
+  y += 22;
+  parts.push(`<rect x="${bar.left}" y="${y}" width="${bar.right - bar.left}" height="${bar.height}" rx="8" fill="#f3f2ee" stroke="${GRID}" stroke-width="1.5"/>`);
+  parts.push(`<rect x="${r(bx(low))}" y="${y}" width="${r(Math.max(6, bx(high) - bx(low)))}" height="${bar.height}" rx="8" fill="${color}"/>`);
+  for (const tick of [0, 20, 40, 60, 80, 100]) {
+    parts.push(`<line x1="${r(bx(tick))}" y1="${y + bar.height}" x2="${r(bx(tick))}" y2="${y + bar.height + 8}" stroke="${AXIS}" stroke-width="1.5"/>`);
+    parts.push(`<text x="${r(bx(tick))}" y="${y + bar.height + 30}" text-anchor="${tick === 0 ? 'start' : tick === 100 ? 'end' : 'middle'}" font-size="17" fill="${MUTED}">${tick}%</text>`);
+  }
+  y += bar.height + 66;
+  parts.push(`<text x="36" y="${y}" font-size="19" fill="${SECONDARY}">Phần còn lại giữ tiền mặt: <tspan font-weight="700" fill="${INK}">${100 - high}–${100 - low}%</tspan></text>`);
+  y += 28;
+
+  // Sáu ô hành động, ba cột.
+  const box = { width: (W - 72 - 2 * 18) / 3, height: 124, gap: 18 };
+  p.cards.forEach((item, i) => {
+    const x = 36 + (i % 3) * (box.width + box.gap);
+    const top = y + Math.floor(i / 3) * (box.height + box.gap);
+    parts.push(`<rect x="${r(x)}" y="${top}" width="${r(box.width)}" height="${box.height}" rx="12" fill="#ffffff" stroke="${GRID}" stroke-width="1.5"/>`);
+    parts.push(`<rect x="${r(x)}" y="${top}" width="6" height="${box.height}" rx="3" fill="${color}"/>`);
+    parts.push(`<text x="${r(x + 22)}" y="${top + 34}" font-size="19" fill="${SECONDARY}">${escapeXml(item.label)}</text>`);
+    parts.push(`<text x="${r(x + 22)}" y="${top + 80}" font-size="36" font-weight="800" fill="${INK}">${escapeXml(item.value)}</text>`);
+    if (item.note) parts.push(`<text x="${r(x + 22)}" y="${top + 108}" font-size="17" fill="${MUTED}">${escapeXml(item.note)}</text>`);
+  });
+  y += 2 * box.height + box.gap + 52;
+
+  // Điểm mua, chốt lời, và việc lúc này — chữ dài, xuống dòng theo bề ngang.
+  const paragraph = (title, text, accent = INK) => {
+    parts.push(`<text x="36" y="${y}" font-size="22" font-weight="700" fill="${accent}">${escapeXml(title)}</text>`);
+    y += 34;
+    for (const line of wrapped(text, 82)) {
+      parts.push(`<text x="36" y="${y}" font-size="21" fill="${INK}">${escapeXml(line)}</text>`);
+      y += 30;
+    }
+    y += 18;
+  };
+  paragraph('Điểm mua ưu tiên', p.entry);
+  paragraph('Chốt lời', p.exit);
+
+  const now = nowText(phase, pulse);
+  if (now) {
+    const lines = wrapped(now, 80);
+    const height = 50 + lines.length * 30;
+    parts.push(`<rect x="24" y="${y - 6}" width="${W - 48}" height="${height}" rx="12" fill="#eef3f9" stroke="${FAST}" stroke-width="2"/>`);
+    y += 26;
+    parts.push(`<text x="44" y="${y}" font-size="22" font-weight="700" fill="${FAST}">Lúc này</text>`);
+    y += 32;
+    for (const line of lines) {
+      parts.push(`<text x="44" y="${y}" font-size="21" fill="${INK}">${escapeXml(line)}</text>`);
+      y += 30;
+    }
+    y += 30;
+  }
+
+  parts.push(`<text x="36" y="${y}" font-size="22" font-weight="700" fill="${INK}">Chuyển pha khi</text>`);
+  y += 34;
+  for (const item of p.next) {
+    const lines = wrapped(item, 80);
+    lines.forEach((line, i) => {
+      parts.push(`<text x="${i ? 62 : 36}" y="${y}" font-size="20" fill="${SECONDARY}">${i ? '' : '→  '}${escapeXml(line)}</text>`);
+      y += 29;
+    });
+    y += 6;
+  }
+
+  const H = y + 50;
+  const when = `${day ? `phiên ${formatDay(day)}` : ''}${market ? ` · VN-Index ${money(market.close)}` : ''}`.replace(/^ · /, '');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W * SCALE}" height="${H * SCALE}" viewBox="0 0 ${W} ${H}" font-family="${FONT}">
+  <rect width="${W}" height="${H}" fill="${SURFACE}"/>
+  <text x="36" y="66" font-size="42" font-weight="800" fill="${INK}">Chiến lược theo pha thị trường</text>
+  <text x="36" y="102" font-size="22" fill="${SECONDARY}">${escapeXml(when)}</text>
+  ${parts.join('\n  ')}
+  <text x="36" y="${H - 22}" font-size="18" fill="${MUTED}">Quy tắc quản lý vốn chưa backtest — không phải khuyến nghị đầu tư.</text>
+</svg>`;
+}
+
+/// Chia chữ thành dòng không quá `most` ký tự, ngắt ở khoảng trắng.
+function wrapped(text, most) {
+  const lines = [];
+  let line = '';
+  for (const word of String(text).split(/\s+/)) {
+    if (line && line.length + 1 + word.length > most) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 // ---- tiện ích ----------------------------------------------------------------------------------

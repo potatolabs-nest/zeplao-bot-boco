@@ -24,6 +24,7 @@ dài đúng một dòng.
 | `!manh`, `!manh hientai` | Mã dẫn dắt trong VN30 + VNMID, kèm điểm vào và cắt lỗ |
 | `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
+| `!strategy`, `!chienluoc` | Pha thị trường hiện tại (uptrend / đi ngang / downtrend) và việc nên làm trong pha ấy: tỷ trọng, số lệnh, rủi ro mỗi lệnh, kiểu điểm mua — hình infographic kèm chữ |
 | `/liqu`, `/thanhkhoan` | Chart thanh khoản VN-Index cộng dồn trong phiên, so với cùng giờ phiên trước — số liệu nến phút của Vietcap |
 | `/vang`, `!vang`, `!sjc` | Giá vàng trong nước: vàng miếng SJC và nhẫn tròn trơn 999.9, mỗi thứ hai dòng — một lượng và một chỉ, giá mua vào – bán ra. Số liệu Mi Hồng |
 | `/bac`, `!bac` | Giá bạc trong nước: miếng Phú Quý và Rồng Thăng Long Ag 999, một lượng, giá mua vào – bán ra. Số liệu BTMC |
@@ -76,6 +77,15 @@ Ba lệnh này không nhận mã. Chúng chấm cả một rổ rồi trả về
 VN30 + VNMID, `!dongtien` chấm cả HOSE. Đầu tin là bối cảnh thị trường — VN-Index so với MA20, MA50,
 và nhịp kiểu O'Neil (phiên phân phối, ngày xác nhận) — vì lúc thị trường điều chỉnh thì ít mã lọt
 là đúng, và tin nhắn phải nói ra điều đó.
+
+Ngay sau đó là **pha thị trường** và việc nên làm trong pha ấy (`market/strategy.mjs`):
+**downtrend** khi nhịp đang điều chỉnh, hoặc VN-Index và MA20 cùng dưới MA50; **uptrend** khi cả
+hai trên MA50 và nhịp đã xác nhận; còn lại là **đi ngang**. Mỗi pha một mức tỷ trọng cổ phiếu, số
+mã, tỷ trọng mỗi mã và kiểu điểm mua ưu tiên (uptrend: breakout; đi ngang: pullback; downtrend: giữ
+tiền, chỉ pullback mã RS cao). `!strategy` chỉ in hành động của **pha hiện tại** — một hình
+infographic (thanh ba pha có pha hiện tại tô đặc, lý do, thước tỷ trọng cổ phiếu, sáu ô: số mã, tỷ
+trọng mỗi mã, rủi ro mỗi lệnh, số lệnh mới, cắt lỗ, mua thêm; điểm mua, chốt lời, việc lúc này,
+điều kiện chuyển pha) kèm bản chữ. Đây là quy tắc quản lý vốn, chưa backtest.
 
 - **`!manh`** — ba tầng. Lọc cứng: đủ thanh khoản, ở kênh trên, gần đỉnh, nằm trong nhóm mạnh nhất
   rổ theo sức mạnh tương đối. Chấm nền: đường RS, giữ giá khi VN-Index giảm… Điểm vào: pivot là đỉnh
@@ -364,6 +374,7 @@ phải chỗ để cắt cho nhanh.
 | `market/strength.mjs` | Bộ lọc `!manh`, và nến phiên đang chạy dựng từ nến 5 phút |
 | `market/rebound.mjs` | Bộ lọc `!hoiphuc` |
 | `market/flow.mjs` | Dòng tiền theo ngành cho `!dongtien` |
+| `market/strategy.mjs` | Pha thị trường, bảng hành động theo pha cho `!strategy` và đầu tin `!manh` / `!hoiphuc` |
 | `market/pulse.mjs` | Nhịp thị trường: phiên phân phối, ngày xác nhận |
 | `market/screens.mjs` | Phần mạng của ba bộ lọc trên: đi lấy nến cả rổ, giữ lại, chờ chung |
 | `market/screens-chart.mjs` | Hình SVG của ba bộ lọc: thanh dòng tiền theo ngành, lưới chart nhỏ cho từng mã |

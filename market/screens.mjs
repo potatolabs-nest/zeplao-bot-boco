@@ -12,11 +12,12 @@ import { FEED } from './vps.mjs';
 import { CHART } from './dnse.mjs';
 import { rowsFrom } from './technical.mjs';
 import { vndirectSectors } from './sectors.mjs';
-import { MOST_LISTED, STATUS as STRONG, changes, screenAll, settled, strengthMessage, withToday } from './strength.mjs';
+import { MOST_LISTED, STATUS as STRONG, changes, dayOf, marketOf, screenAll, settled, strengthMessage, withToday } from './strength.mjs';
+import { strategyMessage } from './strategy.mjs';
 import { STATUS as REBOUND, reboundAll, reboundMessage } from './rebound.mjs';
 import { flowMessage, sectorFlows, stockFlow } from './flow.mjs';
 import { pulseOf } from './pulse.mjs';
-import { basketSvg, flowSvg } from './screens-chart.mjs';
+import { basketSvg, flowSvg, strategySvg } from './screens-chart.mjs';
 import { MOST_TEXT, money } from './quote.mjs';
 
 const TIMEOUT_MS = 10000;
@@ -181,6 +182,16 @@ export function marketScreens({
   }
 
   return {
+    /// `!strategy` — bảng hành động theo pha thị trường, kèm pha hiện tại. Chỉ cần nến VN-Index, nên
+    /// không đợi chấm cả rổ; nguồn chết thì vẫn trả bảng, chỉ thiếu pha hiện tại.
+    async strategy() {
+      const at = new Date(now());
+      const index = settled(await daily(INDEX, 'index').catch(() => []), at);
+      const market = marketOf(index);
+      const pulse = pulseOf(index);
+      const day = index.length ? dayOf(index.at(-1)) : '';
+      return withPicture(strategyMessage(market, pulse, { day }), strategySvg(market, pulse, { day }), `strategy-${day || 'hom-nay'}.svg`);
+    },
     /// `!manh` — mã dẫn dắt và điểm mua swing trong VN30 + VNMID.
     strong,
     /// `!hoiphuc` — mã vừa xác nhận đáy trong VN30 + VNMID.
