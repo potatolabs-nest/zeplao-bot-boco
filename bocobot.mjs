@@ -1814,7 +1814,9 @@ export async function run(token, {
    * không ai còn nhớ đã hỏi.
    */
   async function say(conversationId, text, replyToMessageId, onlyForUserId) {
-    const content = clipped(typeof text === 'string' ? { text } : text);
+    // `fallback`: chữ thay cho cả tin khi hình không đi được — dành cho tin mà ảnh mới là câu trả
+    // lời, chữ kèm chỉ là chú thích (`!strategy`). Không gửi lên máy chủ.
+    const { fallback = null, ...content } = clipped(typeof text === 'string' ? { text } : text);
     if (!content.image) return (await sayWithTerms(conversationId, content, replyToMessageId, onlyForUserId)).sent;
 
     // Chữ đi kèm hình phải đi dưới dạng rich, không phải `entities` gắn thẳng trên tin.
@@ -1838,7 +1840,8 @@ export async function run(token, {
 
     // Máy chủ không nhận hình thì chữ vẫn đi, kèm một dòng nói ra điều đó.
     const { image, ...words } = shaped;
-    return (await sayWithTerms(conversationId, withoutPicture(words), replyToMessageId, onlyForUserId)).sent;
+    const instead = fallback ? clipped({ text: fallback }) : withoutPicture(words);
+    return (await sayWithTerms(conversationId, instead, replyToMessageId, onlyForUserId)).sent;
   }
 
   /**

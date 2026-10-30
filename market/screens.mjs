@@ -13,7 +13,7 @@ import { CHART } from './dnse.mjs';
 import { rowsFrom } from './technical.mjs';
 import { vndirectSectors } from './sectors.mjs';
 import { MOST_LISTED, STATUS as STRONG, changes, dayOf, marketOf, screenAll, settled, strengthMessage, withToday } from './strength.mjs';
-import { strategyMessage } from './strategy.mjs';
+import { strategyCaption, strategyMessage } from './strategy.mjs';
 import { STATUS as REBOUND, reboundAll, reboundMessage } from './rebound.mjs';
 import { flowMessage, sectorFlows, stockFlow } from './flow.mjs';
 import { pulseOf } from './pulse.mjs';
@@ -190,7 +190,13 @@ export function marketScreens({
       const market = marketOf(index);
       const pulse = pulseOf(index);
       const day = index.length ? dayOf(index.at(-1)) : '';
-      return withPicture(strategyMessage(market, pulse, { day }), strategySvg(market, pulse, { day }), `strategy-${day || 'hom-nay'}.svg`);
+      const full = strategyMessage(market, pulse, { day });
+      const svg = strategySvg(market, pulse, { day });
+      if (!svg) return full;
+      // Ảnh đã đủ thông tin, nên chữ chỉ là một dòng chú thích; bản chữ đầy đủ chỉ đi khi máy chủ
+      // không nhận hình (`fallback`, xem `say` trong bocobot.mjs).
+      const caption = strategyCaption(market, pulse, { day }) ?? full;
+      return { ...withPicture(caption, svg, `strategy-${day || 'hom-nay'}.svg`), fallback: full };
     },
     /// `!manh` — mã dẫn dắt và điểm mua swing trong VN30 + VNMID.
     strong,

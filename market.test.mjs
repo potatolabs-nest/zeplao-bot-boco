@@ -20,7 +20,7 @@ import { foreignOf, vndirectForeign } from './market/foreign.mjs';
 import { eased } from './market/heatmap.mjs';
 import { changes, sessionShare, strengthMessage, withToday } from './market/strength.mjs';
 import { reboundMessage } from './market/rebound.mjs';
-import { phaseLines, phaseOf, strategyMessage } from './market/strategy.mjs';
+import { phaseLines, phaseOf, strategyCaption, strategyMessage } from './market/strategy.mjs';
 import { sectorFlows, stockFlow } from './market/flow.mjs';
 import { pulseSeries } from './market/pulse.mjs';
 import { sectorMessage } from './market/screens.mjs';
@@ -870,6 +870,12 @@ test('!strategy: chỉ in hành động của pha hiện tại, kèm lý do và 
   const bare = strategyMessage(null, null);
   assert.match(bare, /Chưa lấy được dữ liệu VN-Index/);
   assert.match(bare, /Kỷ luật chung/);
+});
+
+test('chú thích !strategy: một dòng pha và tỷ trọng, ảnh mới là câu trả lời', () => {
+  const caption = strategyCaption({ regime: 'down', close: 1741, ma20: 1720, ma50: 1760 }, { state: 'attempt', distribution: 9 }, { day: '2026-10-30' });
+  assert.equal(caption, 'Chiến lược phiên 30/10/2026: DOWNTREND · tỷ trọng cổ phiếu 0–20% · chi tiết trong ảnh');
+  assert.equal(strategyCaption(null, null), null);
 });
 
 test('hình !strategy: pha hiện tại tô đặc, thước tỷ trọng, sáu ô hành động; không có pha thì không có hình', () => {

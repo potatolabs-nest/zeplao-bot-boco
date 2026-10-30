@@ -553,14 +553,14 @@ function stubForeign({ broken = false } = {}) {
 
 /// Bảng ngành giả. Mặc định của `run` gọi ra VNDirect, và một bộ test gọi ra internet là một bộ
 /// test đỏ khi mất mạng.
-function stubScreens({ broken = false, long = 0, picture = false } = {}) {
+function stubScreens({ broken = false, long = 0, picture = false, fallback = null } = {}) {
   const calls = [];
   const answer = (name) => async (asked) => {
     calls.push({ name, ...asked });
     if (broken) throw new Error('nến không trả lời');
     if (picture) {
       const text = `${name.toUpperCase()} · phiên 16/10/2026`;
-      return { text, image: { fileName: `${name}-2026-10-16.svg`, svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' }, rich: { blocks: [{ type: 'paragraph', text }] } };
+      return { text, image: { fileName: `${name}-2026-10-16.svg`, svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' }, rich: { blocks: [{ type: 'paragraph', text }] }, ...(fallback ? { fallback } : {}) };
     }
     if (long) return Array.from({ length: long }, (_, i) => `dòng ${i} ${'x'.repeat(40)}`).join('\n');
     return `${name.toUpperCase()}${asked.live ? ' hiện tại' : ''}${asked.sector ? ` · ${asked.sector}` : ''}`;
@@ -1365,6 +1365,20 @@ test('!manh, !hoiphuc, !dongtien chạy đúng bộ lọc, không đi tra giá m
   ]);
   assert.deepEqual(sent.map((one) => one.text), ['MANH', 'HOIPHUC hiện tại', 'DONGTIEN hiện tại · ngân hàng']);
   assert.equal(sent[0].replyToMessageId, 'm1');
+});
+
+test('!strategy chỉ gửi ảnh kèm một dòng; máy chủ không nhận hình thì gửi bản chữ đầy đủ thay', async () => {
+  const full = 'CHIẾN LƯỢC · phiên 16/10/2026\nPha hiện tại: DOWNTREND';
+  const shown = await withBot([update({ text: '!strategy' })], { screens: stubScreens({ picture: true, fallback: full }) });
+  assert.equal(shown.sent.length, 1);
+  assert.equal(shown.sent[0].text, 'STRATEGY · phiên 16/10/2026');
+  assert.ok(shown.sent[0].image);
+  assert.equal(shown.sent[0].fallback, undefined);
+
+  const refused = await withBot([update({ text: '!strategy' })], { screens: stubScreens({ picture: true, fallback: full }), refuseImages: true });
+  assert.equal(refused.sent.length, 1);
+  assert.equal(refused.sent[0].image, undefined);
+  assert.equal(refused.sent[0].text, full);
 });
 
 test('!strategy, !chienluoc, /strat, !stragety trả bảng chiến lược, chữ thừa phía sau bỏ qua', async () => {

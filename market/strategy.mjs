@@ -165,6 +165,17 @@ export function phaseLines(market, pulse) {
 }
 
 /**
+ * Chú thích một dòng cho ảnh `!strategy` — ảnh đã chứa đủ hành động, chữ chỉ để đọc lướt trong
+ * danh sách tin. Không xác định được pha thì `null`.
+ */
+export function strategyCaption(market, pulse, { day = '' } = {}) {
+  const phase = phaseOf(market, pulse);
+  if (!phase) return null;
+  const when = day ? ` phiên ${day.split('-').reverse().join('/')}` : '';
+  return `Chiến lược${when}: ${PHASES[phase].name} · tỷ trọng cổ phiếu ${exposureText(phase)} · chi tiết trong ảnh`;
+}
+
+/**
  * Tin nhắn cho `!strategy`: chỉ hành động của pha hiện tại, kèm lý do và điều kiện chuyển pha.
  * Không xác định được pha (nguồn chết) thì nói ra, chỉ in kỷ luật chung.
  */

@@ -24,7 +24,7 @@ dài đúng một dòng.
 | `!manh`, `!manh hientai` | Mã dẫn dắt trong VN30 + VNMID, kèm điểm vào và cắt lỗ |
 | `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
-| `/strat`, `!strategy`, `!stragety`, `!chienluoc` | Pha thị trường hiện tại (uptrend / đi ngang / downtrend) và việc nên làm trong pha ấy: tỷ trọng, số lệnh, rủi ro mỗi lệnh, kiểu điểm mua — hình infographic kèm chữ |
+| `/strat`, `!strategy`, `!stragety`, `!chienluoc` | Pha thị trường hiện tại (uptrend / đi ngang / downtrend) và việc nên làm trong pha ấy: tỷ trọng, số lệnh, rủi ro mỗi lệnh, kiểu điểm mua — hình infographic kèm một dòng chú thích |
 | `/liqu`, `/thanhkhoan` | Chart thanh khoản VN-Index cộng dồn trong phiên, so với cùng giờ phiên trước — số liệu nến phút của Vietcap |
 | `/vang`, `!vang`, `!sjc` | Giá vàng trong nước: vàng miếng SJC và nhẫn tròn trơn 999.9, mỗi thứ hai dòng — một lượng và một chỉ, giá mua vào – bán ra. Số liệu Mi Hồng |
 | `/bac`, `!bac` | Giá bạc trong nước: miếng Phú Quý và Rồng Thăng Long Ag 999, một lượng, giá mua vào – bán ra. Số liệu BTMC |
@@ -85,7 +85,7 @@ mã, tỷ trọng mỗi mã và kiểu điểm mua ưu tiên (uptrend: breakout;
 tiền, chỉ pullback mã RS cao). `!strategy` chỉ in hành động của **pha hiện tại** — một hình
 infographic (thanh ba pha có pha hiện tại tô đặc, lý do, thước tỷ trọng cổ phiếu, sáu ô: số mã, tỷ
 trọng mỗi mã, rủi ro mỗi lệnh, số lệnh mới, cắt lỗ, mua thêm; điểm mua, chốt lời, việc lúc này,
-điều kiện chuyển pha) kèm bản chữ. Đây là quy tắc quản lý vốn, chưa backtest.
+điều kiện chuyển pha) kèm một dòng chú thích; bản chữ đầy đủ chỉ gửi khi máy chủ không nhận hình. Đây là quy tắc quản lý vốn, chưa backtest.
 
 - **`!manh`** — ba tầng. Lọc cứng: đủ thanh khoản, ở kênh trên, gần đỉnh, nằm trong nhóm mạnh nhất
   rổ theo sức mạnh tương đối. Chấm nền: đường RS, giữ giá khi VN-Index giảm… Điểm vào: pivot là đỉnh
