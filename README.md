@@ -24,7 +24,7 @@ dài đúng một dòng.
 | `!manh`, `!manh hientai` | Mã dẫn dắt trong VN30 + VNMID, kèm điểm vào và cắt lỗ |
 | `!hoiphuc`, `!hoiphuc hientai` | Mã vừa xác nhận đáy trong VN30 + VNMID, kèm điểm mua, chốt lời, cắt lỗ |
 | `!dongtien`, `!dongtien hientai`, `!dongtien ngân hàng` | Ngành nào đang hút tiền trên HOSE; kèm tên ngành thì kể từng mã của ngành ấy |
-| `!strategy`, `!chienluoc` | Pha thị trường hiện tại (uptrend / đi ngang / downtrend) và việc nên làm trong pha ấy: tỷ trọng, số lệnh, rủi ro mỗi lệnh, kiểu điểm mua — hình infographic kèm chữ |
+| `/strat`, `!strategy`, `!stragety`, `!chienluoc` | Pha thị trường hiện tại (uptrend / đi ngang / downtrend) và việc nên làm trong pha ấy: tỷ trọng, số lệnh, rủi ro mỗi lệnh, kiểu điểm mua — hình infographic kèm chữ |
 | `/liqu`, `/thanhkhoan` | Chart thanh khoản VN-Index cộng dồn trong phiên, so với cùng giờ phiên trước — số liệu nến phút của Vietcap |
 | `/vang`, `!vang`, `!sjc` | Giá vàng trong nước: vàng miếng SJC và nhẫn tròn trơn 999.9, mỗi thứ hai dòng — một lượng và một chỉ, giá mua vào – bán ra. Số liệu Mi Hồng |
 | `/bac`, `!bac` | Giá bạc trong nước: miếng Phú Quý và Rồng Thăng Long Ag 999, một lượng, giá mua vào – bán ra. Số liệu BTMC |

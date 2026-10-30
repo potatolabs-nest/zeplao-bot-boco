@@ -1367,17 +1367,21 @@ test('!manh, !hoiphuc, !dongtien chạy đúng bộ lọc, không đi tra giá m
   assert.equal(sent[0].replyToMessageId, 'm1');
 });
 
-test('!strategy và !chienluoc trả bảng chiến lược, chữ thừa phía sau bỏ qua', async () => {
+test('!strategy, !chienluoc, /strat, !stragety trả bảng chiến lược, chữ thừa phía sau bỏ qua', async () => {
   const screens = stubScreens();
   const { sent } = await withBot([
     update({ text: '!strategy' }),
     update({ text: '!chienluoc hientai abc', messageId: 'm2' }, 2),
-  ], { screens, market: stubMarket(), expect: 2 });
+    update({ text: '/strat', command: 'strat', commandPrefix: '/', messageId: 'm3' }, 3),
+    update({ text: '!stragety', messageId: 'm4' }, 4),
+  ], { screens, market: stubMarket(), expect: 4 });
   assert.deepEqual(screens.calls, [
     { name: 'strategy', live: false, sector: '' },
     { name: 'strategy', live: false, sector: '' },
+    { name: 'strategy', live: false, sector: '' },
+    { name: 'strategy', live: false, sector: '' },
   ]);
-  assert.deepEqual(sent.map((one) => one.text), ['STRATEGY', 'STRATEGY']);
+  assert.deepEqual(sent.map((one) => one.text), ['STRATEGY', 'STRATEGY', 'STRATEGY', 'STRATEGY']);
 });
 
 test('!manh kèm mã thì nhắc cú pháp, không chấm rổ', async () => {
@@ -1451,7 +1455,7 @@ test('lệnh lạ gọi đích danh bot vẫn được trả lời, không im', 
 });
 
 test('lệnh khai báo là tên của chính bot, không viết cứng bocobot', () => {
-  const chinh = ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'strategy', 'chienluoc', 'board', 'bangdien', 'vboa', 'bang'];
+  const chinh = ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'strategy', 'chienluoc', 'strat', 'stragety', 'board', 'bangdien', 'vboa', 'bang'];
   assert.deepEqual(commandsFor(TOP_ME).map((one) => one.command), [...chinh, 'topbot']);
   assert.deepEqual(commandsFor(ME).map((one) => one.command), [...chinh, 'bocobot']);
   assert.deepEqual(askedHelpFor(message({ text: '!topbot' }), TOP_ME), { addressed: true });
@@ -1516,7 +1520,7 @@ test('!bang mở bảng sống, và đó là lệnh đã khai opensWidget', asyn
 test('mã thanh khoản cao được khai báo làm lệnh, không trùng lệnh chính, không quá 100', () => {
   assert.deepEqual(
     commandsFor(ME, ['VIC', 'TIN', 'HPG', 'VIEW']).map((one) => one.command),
-    ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'strategy', 'chienluoc', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
+    ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'strategy', 'chienluoc', 'strat', 'stragety', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg'],
   );
   const many = Array.from({ length: MOST_COMMANDS + 100 }, (_, i) => `M${String(i).padStart(4, '0')}`);
   assert.equal(commandsFor(ME, many).length, MOST_COMMANDS);
@@ -2377,7 +2381,7 @@ test('gõ tên bot không để lại tin nhắn trong phòng, và cờ ấy ch�
 test('khởi động là khai báo lệnh chính kèm các mã thanh khoản cao', async () => {
   // Mã đã khai báo thì `!vic` thành lệnh riêng và biến khỏi nhóm. Nên gửi đúng một từ: tên bot.
   const { registered, declares } = await withBot([], { expect: 0 });
-  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'strategy', 'chienluoc', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
+  assert.deepEqual(registered.map((one) => one.command), ['view', 'ptkt', 'sugg', 'liqu', 'thanhkhoan', 'vang', 'sjc', 'bac', 'tg', 'tin', 'kq', 'manh', 'hoiphuc', 'dongtien', 'strategy', 'chienluoc', 'strat', 'stragety', 'board', 'bangdien', 'vboa', 'bang', 'bocobot', 'vic', 'hpg']);
   assert.ok(registered.every((one) => one.description.length <= 256));
 
   // Đúng **một** lần khai báo, và lần ấy đã có mã.

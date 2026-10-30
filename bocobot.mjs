@@ -163,6 +163,8 @@ export function commandsFor(me, symbols = []) {
     { command: 'dongtien', description: 'Ngành đang hút tiền trên HOSE: !dongtien, !dongtien hientai, !dongtien ngân hàng' },
     { command: 'strategy', description: 'Pha thị trường hiện tại và bảng hành động theo pha: tỷ trọng, số lệnh, điểm mua: !strategy' },
     { command: 'chienluoc', description: 'Tên khác của !strategy' },
+    { command: 'strat', description: 'Tên ngắn của !strategy' },
+    { command: 'stragety', description: 'Tên khác của !strategy' },
     { command: 'board', description: 'Bản đồ nhiệt dạng ảnh: !board · theo ngành: !board bank, bds, oil, retail, cn' },
     { command: 'bangdien', description: 'Tên khác của !board' },
     { command: 'vboa', description: 'Tên cũ của !board' },
@@ -248,7 +250,7 @@ export const HELP = [
   '!manh — mã dẫn dắt, điểm mua swing trong VN30 + VNMID',
   '!hoiphuc — mã vừa xác nhận đáy, nhịp hồi 8–10%',
   '!dongtien — ngành nào đang hút tiền trên HOSE; !dongtien ngân hàng — từng mã của một ngành',
-  '!strategy hoặc !chienluoc — pha thị trường hiện tại, tỷ trọng và cách vào lệnh theo từng pha',
+  '!strategy, !strat hoặc !chienluoc — pha thị trường hiện tại, tỷ trọng và cách vào lệnh theo từng pha',
   '',
   'Chart theo thời gian:',
   '/gex 1d — chart trong phiên gần nhất',
@@ -542,6 +544,8 @@ const SCREENS = {
   dongtien: 'flow',
   strategy: 'strategy',
   chienluoc: 'strategy',
+  stragety: 'strategy',
+  strat: 'strategy',
 };
 /// Chữ đòi bản "hiện tại" — chấm cả cây nến của phiên đang chạy.
 const LIVE_WORDS = new Set(['hientai', 'now', 'live', '--hientai']);
