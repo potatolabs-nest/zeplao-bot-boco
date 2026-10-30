@@ -290,6 +290,8 @@ const REGIME = {
 };
 
 export const MOST_LISTED = 8;
+/// Danh sách theo dõi in tối đa chừng này mã.
+const WATCH_LISTED = 6;
 
 /** Tin nhắn cho `!hoiphuc`: vượt pivot hôm nay, sát pivot, rồi mã đã xác nhận đáy nhưng chưa vào được. */
 export function reboundMessage(report, { groupOf = () => '', limit = MOST_LISTED, now = null } = {}) {
@@ -336,6 +338,20 @@ export function reboundMessage(report, { groupOf = () => '', limit = MOST_LISTED
   if (waiting.length) {
     lines.push('', 'Đã xác nhận đáy, chưa có điểm mua:');
     lines.push(...waitingLines(waiting.slice(0, limit), tag));
+  }
+
+  // Danh sách theo dõi: mã thiếu đúng một điều kiện xác nhận đáy — luôn in, vì điểm mua kế tiếp hay
+  // đến từ nhóm này. Thiếu "đang downtrend" thì mã không phải loại hồi phục — nó thuộc `!manh`.
+  const near = liquid
+    .filter((r) => !r.confirmed && r.bottom.filter((c) => !c.pass).length === 1 && r.bottom.find((c) => !c.pass).key !== 'context')
+    .sort((a, b) => b.score - a.score || b.plan.toPivot - a.plan.toPivot)
+    .slice(0, Math.min(WATCH_LISTED, limit));
+  if (near.length) {
+    lines.push('', 'Theo dõi — gần xác nhận đáy, thiếu một điều kiện:');
+    near.forEach((r, i) => {
+      const miss = r.bottom.find((c) => !c.pass);
+      lines.push(`${i + 1}. ${tag(r)} ${money(r.close)} · pivot ${money(r.plan.pivot)} (${signed(r.plan.toPivot)}) · thiếu ${miss.short} (${miss.text})${signsNote(r)}`);
+    });
   }
 
   lines.push('', 'Tín hiệu tự động, không phải khuyến nghị đầu tư.');

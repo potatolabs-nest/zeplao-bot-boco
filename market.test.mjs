@@ -18,7 +18,8 @@ import {
 import { dailyHistory, dailyRows } from './market/chart.mjs';
 import { foreignOf, vndirectForeign } from './market/foreign.mjs';
 import { eased } from './market/heatmap.mjs';
-import { changes, sessionShare, withToday } from './market/strength.mjs';
+import { changes, sessionShare, strengthMessage, withToday } from './market/strength.mjs';
+import { reboundMessage } from './market/rebound.mjs';
 import { sectorFlows, stockFlow } from './market/flow.mjs';
 import { pulseSeries } from './market/pulse.mjs';
 import { sectorMessage } from './market/screens.mjs';
@@ -763,4 +764,71 @@ test('hình !manh / !hoiphuc: mỗi mã một ô, có vạch pivot và cắt l�
   const picture = basketSvg('rebound', { results: [candidate], day: '2026-10-16' }, () => rows);
   assert.match(picture, />sát pivot</);
   assert.match(picture, /bán 30,7 \(\+7,7%\)/);
+});
+
+test('!manh: mã chạy xa hoặc nền rộng kèm vùng chờ về MA10–MA20; không có vùng hợp lệ thì không in', () => {
+  const leader = (symbol, status, pullback) => ({
+    symbol, status, leader: true, score: 2, rsRank: 95, close: 15.8, change: -1.5,
+    liquidity: { pass: true },
+    hard: [], quality: [],
+    plan: { pivot: 16.1, toPivot: 1.9, entry: 16.1, stop: 14.7, risk: 9, target: 18.9, volumeRatio: 1, pullback },
+  });
+  const report = {
+    results: [
+      leader('MSB', 'wide', { low: 15, high: 15.5, entry: 15, risk: 2 }),
+      leader('VIC', 'wide', null),
+    ],
+    market: null, pulse: null, day: '2026-10-30',
+  };
+  const text = strengthMessage(report);
+  assert.match(text, /MSB 15,8 · RS 95 · cắt lỗ 14,7, rủi ro 9% · chờ về MA10–MA20 15–15,5, cắt lỗ 14,7 \(-2% từ 15\)/);
+  assert.doesNotMatch(text, /VIC[^\n]*chờ về/);
+});
+
+test('!manh: danh sách theo dõi luôn in mã thiếu đúng một điều kiện, RS đủ cao, chưa chạy khỏi pivot', () => {
+  const pass = (key, short) => ({ key, short, name: short, pass: true, text: 'ok' });
+  const stock = (symbol, rsRank, toPivot, hard) => ({
+    symbol, rsRank, status: 'setup', leader: false, score: 1, close: 50, change: 0,
+    liquidity: { pass: true }, quality: [], hard,
+    plan: { pivot: 52, toPivot, entry: 52, stop: 47, risk: 9, volumeRatio: 1 },
+  });
+  const full = [pass('trend', 'kênh trên'), pass('slope', 'MA đi lên'), pass('high', 'gần đỉnh')];
+  const lacking = (key, text) => [...full, pass('rs', 'RS')].map((c) => (c.key === key ? { ...c, pass: false, text } : c));
+  const report = {
+    results: [
+      // Có một mã dẫn dắt — danh sách theo dõi vẫn phải in.
+      { ...stock('LEAD', 95, -2, [...full, pass('rs', 'RS')]), leader: true },
+      stock('AAA', 85, -3.8, lacking('rs', 'RS 85/99 trong rổ')),
+      stock('BBB', 60, -1, lacking('rs', 'RS 60/99 trong rổ')),         // RS quá thấp
+      stock('CCC', 88, 7, lacking('high', 'cách đỉnh -16%')),            // đã chạy khỏi pivot
+      stock('DDD', 92, -4, [{ ...full[0], pass: false }, ...full.slice(1), { ...pass('rs', 'RS'), pass: false }]), // thiếu hai
+      { ...stock('EEE', 90, -8, lacking('trend', 'giá dưới MA50')), ma20: 55 },  // vừa rơi khỏi kênh, dưới MA20
+    ],
+    market: null, pulse: null, day: '2026-10-30',
+  };
+  const text = strengthMessage(report);
+  assert.match(text, /Theo dõi — gần thành dẫn dắt, thiếu một điều kiện:\n1\. AAA 50 · RS 85 · pivot 52 \(-3,8%\) · thiếu RS \(RS 85\/99 trong rổ\)/);
+  assert.doesNotMatch(text, /BBB|CCC|DDD|EEE/);
+});
+
+test('!hoiphuc: danh sách theo dõi kể mã thiếu đúng một điều kiện, trừ mã không còn downtrend', () => {
+  const pass = (key, short) => ({ key, short, name: short, pass: true, text: 'ok' });
+  const fail = (key, short, text) => ({ key, short, name: short, pass: false, text });
+  const stock = (symbol, bottom, score = 1) => ({
+    symbol, bottom, score, close: 20, fromHigh: -30, confirmed: bottom.every((c) => c.pass),
+    candidate: false, liquidity: { pass: true }, signs: [], plan: { pivot: 22, toPivot: -9.1 }, status: 'building',
+  });
+  const full = [pass('context', 'downtrend'), pass('bottom', 'đáy chính'), pass('higherLow', 'đáy sau cao hơn'), pass('repair', 'MA20 quay lên')];
+  const without = (key, text) => full.map((c) => (c.key === key ? fail(c.key, c.short, text) : c));
+  const report = {
+    results: [
+      stock('AAA', without('repair', 'giá dưới MA20 20 · MA20 -1%')),
+      stock('BBB', without('context', 'không còn downtrend')),
+      stock('CCC', [fail('context', 'downtrend', 'x'), fail('bottom', 'đáy chính', 'y'), ...full.slice(2)]),
+    ],
+    market: null, pulse: null, day: '2026-10-30',
+  };
+  const text = reboundMessage(report);
+  assert.match(text, /Theo dõi — gần xác nhận đáy, thiếu một điều kiện:\n1\. AAA 20 · pivot 22 \(-9,1%\) · thiếu MA20 quay lên \(giá dưới MA20 20 · MA20 -1%\)/);
+  assert.doesNotMatch(text, /BBB|CCC/);
 });

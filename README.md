@@ -80,10 +80,14 @@ là đúng, và tin nhắn phải nói ra điều đó.
 - **`!manh`** — ba tầng. Lọc cứng: đủ thanh khoản, ở kênh trên, gần đỉnh, nằm trong nhóm mạnh nhất
   rổ theo sức mạnh tương đối. Chấm nền: đường RS, giữ giá khi VN-Index giảm… Điểm vào: pivot là đỉnh
   nền; mã được xếp **vượt nền / vùng mua / đã chạy xa / nền chưa xong / nền rộng**, kèm cắt lỗ.
+  Mã đã chạy xa hoặc nền rộng được ghi thêm vùng chờ về MA10–MA20, nếu cắt lỗ tính từ MA20 còn
+  trong ngưỡng rủi ro — chỉ để theo dõi, chưa backtest. Cuối tin luôn có mục **Theo dõi**: mã thiếu
+  đúng một điều kiện dẫn dắt, RS từ 70, chưa chạy quá pivot — để canh điểm mua trước khi mã mạnh hẳn.
 - **`!hoiphuc`** — ngược lại: mã ở xa đỉnh, đã tạo đáy đo được (dưới MA200 hoặc cách đỉnh 52 tuần
   từ 25%; đáy 60 phiên chưa bị phá; đáy sau cao hơn đáy trước; giá trên MA20 và MA20 đã quay lên).
   Mua khi vượt pivot với khối lượng, cắt lỗ dưới đáy sau, chốt lời trước kháng cự gần nhất, không
   quá +10%. Một mã hồi hết đường, lấy lại MA200 và về gần đỉnh, là lúc nó chuyển sang `!manh`.
+  Cuối tin luôn có mục **Theo dõi**: mã thiếu đúng một điều kiện xác nhận đáy.
 - **`!dongtien`** — thước đo là **tỷ trọng** giá trị giao dịch: ngành hút tiền là ngành có phần
   trong GTGD 5 phiên lớn hơn phần của nó trong 60 phiên trước. Tiền vào mà giá không lên được tách
   riêng thành "có thể đang bị bán ra". Mã VN30 + VNMID được ghi kèm trạng thái `!manh` / `!hoiphuc`.

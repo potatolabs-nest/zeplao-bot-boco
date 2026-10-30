@@ -69,6 +69,11 @@ export const DEFAULTS = {
   /// Thị trường điều chỉnh (VN-Index dưới MA50, MA20 dưới MA50) thì có mua không. Backtest: mua lúc
   /// ấy thắng 21%, -0,38R mỗi lệnh — nên mặc định là không, vùng mua chỉ còn để theo dõi.
   buyInDownMarket: 0,
+
+  // ---- Danh sách theo dõi ----
+  /// Mã thiếu đúng một điều kiện dẫn dắt được đưa vào theo dõi nếu RS từ chừng này, tối đa `watchListed` mã.
+  watchMinRs: 70,
+  watchListed: 6,
 };
 
 /// Đủ cho hiệu suất 12 tháng và đỉnh 52 tuần của đường RS.
@@ -259,6 +264,15 @@ export function screen(symbol, rows, index, { at = new Date(), ...options } = {}
         : crossed && volumeRatio >= o.breakoutVolume ? 'breakout'
           : 'setup';
 
+  // Mã đã chạy xa hoặc nền quá rộng: chỗ mua hợp lý là nhịp về MA10–MA20, lúc cắt lỗ ở đáy 10 phiên
+  // chỉ còn cách vài %. Chỉ để theo dõi — chưa backtest, không ảnh hưởng `status` hay `leader`.
+  const ma10 = sma(closes, 10)[last];
+  const ma20 = sma(closes, 20)[last];
+  const pullbackRisk = ((ma20 - stop) / ma20) * 100;
+  const pullback = close > ma20 && stop < ma20 && pullbackRisk <= o.maxRisk
+    ? { low: roundTick(Math.min(ma10, ma20)), high: roundTick(Math.max(ma10, ma20)), entry: roundTick(ma20), risk: pullbackRisk }
+    : null;
+
   const quality_ = QUALITY.map((check) => ({ ...check, ...quality[check.key] }));
   return {
     symbol: String(symbol).toUpperCase(),
@@ -271,7 +285,8 @@ export function screen(symbol, rows, index, { at = new Date(), ...options } = {}
     score: quality_.filter((check) => check.scored && check.pass).length,
     rsScore,
     fromHigh,
-    plan: { pivot: roundTick(pivot), toPivot, entry: roundTick(entry), stop, risk, target, volumeRatio },
+    ma20,
+    plan: { pivot: roundTick(pivot), toPivot, entry: roundTick(entry), stop, risk, target, volumeRatio, pullback },
     status,
   };
 }
@@ -391,18 +406,21 @@ export function strengthMessage(report, { groupOf = () => '', limit = MOST_LISTE
     lines.push('', 'Chưa có mã nào ở điểm mua.');
   }
 
-  if (leaders.length < 3) {
-    const near = liquid
-      .filter((r) => r.hard.filter((c) => !c.pass).length === 1)
-      .sort((a, b) => b.rsRank - a.rsRank)
-      .slice(0, Math.min(5, limit));
-    if (near.length) {
-      lines.push('', 'Gần thành dẫn dắt — thiếu một điều kiện:');
-      near.forEach((r, i) => {
-        const miss = r.hard.find((c) => !c.pass);
-        lines.push(`${i + 1}. ${tag(r)} RS ${r.rsRank} · thiếu ${miss.short} (${miss.text})`);
-      });
-    }
+  // Danh sách theo dõi: mã thiếu đúng một điều kiện dẫn dắt, RS chưa quá thấp, nền chưa chạy khỏi
+  // pivot. Luôn in — mã đã dẫn dắt thường đã chạy, còn điểm mua kế tiếp hay đến từ nhóm này. Mã
+  // thiếu kênh trên mà giá dưới cả MA20 là mã vừa rơi khỏi kênh — đang yếu đi, không phải mạnh lên.
+  const near = liquid
+    .filter((r) => !r.leader && r.rsRank >= o.watchMinRs && r.plan.toPivot <= o.buyAbove
+      && r.hard.filter((c) => !c.pass).length === 1
+      && !(r.hard.find((c) => !c.pass).key === 'trend' && r.close < r.ma20))
+    .sort((a, b) => b.rsRank - a.rsRank || b.plan.toPivot - a.plan.toPivot)
+    .slice(0, Math.min(o.watchListed, limit));
+  if (near.length) {
+    lines.push('', 'Theo dõi — gần thành dẫn dắt, thiếu một điều kiện:');
+    near.forEach((r, i) => {
+      const miss = r.hard.find((c) => !c.pass);
+      lines.push(`${i + 1}. ${tag(r)} ${money(r.close)} · RS ${r.rsRank} · pivot ${money(r.plan.pivot)} (${signed(r.plan.toPivot)}) · thiếu ${miss.short} (${miss.text})`);
+    });
   }
 
   lines.push('', 'Tín hiệu tự động, không phải khuyến nghị đầu tư.');
@@ -432,8 +450,12 @@ function notes(r) {
 }
 
 function waitingNote(r) {
-  if (r.status === 'wide') return `cắt lỗ ${money(r.plan.stop)}, rủi ro ${fmt(r.plan.risk)}%`;
-  return `pivot ${money(r.plan.pivot)} (${signed(r.plan.toPivot)})`;
+  const base = r.status === 'wide'
+    ? `cắt lỗ ${money(r.plan.stop)}, rủi ro ${fmt(r.plan.risk)}%`
+    : `pivot ${money(r.plan.pivot)} (${signed(r.plan.toPivot)})`;
+  const pull = r.plan.pullback;
+  if (!pull || (r.status !== 'wide' && r.status !== 'extended')) return base;
+  return `${base} · chờ về MA10–MA20 ${money(pull.low)}–${money(pull.high)}, cắt lỗ ${money(r.plan.stop)} (${signed(-pull.risk)} từ ${money(pull.entry)})`;
 }
 
 // ---- tiện ích ----------------------------------------------------------------------------------
