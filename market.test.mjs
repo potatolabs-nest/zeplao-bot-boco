@@ -834,7 +834,7 @@ test('!hoiphuc: danh sách theo dõi kể mã thiếu đúng một điều kiệ
   assert.doesNotMatch(text, /BBB|CCC/);
 });
 
-test('pha thị trường: điều chỉnh hoặc dưới MA50 là downtrend, trên MA50 kèm xác nhận là uptrend, còn lại đi ngang', () => {
+test('pha thị trường: điều chỉnh hoặc dưới MA50 là downtrend, trên MA50 kèm xác nhận là uptrend, còn lại đi ngang — kể cả ngày xác nhận dưới MA50', () => {
   const up = { regime: 'up', close: 1800, ma20: 1790, ma50: 1750 };
   const down = { regime: 'down', close: 1700, ma20: 1720, ma50: 1760 };
   const mixed = { regime: 'mixed', close: 1760, ma20: 1740, ma50: 1750 };
@@ -843,6 +843,15 @@ test('pha thị trường: điều chỉnh hoặc dưới MA50 là downtrend, tr
   assert.equal(phaseOf(up, { state: 'confirmed' }), 'up');
   assert.equal(phaseOf(up, { state: 'pressure' }), 'sideways');
   assert.equal(phaseOf(mixed, { state: 'confirmed' }), 'sideways');
+  assert.equal(phaseOf(down, { state: 'confirmed' }), 'sideways');   // 04/11/2026: FTD khi VN-Index còn dưới MA50
+  assert.equal(phaseOf(down, { state: 'pressure' }), 'down');
+
+  // Ngày xác nhận dưới MA50: một pha, một câu ưu tiên, không còn "chỉ pullback" lẫn "thăm dò breakout".
+  const ftd = phaseLines(down, { state: 'confirmed', distribution: 0 });
+  assert.match(ftd[0], /^Pha thị trường: ĐI NGANG · tỷ trọng cổ phiếu 30–60%/);
+  assert.match(ftd[1], /^Ưu tiên: pullback về MA20/);
+  assert.match(ftd[2], /^Vừa có ngày xác nhận: 1–2 lệnh thăm dò, 25–50% tỷ trọng chuẩn/);
+  assert.doesNotMatch(ftd.join(' '), /breakout nhỏ|chỉ pullback/);
   assert.equal(phaseOf(null, null), null);
 
   const lines = phaseLines(down, { state: 'attempt', distribution: 9 });

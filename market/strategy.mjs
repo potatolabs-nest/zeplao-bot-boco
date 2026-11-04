@@ -55,7 +55,7 @@ export const PHASES = {
     exit: 'Chốt ở đỉnh cũ hoặc kháng cự gần nhất, không gồng',
     next: [
       'Lên uptrend: VN-Index và MA20 cùng trên MA50, có ngày xác nhận',
-      'Xuống downtrend: VN-Index và MA20 cùng dưới MA50, hoặc từ 6 phiên phân phối',
+      'Xuống downtrend: VN-Index và MA20 cùng dưới MA50 mà mất ngày xác nhận (thủng đáy nhịp hồi, từ 4 phiên phân phối), hoặc từ 6 phiên phân phối',
     ],
   },
   down: {
@@ -73,7 +73,7 @@ export const PHASES = {
     entry: 'Chỉ pullback ở mã RS ≥ 90 giữ được MA20, hoặc mã hồi phục đã xác nhận đáy',
     exit: 'Chốt nhanh ở kháng cự gần nhất (+5–8%)',
     next: [
-      `Có ngày xác nhận (VN-Index tăng từ ${fmt(PULSE.ftdGain)}%, KL cao hơn phiên trước): thăm dò 1–2 lệnh breakout, 25–50% tỷ trọng chuẩn`,
+      `Có ngày xác nhận (VN-Index tăng từ ${fmt(PULSE.ftdGain)}%, KL cao hơn phiên trước): sang đi ngang, thăm dò 1–2 lệnh, 25–50% tỷ trọng chuẩn`,
       'Lệnh thăm dò có lời và VN-Index lấy lại MA50: nâng lên 40–60%',
     ],
   },
@@ -89,11 +89,15 @@ export const RULES = [
 /**
  * Pha thị trường từ `market` (`marketOf`) và `pulse` (`pulseOf`); một trong hai có thể `null`.
  * `null` khi không có gì để xét.
+ *
+ * Ngày xác nhận khi VN-Index còn dưới MA50 là đi ngang, không phải downtrend: tín hiệu đã cho phép
+ * thăm dò, chỉ chưa đủ để coi là uptrend. Xếp vào downtrend thì tin vừa bảo "chỉ pullback" vừa bảo
+ * "thăm dò" — 04/11/2026.
  */
 export function phaseOf(market, pulse) {
   if (!market && !pulse) return null;
   if (pulse?.state === 'correction') return 'down';
-  if (market?.regime === 'down') return 'down';
+  if (market?.regime === 'down') return pulse?.state === 'confirmed' ? 'sideways' : 'down';
   if (market?.regime === 'up' && (!pulse || pulse.state === 'confirmed')) return 'up';
   return 'sideways';
 }
@@ -120,9 +124,9 @@ export function phaseReasons(market, pulse) {
 /// Việc cần làm ở chỗ chuyển pha, theo nhịp thị trường. Rỗng khi không ở chỗ chuyển.
 export function transition(phase, pulse) {
   if (!pulse) return '';
-  if (pulse.state === 'attempt') return 'Có ngày xác nhận thì thăm dò 1–2 lệnh breakout mã dẫn dắt, 25–50% tỷ trọng chuẩn';
+  if (pulse.state === 'attempt') return 'Có ngày xác nhận thì thăm dò 1–2 lệnh ở mã dẫn dắt, 25–50% tỷ trọng chuẩn';
   if (pulse.state === 'pressure') return 'Phân phối dồn: ngừng mở lệnh mới, siết cắt lỗ';
-  if (pulse.state === 'confirmed' && phase !== 'up') return 'Vừa có ngày xác nhận: thăm dò breakout nhỏ, lời thì mới tăng tỷ trọng';
+  if (pulse.state === 'confirmed' && phase !== 'up') return 'Vừa có ngày xác nhận: 1–2 lệnh thăm dò, 25–50% tỷ trọng chuẩn, lời thì mới tăng tỷ trọng';
   return '';
 }
 

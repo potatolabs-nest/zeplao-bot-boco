@@ -79,8 +79,9 @@ và nhịp kiểu O'Neil (phiên phân phối, ngày xác nhận) — vì lúc t
 là đúng, và tin nhắn phải nói ra điều đó.
 
 Ngay sau đó là **pha thị trường** và việc nên làm trong pha ấy (`market/strategy.mjs`):
-**downtrend** khi nhịp đang điều chỉnh, hoặc VN-Index và MA20 cùng dưới MA50; **uptrend** khi cả
-hai trên MA50 và nhịp đã xác nhận; còn lại là **đi ngang**. Mỗi pha một mức tỷ trọng cổ phiếu, số
+**downtrend** khi nhịp đang điều chỉnh, hoặc VN-Index và MA20 cùng dưới MA50 mà chưa có ngày xác
+nhận; **uptrend** khi cả hai trên MA50 và nhịp đã xác nhận; còn lại là **đi ngang** — kể cả ngày
+xác nhận khi VN-Index còn dưới MA50 (được thăm dò, chưa phải uptrend). Mỗi pha một mức tỷ trọng cổ phiếu, số
 mã, tỷ trọng mỗi mã và kiểu điểm mua ưu tiên (uptrend: breakout; đi ngang: pullback; downtrend: giữ
 tiền, chỉ pullback mã RS cao). `!strategy` chỉ in hành động của **pha hiện tại** — một hình
 infographic (thanh ba pha có pha hiện tại tô đặc, lý do, thước tỷ trọng cổ phiếu, sáu ô: số mã, tỷ
